@@ -14,7 +14,9 @@ from google.genai import types
 from app.core.notification import send_telegram_msg
 from app.core.database import (
     save_message, load_history_for_gemini, clear_history,
-    get_training_loads, get_recent_runs_log, update_run_gcs_score
+    get_training_loads, get_recent_runs_log, update_run_gcs_score, 
+    update_daily_plan, get_upcoming_plans, 
+    get_plan_for_date, update_plan_status
 )
 from app.agents.coach.utils import calculate_trimp, calculate_acwr
 from app.services.rag_memory import rag_db
@@ -26,9 +28,6 @@ client = genai.Client()
 # ==========================================
 # 🧰 BỘ CÔNG CỤ (TOOLS) CHO AI AGENT
 # ==========================================
-# Ghi chú: Docstring (""") bên dưới cực kỳ quan trọng. 
-# Gemini sẽ đọc nó để hiểu khi nào cần lấy công cụ nào ra dùng.
-
 def check_training_status(user_id: str) -> str:
     """
     Kiểm tra chỉ số chấn thương (ACWR) và tải trọng tập luyện (TRIMP) hiện tại của vận động viên.
@@ -74,7 +73,7 @@ def get_total_run_stats(user_id: str) -> str:
         return f"Volume 4 tuần qua: {stats.get('recent_run_totals', 0):.1f} km | Năm nay (YTD): {stats.get('ytd_run_totals', 0):.1f} km"
     except Exception as e:
         return "Chưa có dữ liệu thống kê tổng km (Auto-Harvest chưa thu thập)."
-# (Giữ lại hàm này cho luồng phân tích CSV tự động)
+
 def get_rag_context(query: str, n_results: int = 2) -> str:
     try:
         results = rag_db.recall(query=query, domain="coach", n_results=n_results)
@@ -85,8 +84,19 @@ def get_rag_context(query: str, n_results: int = 2) -> str:
     except Exception as e:
         return "Memory retrieval failed."
 
+def set_workout_plan(target_date: str, workout_title: str, description: str) -> str:
+    """
+    [CÔNG CỤ QUAN TRỌNG] Cập nhật, thêm mới hoặc thay đổi giáo án tập luyện cho một ngày cụ thể.
+    Chỉ gọi công cụ này khi VĐV yêu cầu xếp lịch, đổi lịch, báo bận, hoặc AI thấy cần điều chỉnh giáo án.
+    - target_date: Định dạng bắt buộc YYYY-MM-DD (VD: 2026-02-23).
+    - workout_title: Tên bài tập ngắn gọn (VD: Chạy phục hồi 5km, Nghỉ ngơi, Long Run 21km).
+    - description: Chi tiết pace, nhịp tim mục tiêu, hoặc lý do.
+    """
+    logger.info(f"[TOOL-USE] 🤖 AI thay đổi Plan ngày {target_date}: {workout_title}")
+    return update_daily_plan(target_date, workout_title, description, status="Pending")
+
 # ==========================================
-# LUỒNG 1: PHÂN TÍCH BÀI CHẠY TỰ ĐỘNG (GIỮ NGUYÊN)
+# LUỒNG 1: PHÂN TÍCH BÀI CHẠY TỰ ĐỘNG (ĐÃ VÁ LỖI THỜI GIAN)
 # ==========================================
 def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str, meta_data: dict, config: dict):
     activity_id = str(activity_id) 
@@ -96,8 +106,20 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
+    # [FIX BUG] TRÍCH XUẤT NGÀY CHẠY THỰC TẾ TỪ STRAVA META_DATA
+    start_date_raw = meta_data.get("start_date_local", "")
+    if start_date_raw:
+        try:
+            # Cắt 10 ký tự đầu tiên để lấy YYYY-MM-DD
+            run_date_str = start_date_raw[:10]
+        except Exception:
+            run_date_str = now.strftime('%Y-%m-%d')
+    else:
+        logger.warning(f"[COACH AGENT] Không tìm thấy start_date_local cho {activity_id}. Dùng giờ hệ thống.")
+        run_date_str = now.strftime('%Y-%m-%d')
+    
     race_date_str = config.get("race_date", "")
-    current_goal = config.get("current_goal", "Duy trì thể lực (Maintenance)")
+    current_goal = config.get("current_goal", "Duy trì thể lực")
     
     if race_date_str:
         try:
@@ -109,11 +131,9 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
             else: phase = "Base/Build (Xây dựng nền tảng)"
             countdown_text = f"{weeks_to_race} weeks ({days_to_race} days) remaining to Race Day."
         except ValueError:
-            phase = "Off-season / Maintenance"
-            countdown_text = "Invalid race date format."
+            phase, countdown_text = "Off-season", "Invalid race date format."
     else:
-        phase = "Off-season / Base Building"
-        countdown_text = f"No race scheduled. Current Focus: {current_goal}."
+        phase, countdown_text = "Off-season", f"Focus: {current_goal}"
 
     max_hr = int(config.get("max_hr", 185))
     rest_hr = int(config.get("rest_hr", 55))
@@ -125,21 +145,30 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     recent_log = get_recent_runs_log(str(chat_id), limit=5)
     long_term_memory = get_rag_context(query=f"Phân tích bài chạy {activity_name}", n_results=2)
 
+    # [NEW] Truy xuất Giáo án ĐÚNG VÀO NGÀY CHẠY từ SQLite
+    today_plan = get_plan_for_date(run_date_str)
+    if today_plan:
+        plan_context = f"Tên bài: {today_plan['title']}\nChi tiết: {today_plan['description']}"
+    else:
+        plan_context = "Không có giáo án nào được lên lịch cho ngày này (VĐV chạy tự do)."
+
     system_instruction = config.get("system_instruction", "You are an elite AI Running Coach.")
     user_profile = config.get("user_profile", "")
     
     science_context = f"""
     [TEMPORAL & PERIODIZATION CONTEXT]
     - System Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')}
+    - Activity Run Date: {run_date_str}  <-- ÉP AI BIẾT NGÀY CHẠY THỰC TẾ
     - Target: {countdown_text}
     - Current Phase: {phase}
     
-    [SPORTS SCIENCE METRICS (CRITICAL)]
-    - Acute TRIMP Load: {acute_load_7d}
-    - Chronic TRIMP Load: {chronic_load_28d}
-    - ACWR Ratio: {acwr_data['acwr']} -> Status: {acwr_data['status']}
-    *Rule:* If ACWR Status is 'Danger Zone', YOU MUST warn the runner to take a rest.
-
+    [GIÁO ÁN ĐƯỢC GIAO CHO NGÀY NÀY (PLAN)]
+    {plan_context}
+    
+    [SPORTS SCIENCE METRICS]
+    - Acute Load: {acute_load_7d} | Chronic Load: {chronic_load_28d}
+    - ACWR: {acwr_data['acwr']} ({acwr_data['status']})
+    
     [RECENT WORKOUTS LOG]
     {recent_log}
     
@@ -148,7 +177,10 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     """
 
     full_instruction = f"{system_instruction}\n\n[USER PHYSIOLOGY]\n{user_profile}\nMax HR: {max_hr} | Rest HR: {rest_hr}\n\n{science_context}"
+    
     task_description = config.get("task_description", "Analyze this run.") 
+    task_description += "\nBẮT BUỘC: Hãy so sánh kết quả chạy thực tế với [GIÁO ÁN ĐƯỢC GIAO CHO NGÀY NÀY]. VĐV có tuân thủ đúng cự ly, pace, và mục đích của giáo án không? Hãy nhận xét nghiêm khắc về tính kỷ luật."
+
     output_format = config.get("output_format", "Output in Plain Text.")
     current_model_name = config.get("model_name", "models/gemini-2.0-flash")
 
@@ -181,10 +213,6 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     {csv_data}
     """
 
-    if os.getenv("LOG_AI_PROMPTS", "False").lower() == "true":
-        debug_prompt = prompt.replace(csv_data, f"<CSV_DATA_OMITTED_FOR_LOGS> ({len(csv_data)} bytes)")
-        logger.info(f"\n{'='*20} [AI PROMPT: RUN ANALYSIS] {'='*20}\n[SYSTEM INSTRUCTION & RAG CONTEXT]:\n{full_instruction}\n\n[USER PROMPT]:\n{debug_prompt}\n{'='*65}\n")
-
     max_retries = 3
     analysis_text = None
     
@@ -212,13 +240,21 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     try:
         if chat_id:
             save_message(str(chat_id), "model", f"[ANALYSIS] {activity_name}: {analysis_text}")
-            memory_content = f"Sự kiện: VĐV chạy bài '{activity_name}' vào ngày {now.strftime('%Y-%m-%d')}.\nPhân tích:\n{analysis_text}"
+            
+            # [FIX BUG] Sửa lại RAG Memorize để dùng đúng ngày chạy (run_date_str) thay vì ngày hệ thống
+            memory_content = f"Sự kiện: VĐV chạy bài '{activity_name}' vào ngày {run_date_str}.\nPhân tích:\n{analysis_text}"
             rag_db.memorize(
                 doc_id=str(activity_id), 
                 content=memory_content, 
                 domain="coach", 
                 extra_meta={"user_id": str(chat_id), "type": "run_analysis"}
             )
+            
+            # [NEW] Khép kín vòng lặp: Đánh dấu Plan hôm nay là Đã hoàn thành
+            if today_plan and today_plan['status'] == 'Pending':
+                update_plan_status(run_date_str, "Completed")
+                logger.info(f"[COACH AGENT] Đã cập nhật status giáo án ngày {run_date_str} thành Completed.")
+
         return analysis_text
     except Exception as e:
         logger.error(f"Post-Analysis Save Error: {e}")
@@ -254,10 +290,12 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         phase, countdown_text = "Off-season", f"Focus: {current_goal}"
 
     # ĐÓNG GÓI NHÂN CÁCH MỎNG (THIN PERSONA)
-    # Loại bỏ hoàn toàn việc bắt Python truy xuất DB và nhồi vào đây.
     current_model_name = config.get("model_name", "models/gemini-2.0-flash")
     system_instruction = config.get("system_instruction", "You are Coach Dyno.")
     user_profile = config.get("user_profile", "")
+
+    # [NEW] Đọc giáo án hiện tại từ CSDL để AI nắm rõ lịch trình
+    current_plans = get_upcoming_plans(limit_days=7)
 
     full_persona = f"""
     {system_instruction}
@@ -268,12 +306,16 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     - Current Phase: {phase}
     - User ID of the runner: {chat_id}
     
+    [GIÁO ÁN TẬP LUYỆN HIỆN TẠI (SINGLE SOURCE OF TRUTH)]
+    {current_plans}
+    
     [USER PROFILE]
     {user_profile}
     
     [CRITICAL INSTRUCTION FOR TOOL USE]
     - You are chatting with the user on Telegram.
-    - USE TOOLS to fetch training status, recent workouts, or memory IF required.
+    - Dùng Tool để tra cứu ACWR/TRIMP, Lịch sử chạy, hoặc Ký ức nếu cần.
+    - NẾU user yêu cầu lên lịch, đổi lịch, báo bận, HOẶC bạn nhận thấy user cần nghỉ ngơi: BẮT BUỘC SỬ DỤNG TOOL `set_workout_plan` để cập nhật lại giáo án.
     - If you use a tool, always pass the 'user_id' exactly as '{chat_id}'.
     - If you lack the tools to answer a specific part of the user's question, clearly explain that to the user. DO NOT return an empty response.
     """
@@ -282,8 +324,8 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         raw_history = load_history_for_gemini(chat_id, limit=30)
         formatted_history = [{"role": msg["role"], "parts": [{"text": msg["parts"][0]}]} for msg in raw_history]
         
-        # CẤP 4 VŨ KHÍ (Thêm get_total_run_stats)
-        ai_tools = [check_training_status, get_recent_workouts, search_long_term_memory, get_total_run_stats]
+        # [NEW] Cấp thêm quyền trượng: set_workout_plan
+        ai_tools = [check_training_status, get_recent_workouts, search_long_term_memory, get_total_run_stats, set_workout_plan]
 
         chat_session = client.chats.create(
             model=current_model_name,
@@ -295,10 +337,8 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             )
         )
         
-        # Nhờ tính năng AFC (Automatic Function Calling), lệnh send_message này
-        # sẽ tự động gọi các hàm Python bên trên nếu AI thấy cần thiết, 
-        # sau đó AI tự tổng hợp kết quả và trả về text cuối cùng.
         response = chat_session.send_message(text)
+        
         # [FIX BUG] Bẫy lỗi an toàn cho NoneType
         if response.text:
             reply_text = response.text
@@ -310,7 +350,6 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         save_message(chat_id, "model", reply_text)
         send_telegram_msg(chat_id, reply_text)
         
-        # Bây giờ lệnh len() sẽ không bao giờ bị crash nữa
         if len(reply_text) > 100 and "⚠️" not in reply_text:
             doc_id = f"chat_{uuid.uuid4().hex[:8]}"
             rag_db.memorize(

@@ -8,39 +8,97 @@ from datetime import datetime
 from app.core.notification import send_telegram_msg
 from app.agents.coach.harvest import harvest_data
 from app.services.backup import perform_backup
+from app.core.database import get_training_loads, get_runs_in_last_days, load_history_for_gemini
+from app.services.rag_memory import rag_db
+import uuid
+
 logger = logging.getLogger("AI_COACH")
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 scheduler = AsyncIOScheduler()
 
 async def task_morning_briefing():
-    """Gửi bản tin tóm tắt buổi sáng qua Telegram"""
+    """[HOLISTIC STANDUP] Báo cáo đa chiều: Thể chất, Kỷ luật, Tâm lý và Mục tiêu"""
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    if chat_id:
-        stats = {}
-        # Đọc dữ liệu Strava đã được harvest_data thu thập
-        if os.path.exists("data/athlete_stats.json"):
-            try:
-                with open("data/athlete_stats.json", "r") as f:
-                    stats = json.load(f)
-            except Exception as e:
-                logger.error(f"[SCHEDULER] Failed to read stats: {e}")
-        
-        ytd_km = stats.get('ytd_run_totals', 0)
-        recent_km = stats.get('recent_run_totals', 0)
-        
-        # Format tin nhắn tiếng Việt chuẩn Markdown
-        msg = (
-            f"☀️ **CHÀO BUỔI SÁNG DYNO!**\n"
-            f"📅 Hôm nay là: {datetime.now(TZ_VN).strftime('%A, %d/%m')}\n"
-            f"--------------------------------\n"
-            f"📊 **Tổng kết phong độ:**\n"
-            f"▪️ Tích lũy năm nay: `{ytd_km:.1f} km`\n"
-            f"▪️ Volume 4 tuần: `{recent_km:.1f} km`\n\n"
-            f"🔥 *Chỉ còn 5 tuần nữa là đến Race. Đừng quên bài chạy hôm nay nhé!*\n"
-            f"💡 *Gõ /sync để cập nhật dữ liệu nếu cậu vừa chạy xong.*"
+    if not chat_id: return
+
+    config = load_config()
+    now = datetime.now(TZ_VN)
+    now_str = now.strftime('%A, %d/%m/%Y')
+
+    # 1. CHIỀU THỂ CHẤT (ACWR & TRIMP)
+    loads = get_training_loads(chat_id)
+    acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
+    
+    # 2. CHIỀU THỰC THI (Đúng 7 ngày thực tế)
+    recent_7_days_log = get_runs_in_last_days(chat_id, days=7)
+    
+    # 3. CHIỀU TÂM LÝ (Lịch sử chat gần nhất trên Telegram)
+    # Lấy 6 tin nhắn gần nhất để AI biết mood của VĐV hôm qua
+    raw_chat = load_history_for_gemini(chat_id, limit=6)
+    chat_context = "\n".join([f"{msg['role'].upper()}: {msg['parts'][0]}" for msg in raw_chat]) if raw_chat else "Không có cuộc trò chuyện nào gần đây."
+
+    # 4. CHIỀU MỤC TIÊU & NGOẠI CẢNH (Race Day & Plan cũ)
+    race_date_str = config.get("race_date", "")
+    current_goal = config.get("current_goal", "Duy trì")
+    countdown_text = "Không có giải đấu."
+    if race_date_str:
+        try:
+            r_date = datetime.strptime(race_date_str, "%Y-%m-%d").replace(tzinfo=TZ_VN)
+            days_left = (r_date - now).days
+            countdown_text = f"Còn {days_left} ngày đến giải."
+        except: pass
+
+    past_plan = "Chưa có kế hoạch nào."
+    try:
+        recall_results = rag_db.recall(query="Kế hoạch tập luyện Coach Dyno giao", domain="coach", n_results=1)
+        if recall_results and recall_results.get('documents') and recall_results['documents'][0]:
+            past_plan = recall_results['documents'][0][0]
+    except: pass
+
+    # THE HOLISTIC PROMPT
+    prompt = f"""
+    Bạn là Coach Dyno, HLV AI chuyên nghiệp. Hãy viết "Daily Standup" gửi VĐV.
+    Bạn phải đánh giá TOÀN DIỆN dựa trên 4 khía cạnh sau:
+
+    [1. NGOẠI CẢNH & MỤC TIÊU]
+    - Hôm nay: {now_str}. {countdown_text}
+    - Mục tiêu: {current_goal}.
+    - Plan bạn đã giao gần nhất: {past_plan}
+
+    [2. THỰC THI (Trong 7 ngày qua)]
+    {recent_7_days_log}
+
+    [3. THỂ CHẤT HIỆN TẠI]
+    - ACWR: {acwr_data['acwr']} ({acwr_data['status']})
+    
+    [4. TÂM LÝ & TÌNH TRẠNG (Lịch sử trò chuyện gần nhất)]
+    {chat_context}
+
+    [YÊU CẦU LẬP KẾ HOẠCH HÔM NAY]
+    1. Tổng hợp: VĐV có đang bám sát mục tiêu và plan cũ không? Nếu đoạn chat gần nhất VĐV báo đau/mệt, PHẢI phản hồi lại sự kiện đó.
+    2. Chỉ định hôm nay: Dựa vào sự giao thoa giữa Thể chất (ACWR) và Tâm lý (Chat), hãy đưa ra bài tập hôm nay (VD: Chạy bài gì, pace bao nhiêu, hay phải nghỉ). 
+    3. Trình bày cực kỳ ngắn gọn, sắc bén như một HLV thực thụ (dưới 150 chữ).
+    """
+
+    try:
+        model_name = config.get("model_name", "models/gemini-2.5-flash")
+        response = client.models.generate_content(
+            model=model_name, contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.7)
         )
-        send_telegram_msg(chat_id, msg)
-        logger.info("[SCHEDULER] Sent Morning Briefing.")
+        
+        if response.text:
+            new_plan_text = response.text
+            send_telegram_msg(chat_id, new_plan_text)
+            
+            # Memorize kế hoạch mới
+            rag_db.memorize(
+                doc_id=f"plan_{uuid.uuid4().hex[:8]}", 
+                content=f"Ngày {now_str}, Plan: {new_plan_text}", 
+                domain="coach", extra_meta={"user_id": chat_id, "type": "daily_plan"}
+            )
+    except Exception as e:
+        logger.error(f"[SCHEDULER] Lỗi: {e}")
 
 async def task_auto_harvest():
     """Tự động đồng bộ Strava mỗi 6 tiếng"""
