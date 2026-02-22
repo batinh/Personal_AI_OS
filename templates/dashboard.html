@@ -10,68 +10,96 @@
         body { background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .card { border: none; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); transition: transform 0.2s; }
         .card:hover { transform: translateY(-5px); }
-        .stat-value { font-size: 2rem; font-weight: bold; }
-        .stat-label { font-size: 0.9rem; color: #6c757d; text-transform: uppercase; }
-        .badge-acwr { padding: 10px 20px; border-radius: 20px; font-size: 1rem; }
+        .stat-value { font-size: 2.2rem; font-weight: 800; }
+        .stat-label { font-size: 0.85rem; color: #6c757d; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+        
+        /* [NEW] CSS Cho thanh Gauge ACWR */
+        .gauge-wrap { width: 100%; height: 12px; background-color: #e9ecef; border-radius: 10px; position: relative; margin-top: 15px; box-shadow: inset 0 1px 2px rgba(0,0,0,.1); }
+        .gauge-bg { width: 100%; height: 100%; border-radius: 10px; background: linear-gradient(to right, #0dcaf0 0%, #0dcaf0 40%, #198754 40%, #198754 65%, #fd7e14 65%, #fd7e14 75%, #dc3545 75%, #dc3545 100%); opacity: 0.8;}
+        .gauge-marker { position: absolute; top: -4px; height: 20px; width: 4px; background-color: #212529; border-radius: 2px; box-shadow: 0 0 4px rgba(0,0,0,0.5); transition: left 1s ease-in-out; }
+        .gauge-labels { display: flex; justify-content: space-between; font-size: 0.7rem; color: #adb5bd; margin-top: 5px; font-weight: bold; }
+        
+        .progress-slim { height: 6px; border-radius: 3px; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <nav class="navbar navbar-dark bg-dark mb-4 p-3">
-        <div class="container d-flex justify-content-between">
+    <nav class="navbar navbar-dark bg-dark mb-4 p-3 shadow-sm">
+        <div class="container d-flex justify-content-between align-items-center">
             <a class="navbar-brand fw-bold" href="#">🏃‍♂️ COACH DYNO DASHBOARD</a>
             <div class="text-white">
                 <span class="badge bg-primary me-2">Mục tiêu: {{ config.get('current_goal', 'Sub 1:45 HM') }}</span>
-                <span class="text-warning fw-bold">📅 Race Day: {{ config.get('race_date', '2026-03-29') }}</span>
+                <span class="badge bg-warning text-dark fw-bold">📅 Race Day: {{ config.get('race_date', '2026-03-29') }}</span>
             </div>
         </div>
     </nav>
 
-    <div class="container shadow-sm p-4 bg-white rounded-4 mb-5">
+    <div class="container mb-5">
         
-        <div class="row text-center mb-4">
-            <div class="col-md-4">
-                <div class="card p-3 bg-light">
-                    <div class="stat-label">Chỉ số chấn thương (ACWR)</div>
-                    <div class="stat-value {% if acwr.acwr > 1.5 %}text-danger{% elif acwr.acwr < 0.8 %}text-warning{% else %}text-success{% endif %}">
+        <div class="row mb-4 g-4">
+            
+            <div class="col-md-4 text-center">
+                <div class="card p-4 h-100 bg-white shadow-sm border-0">
+                    <div class="stat-label mb-2">Chỉ số chấn thương (ACWR)</div>
+                    <div class="stat-value {% if acwr.acwr > 1.5 %}text-danger{% elif acwr.acwr > 1.3 %}text-warning{% elif acwr.acwr < 0.8 %}text-info{% else %}text-success{% endif %}">
                         {{ acwr.acwr }}
                     </div>
-                    <div class="fw-bold">{{ acwr.status }}</div>
+                    <div class="fw-bold text-muted small mb-3">{{ acwr.status }}</div>
+                    
+                    {% set acwr_val = acwr.acwr | float %}
+                    {% set gauge_percent = (acwr_val / 2.0) * 100 %}
+                    {% if gauge_percent > 100 %}{% set gauge_percent = 100 %}{% endif %}
+                    
+                    <div class="gauge-wrap">
+                        <div class="gauge-bg"></div>
+                        <div class="gauge-marker" style="left: {{ gauge_percent }}%;" title="ACWR hiện tại"></div>
+                    </div>
+                    <div class="gauge-labels">
+                        <span>Under</span>
+                        <span>Sweet Spot</span>
+                        <span>Over</span>
+                        <span>Danger</span>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card p-3">
-                    <div class="stat-label">Acute Load (7 ngày)</div>
-                    <div class="stat-value text-primary">{{ loads.acute_load_7d }}</div>
-                    <div class="text-muted small">Điểm TRIMP tích lũy</div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card p-3">
-                    <div class="stat-label">Chronic Load (28 ngày)</div>
-                    <div class="stat-value text-info">{{ loads.chronic_load_28d }}</div>
-                    <div class="text-muted small">Nền tảng thể lực</div>
+
+            <div class="col-md-8">
+                <div class="card p-4 h-100 bg-white shadow-sm border-0">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">📊 Xu hướng Tải trọng (30 Ngày)</h5>
+                        <div class="text-end small">
+                            <span style="color: #212529;">● Acute: <b>{{ loads.acute_load_7d }}</b></span> | 
+                            <span style="color: #fd7e14;">■ Chronic (Avg/Week): <b>{{ (loads.chronic_load_28d / 4) | round(2) }}</b></span>                        </div>
+                    </div>
+                    <div style="position: relative; height: 180px; width: 100%;">
+                        <canvas id="loadHistoryChart"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
 
         <div class="row mb-4">
             <div class="col-md-8">
-                <div class="card p-4">
-                    <h5 class="fw-bold mb-3">📈 Biểu đồ Tự tin & Tải trọng (GCS vs TRIMP)</h5>
-                    <canvas id="performanceChart" style="height: 300px;"></canvas>
+                <div class="card p-4 shadow-sm border-0">
+                    <h5 class="fw-bold mb-1">📈 Phân tích Tải trọng & Tự tin (TRIMP vs GCS)</h5>
+                    <p class="text-muted small mb-4">Sự tương quan giữa nỗ lực tập luyện (Cột) và Khả năng đạt mục tiêu (Đường).</p>
+                    
+                    <div style="position: relative; height: 320px; width: 100%;">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card p-4 h-100">
-                    <h5 class="fw-bold mb-3">🎯 Phân tích GCS</h5>
-                    <p class="text-muted small">Dựa trên 20 bài chạy gần nhất để đánh giá khả năng đạt mục tiêu.</p>
-                    <div class="text-center my-4">
-                        <h1 class="display-1 fw-bold text-success" id="latestGcs">--%</h1>
-                        <span class="badge bg-success">LATEST CONFIDENCE</span>
+                <div class="card p-4 h-100 shadow-sm border-0 d-flex flex-column justify-content-center align-items-center">
+                    <h5 class="fw-bold mb-2 text-center w-100">🎯 Điểm GCS Mới Nhất</h5>
+                    <p class="text-muted small text-center mb-4">Goal Confidence Score dự báo tỷ lệ hoàn thành mục tiêu.</p>
+                    
+                    <div class="text-center mb-4">
+                        <h1 class="display-1 fw-bold text-success" id="latestGcs" style="font-size: 5rem;">--%</h1>
+                        <span class="badge bg-success px-3 py-2 rounded-pill shadow-sm">LATEST CONFIDENCE</span>
                     </div>
-                    <div class="alert alert-info small">
-                        <strong>Coach Note:</strong> GCS dựa trên sự tương quan giữa Pace, Nhịp tim và Kỹ thuật chạy.
+                    <div class="alert alert-light border small text-center w-100">
+                        <strong>Coach Note:</strong> Duy trì GCS > 80% trong vùng ACWR xanh lá để đạt điểm rơi phong độ tốt nhất.
                     </div>
                 </div>
             </div>
@@ -79,31 +107,39 @@
 
         <div class="row">
             <div class="col-12">
-                <div class="card p-4">
-                    <h5 class="fw-bold mb-3">🏃‍♂️ Lịch sử bài tập gần đây</h5>
+                <div class="card p-4 shadow-sm border-0">
+                    <h5 class="fw-bold mb-4">🏃‍♂️ Lịch sử bài tập gần đây</h5>
                     <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead class="table-light">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light text-uppercase small fw-bold text-secondary">
                                 <tr>
                                     <th>Ngày</th>
                                     <th>Tên bài chạy</th>
                                     <th>Distance</th>
                                     <th>Avg HR</th>
-                                    <th>TRIMP</th>
+                                    <th>TRIMP Score</th>
                                     <th>GCS</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for act in activities[::-1] %}
                                 <tr>
-                                    <td>{{ act.start_date[:10] }}</td>
-                                    <td class="fw-bold">{{ act.name }}</td>
+                                    <td class="text-muted">{{ act.start_date[:10] }}</td>
+                                    <td class="fw-bold text-dark">{{ act.name }}</td>
                                     <td>{{ act.distance_km }} km</td>
                                     <td>{{ act.avg_hr }} bpm</td>
-                                    <td><span class="badge bg-secondary">{{ act.trimp_score }}</span></td>
+                                    <td>
+                                        {% if act.trimp_score > 120 %}
+                                            <span class="badge bg-danger rounded-pill px-3">{{ act.trimp_score }}</span>
+                                        {% elif act.trimp_score > 70 %}
+                                            <span class="badge bg-warning text-dark rounded-pill px-3">{{ act.trimp_score }}</span>
+                                        {% else %}
+                                            <span class="badge bg-success rounded-pill px-3">{{ act.trimp_score }}</span>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         {% if act.gcs_score %}
-                                        <span class="fw-bold text-success">{{ act.gcs_score }}%</span>
+                                        <span class="fw-bold text-success fs-5">{{ act.gcs_score }}%</span>
                                         {% else %}
                                         <span class="text-muted">-</span>
                                         {% endif %}
@@ -124,43 +160,176 @@
         const trimpScores = rawData.map(d => d.trimp_score);
         const gcsScores = rawData.map(d => d.gcs_score || null);
 
-        // Hiển thị GCS mới nhất lên Card
+        // Hiển thị GCS mới nhất
         const lastGcs = gcsScores.filter(s => s !== null).pop();
         if(lastGcs) document.getElementById('latestGcs').innerText = lastGcs + "%";
 
+        // Logic tô màu động cho cột TRIMP theo thuật toán Bannister
+        const trimpColors = trimpScores.map(score => {
+            if (score > 120) return 'rgba(220, 53, 69, 0.85)'; // Đỏ (Severe Load)
+            if (score > 70) return 'rgba(253, 126, 20, 0.85)'; // Cam (Tempo)
+            return 'rgba(25, 135, 84, 0.85)';                  // Xanh (Easy/Recovery)
+        });
+
+        // ==========================================
+        // BIỂU ĐỒ 1: GCS vs TRIMP
+        // ==========================================
         new Chart("performanceChart", {
-            type: "line",
             data: {
                 labels: labels,
                 datasets: [
                     {
+                        type: 'line', 
                         label: "Độ tự tin (GCS %)",
                         data: gcsScores,
-                        borderColor: "#198754",
-                        backgroundColor: "rgba(25, 135, 84, 0.1)",
+                        borderColor: "#0dcaf0",
+                        backgroundColor: "rgba(13, 202, 240, 0.1)",
+                        borderWidth: 3,
+                        pointBackgroundColor: "#0dcaf0",
+                        pointRadius: 4,
                         yAxisID: 'y1',
                         fill: true,
-                        tension: 0.4
+                        tension: 0.4,
+                        order: 1
                     },
                     {
+                        type: 'bar', 
                         label: "Tải trọng (TRIMP)",
                         data: trimpScores,
-                        borderColor: "#0d6efd",
-                        borderDash: [5, 5],
+                        backgroundColor: trimpColors, 
+                        borderRadius: 4,
                         yAxisID: 'y',
-                        tension: 0.1
+                        order: 2
                     }
                 ]
             },
             options: {
+                animation: false, 
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed.y !== null) { label += context.parsed.y; }
+                                // Thêm ghi chú cho TRIMP
+                                if (context.datasetIndex === 1) {
+                                    let val = context.parsed.y;
+                                    if(val > 120) label += " (Severe/Đỏ)";
+                                    else if(val > 70) label += " (Tempo/Cam)";
+                                    else label += " (Easy/Xanh)";
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
                 scales: {
-                    y: { type: 'linear', position: 'left', title: { display: true, text: 'TRIMP Score' } },
-                    y1: { type: 'linear', position: 'right', min: 0, max: 100, title: { display: true, text: 'Confidence %' } }
+                    y: { 
+                        type: 'linear', position: 'left', 
+                        title: { display: true, text: 'TRIMP Score (Khối lượng)', font: {weight: 'bold'} },
+                        grid: { borderDash: [5, 5] },
+                        beginAtZero: true
+                    },
+                    y1: { 
+                        type: 'linear', position: 'right', min: 0, max: 100, 
+                        title: { display: true, text: 'Confidence % (Niềm tin)', font: {weight: 'bold'} },
+                        grid: { display: false } 
+                    }
                 }
             }
         });
+
+        // ==========================================
+        // BIỂU ĐỒ 2: XU HƯỚNG TẢI TRỌNG (GARMIN STYLE)
+        // ==========================================
+        // Kiểm tra xem dữ liệu load_history có được truyền vào không (tránh lỗi nếu quên update database.py/dashboard.py)
+        {% if load_history %}
+        const loadHist = {{ load_history | tojson }};
+        
+        new Chart("loadHistoryChart", {
+            type: 'line',
+            data: {
+                labels: loadHist.dates,
+                datasets: [
+                    {
+                        label: "Acute Load (Mệt mỏi)",
+                        data: loadHist.acute,
+                        borderColor: "#212529", // Đen nhánh
+                        backgroundColor: "#212529",
+                        borderWidth: 2,
+                        pointRadius: 4, // Điểm to ra một chút
+                        pointStyle: 'circle', // [NEW] Hình tròn chuẩn Garmin
+                        tension: 0.3,
+                        order: 1
+                    },
+                    {
+                        label: "Chronic Load (Thể lực)",
+                        data: loadHist.chronic,
+                        borderColor: "#fd7e14", // Cam đậm
+                        backgroundColor: "#fd7e14",
+                        borderWidth: 2,
+                        pointRadius: 4, 
+                        pointStyle: 'rect', // [NEW] Hình vuông chuẩn Garmin
+                        borderDash: [5, 5], // Garmin vẽ nét liền, nhưng nét đứt dễ phân biệt hơn. Tùy anh!
+                        tension: 0.4,
+                        order: 2
+                    },
+                    {
+                        label: "Optimal Range (Max)",
+                        data: loadHist.optimal_max,
+                        borderColor: "rgba(0,0,0,0)",
+                        backgroundColor: "rgba(200, 200, 200, 0.3)", // Mây xám
+                        fill: '+1', // Fill vùng mây xám xuống đường Min
+                        pointRadius: 0,
+                        tension: 0.4,
+                        order: 3
+                    },
+                    {
+                        label: "Optimal Range (Min)",
+                        data: loadHist.optimal_min,
+                        borderColor: "rgba(0,0,0,0)",
+                        backgroundColor: "rgba(0,0,0,0)",
+                        fill: false,
+                        pointRadius: 0,
+                        tension: 0.4,
+                        order: 4
+                    }
+                ]
+            },
+            options: {
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false }, // Ẩn legend đi cho thoáng
+                    tooltip: {
+                        filter: function(tooltipItem) {
+                            // Chỉ hiện tooltip cho Acute và Chronic, ẩn tooltip của đường mây xám
+                            return tooltipItem.datasetIndex === 0 || tooltipItem.datasetIndex === 1;
+                        }
+                    }
+                },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { 
+                        display: true, 
+                        position: 'right', // Cho trục Y sang phải giống Garmin
+                        grid: { borderDash: [5, 5] },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+        {% endif %}
     </script>
 </body>
 </html>

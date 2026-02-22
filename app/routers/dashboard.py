@@ -4,10 +4,9 @@ from fastapi.responses import HTMLResponse
 import logging
 import os
 
-from app.core.database import get_db_connection, get_training_loads
+from app.core.database import get_db_connection, get_training_loads, get_historical_training_loads
 from app.agents.coach.utils import calculate_acwr
 from app.core.config import load_config
-
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger("AI_COACH")
@@ -22,7 +21,9 @@ async def user_dashboard(request: Request):
     # 2. Lấy dữ liệu tải trọng và tính ACWR
     loads = get_training_loads(chat_id)
     acwr_results = calculate_acwr(loads['acute_load_7d'], loads['chronic_load_28d'])
-    
+
+    # [NEW] Lấy dữ liệu mảng thời gian 30 ngày cho biểu đồ Garmin-style
+    load_history = get_historical_training_loads(chat_id, days=30)
     # 3. Lấy 20 bài chạy gần nhất để vẽ biểu đồ
     conn = get_db_connection()
     c = conn.cursor()
@@ -39,6 +40,7 @@ async def user_dashboard(request: Request):
         "request": request,
         "acwr": acwr_results,
         "loads": loads,
+        "load_history": load_history, # [NEW] Bơm vào Jinja2
         "activities": activities[::-1], # Đảo ngược để vẽ biểu đồ từ trái sang phải
         "config": config
     })

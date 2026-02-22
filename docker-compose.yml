@@ -37,7 +37,7 @@ services:
       - PUID=1000
       - PGID=100
       - TZ=Asia/Ho_Chi_Minh
-      - SUBDOMAINS={DUCKDNS_SUB_DOMAIN}
+      - SUBDOMAINS=${DUCKDNS_SUB_DOMAIN}
       - TOKEN=${DUCKDNS_TOKEN}
       - LOG_FILE=false
     volumes:

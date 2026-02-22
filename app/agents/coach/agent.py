@@ -227,7 +227,8 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
             if gcs_match:
                 gcs_score = int(gcs_match.group(1))
                 gcs_score = max(0, min(100, gcs_score))
-                update_run_gcs_score(activity_id, gcs_score)
+                # [FIX BUG] Truyền thêm chat_id để Database biết bài chạy này của ai
+                update_run_gcs_score(activity_id, str(chat_id), gcs_score)
             break
         except Exception as api_err:
             if "429" in str(api_err):

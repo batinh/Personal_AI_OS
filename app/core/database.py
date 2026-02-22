@@ -2,7 +2,7 @@ import sqlite3
 import os
 import logging
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger("AI_COACH")
 DB_PATH = "data/os_core.db"  # Đổi tên file để đánh dấu kỷ nguyên mới (Multi-Tenant)
@@ -150,16 +150,20 @@ def save_run_activity(user_id: str, activity_data: Dict):
     except Exception as e:
         logger.error(f"[DB_ERROR] Failed to save run activity: {e}")
 
-def update_run_gcs_score(activity_id: str, gcs_score: int):
-    """Cập nhật điểm GCS sau khi AI phân tích xong."""
+def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
+    """Cập nhật điểm GCS, tự động tạo placeholder nếu bài chạy chưa được Harvest."""
     try:
         conn = get_db_connection()
         c = conn.cursor()
+        # [FIX BUG] Tạo trước một dòng giữ chỗ để GCS không bị rơi mất
+        c.execute("INSERT OR IGNORE INTO run_activities (activity_id, user_id) VALUES (?, ?)", (str(activity_id), str(user_id)))
+        # Sau đó mới cập nhật điểm GCS
         c.execute("UPDATE run_activities SET gcs_score = ? WHERE activity_id = ?", (gcs_score, str(activity_id)))
         conn.commit()
         conn.close()
     except Exception as e:
         logger.error(f"[DB_ERROR] Failed to update GCS: {e}")
+
 # ==========================================
 # CHAT HISTORY CRUD
 # ==========================================
@@ -286,6 +290,58 @@ def get_runs_in_last_days(user_id: str, days: int = 7) -> str:
     except Exception as e:
         logger.error(f"[DB] Lỗi lấy log {days} ngày: {e}")
         return "Lỗi đọc dữ liệu."
+
+def get_historical_training_loads(user_id: str, days: int = 30) -> dict:
+    """Tính toán chuỗi thời gian Acute, Chronic và Vùng tối ưu (Optimal Range) cho biểu đồ."""
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        # Lấy data 60 ngày để đủ cơ sở tính Chronic 28 ngày cho 30 ngày qua
+        c.execute('''
+            SELECT start_date, trimp_score 
+            FROM run_activities 
+            WHERE user_id = ? AND start_date >= date('now', '-60 days')
+        ''', (str(user_id),))
+        rows = c.fetchall()
+        conn.close()
+
+        # Gom nhóm TRIMP theo từng ngày
+        daily_trimp = {}
+        for r in rows:
+            date_str = r['start_date'][:10]
+            daily_trimp[date_str] = daily_trimp.get(date_str, 0) + (r['trimp_score'] or 0)
+
+        history = {"dates": [], "acute": [], "chronic": [], "optimal_min": [], "optimal_max": []}
+        base_date = datetime.now().date()
+
+        # Lặp ngược từ 30 ngày trước đến hôm nay
+        for i in range(days - 1, -1, -1):
+            target_date = base_date - timedelta(days=i)
+            
+            # Tính Acute (Tổng 7 ngày lùi lại)
+            acute = sum(daily_trimp.get((target_date - timedelta(days=j)).strftime('%Y-%m-%d'), 0) for j in range(7))
+            
+            # Tính Chronic TOÀN BỘ (28 ngày)
+            chronic_total = sum(daily_trimp.get((target_date - timedelta(days=j)).strftime('%Y-%m-%d'), 0) for j in range(28))
+            
+            # [FIX BUG] ÉP CHRONIC VỀ CÙNG HỆ QUY CHIẾU VỚI ACUTE (TRUNG BÌNH 1 TUẦN)
+            chronic_scaled = chronic_total / 4 if chronic_total > 0 else 0
+
+            history["dates"].append(target_date.strftime('%m-%d'))
+            history["acute"].append(round(acute, 2))
+            
+            # Đẩy Chronic_Scaled ra biểu đồ để nó nằm ngang hàng với Acute
+            history["chronic"].append(round(chronic_scaled, 2)) 
+            
+            # Đám mây xám lấy Chronic Scaled làm tâm (ACWR 0.8 - 1.3)
+            history["optimal_min"].append(round(chronic_scaled * 0.8, 2))
+            history["optimal_max"].append(round(chronic_scaled * 1.3, 2))
+
+        return history
+    except Exception as e:
+        logger.error(f"[DB] Lỗi get_historical_training_loads: {e}")
+        return {"dates": [], "acute": [], "chronic": [], "optimal_min": [], "optimal_max": []}
+
 # ==========================================
 # 📅 QUẢN LÝ GIÁO ÁN TẬP LUYỆN (STATEFUL PLANNING)
 # ==========================================
