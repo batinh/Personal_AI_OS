@@ -117,38 +117,44 @@ def get_user(user_id: str) -> Optional[Dict]:
 # ==========================================
 # RUN ACTIVITIES CRUD
 # ==========================================
-def save_run_activity(user_id: str, activity_data: Dict):
-    """Save a detailed run activity for scientific calculation."""
+def save_run_activity(user_id: str, activity_data: dict):
+    """Lưu bài chạy vào SQLite. Sử dụng UPSERT để đảm bảo Data Integrity giữa luồng Webhook và Harvest."""
     try:
         conn = get_db_connection()
         c = conn.cursor()
         
-        # Lấy GCS cũ nếu có để không bị mất điểm khi chạy Sync ghi đè
-        c.execute("SELECT gcs_score FROM run_activities WHERE activity_id = ?", (str(activity_data['activity_id']),))
-        row = c.fetchone()
-        existing_gcs = row['gcs_score'] if row else None
-
+        # [CẬP NHẬT KIẾN TRÚC] Sử dụng ON CONFLICT DO UPDATE (UPSERT)
+        # Nếu đã có Placeholder (do Webhook tạo), nó sẽ điền nốt các cột NULL mà KHÔNG làm mất gcs_score
         c.execute('''
-            INSERT OR REPLACE INTO run_activities 
-            (activity_id, user_id, name, start_date, distance_km, moving_time_min, avg_hr, max_hr, suffer_score, trimp_score, gcs_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO run_activities 
+            (activity_id, user_id, name, start_date, distance_km, moving_time_min, avg_hr, max_hr, suffer_score, trimp_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(activity_id) DO UPDATE SET
+                name=excluded.name,
+                start_date=excluded.start_date,
+                distance_km=excluded.distance_km,
+                moving_time_min=excluded.moving_time_min,
+                avg_hr=excluded.avg_hr,
+                max_hr=excluded.max_hr,
+                suffer_score=excluded.suffer_score,
+                trimp_score=excluded.trimp_score
         ''', (
             str(activity_data['activity_id']),
             str(user_id),
-            activity_data.get('name', 'Untitled'),
+            activity_data.get('name'),
             activity_data.get('start_date'),
-            activity_data.get('distance_km', 0),
-            activity_data.get('moving_time_min', 0),
-            activity_data.get('avg_hr', 0),
-            activity_data.get('max_hr', 0),
-            activity_data.get('suffer_score', 0),
-            activity_data.get('trimp_score', 0.0),
-            existing_gcs
+            activity_data.get('distance_km'),
+            activity_data.get('moving_time_min'),
+            activity_data.get('avg_hr'),
+            activity_data.get('max_hr'),
+            activity_data.get('suffer_score'),
+            activity_data.get('trimp_score')
         ))
+        
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to save run activity: {e}")
+        logger.error(f"[DB_ERROR] Failed to save/upsert run activity: {e}")
 
 def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
     """Cập nhật điểm GCS, tự động tạo placeholder nếu bài chạy chưa được Harvest."""
@@ -163,6 +169,18 @@ def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
         conn.close()
     except Exception as e:
         logger.error(f"[DB_ERROR] Failed to update GCS: {e}")
+
+def delete_run_activity(activity_id: str):
+    """Xóa bài chạy khỏi Database khi nhận tín hiệu Delete từ Strava."""
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("DELETE FROM run_activities WHERE activity_id = ?", (str(activity_id),))
+        conn.commit()
+        conn.close()
+        logger.info(f"[DB] Đã xóa thành công bài chạy {activity_id} khỏi SQLite.")
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Lỗi khi xóa bài chạy {activity_id}: {e}")
 
 # ==========================================
 # CHAT HISTORY CRUD
@@ -266,17 +284,17 @@ def get_recent_runs_log(user_id: str, limit: int = 5) -> str:
 def get_runs_in_last_days(user_id: str, days: int = 7) -> str:
     """Lấy log chạy bộ giới hạn chuẩn xác trong N ngày qua."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         
         # Dùng SQLite date() để trừ lùi ngày
         query = """
-            SELECT date, name, distance, moving_time, heartrate, pace, trimp_load 
-            FROM activities 
-            WHERE user_id = ? AND date >= date('now', ?)
-            ORDER BY date DESC
+            SELECT start_date, name, distance_km, moving_time_min, avg_hr, trimp_score 
+            FROM run_activities 
+            WHERE user_id = ? AND start_date >= date('now', ?)
+            ORDER BY start_date DESC
         """
-        cursor.execute(query, (user_id, f'-{days} days'))
+        cursor.execute(query, (str(user_id), f'-{days} days'))
         rows = cursor.fetchall()
         conn.close()
 
@@ -285,7 +303,20 @@ def get_runs_in_last_days(user_id: str, days: int = 7) -> str:
 
         log_lines = []
         for r in rows:
-            log_lines.append(f"- {r[0][:10]}: {r[1]} ({r[2]}km, Pace {r[5]}, HR {r[4]}, TRIMP {r[6]})")
+            date_str = r['start_date'][:10]
+            
+            # Tính toán Pace (Phút/km) từ thời gian và quãng đường
+            dist = r['distance_km']
+            mins = r['moving_time_min']
+            if dist > 0:
+                pace_min = int(mins // dist)
+                pace_sec = int(((mins / dist) % 1) * 60)
+                pace_str = f"{pace_min}:{pace_sec:02d}"
+            else:
+                pace_str = "0:00"
+                
+            log_lines.append(f"- {date_str}: {r['name']} ({r['distance_km']}km, Pace {pace_str}, HR {r['avg_hr']}, TRIMP {r['trimp_score']})")
+            
         return "\n".join(log_lines)
     except Exception as e:
         logger.error(f"[DB] Lỗi lấy log {days} ngày: {e}")

@@ -24,6 +24,8 @@ services:
       - '8000:8000'
     env_file:
       - .env  # File .env giờ nằm cùng cấp
+    environment:                 # [THÊM DÒNG NÀY]
+      - TZ=Asia/Ho_Chi_Minh      # [THÊM DÒNG NÀY] Ép container chạy giờ VN
     volumes:
       - .:/app # Mount thư mục hiện tại vào container
       - ./data/chroma_cache:/root/.cache/chroma

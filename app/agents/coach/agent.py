@@ -28,6 +28,20 @@ client = genai.Client()
 # ==========================================
 # 🧰 BỘ CÔNG CỤ (TOOLS) CHO AI AGENT
 # ==========================================
+# Công cụ cho AI buổi sáng
+def update_todays_plan(workout_title: str, description: str) -> str:
+    """
+    [TOOL] Thay đổi, cập nhật hoặc hủy bỏ giáo án của ngày hôm nay.
+    Hãy sử dụng công cụ này trong các trường hợp:
+    1. VĐV chủ động yêu cầu đổi bài, đổi lịch, báo bận hoặc muốn tập nặng/nhẹ hơn.
+    2. Bạn (AI) chủ động ép VĐV nghỉ ngơi/phục hồi khi phát hiện ACWR > 1.5 hoặc VĐV than mệt.
+    3. Điều chỉnh giáo án sát với tình hình thực tế (thời tiết, tâm lý).
+    """
+    tz = pytz.timezone('Asia/Ho_Chi_Minh')
+    now_str = datetime.now(tz).strftime('%Y-%m-%d')
+    logger.info(f"[MORNING STANDUP / CHAT] 🤖 AI tự động thay đổi lịch hôm nay: {workout_title}")
+    return update_daily_plan(now_str, workout_title, description, status="Pending")
+
 def check_training_status(user_id: str) -> str:
     """
     Kiểm tra chỉ số chấn thương (ACWR) và tải trọng tập luyện (TRIMP) hiện tại của vận động viên.

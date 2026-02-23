@@ -86,6 +86,8 @@ class StravaClient:
                 "start_date_local": act_data.get('start_date_local'),
                 "moving_time": act_data.get('moving_time', 0),
                 "average_heartrate": act_data.get('average_heartrate', 0),
+                "max_heartrate": act_data.get('max_heartrate', 0), # [CẬP NHẬT] Thêm trường này
+                "distance": act_data.get('distance', 0),           # [CẬP NHẬT] Thêm trường này
                 "suffer_score": act_data.get('suffer_score'),
                 "device_name": act_data.get('device_name'),
                 "splits": splits_summary,

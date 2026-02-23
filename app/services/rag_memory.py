@@ -2,6 +2,9 @@ import os
 import logging
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
+from chromadb.config import Settings
+import chromadb
+from chromadb.utils import embedding_functions
 
 # 1. BẮT BUỘC: Nạp file .env TRƯỚC khi import ChromaDB
 load_dotenv()
@@ -19,8 +22,6 @@ if cache_dir:
     os.environ["SENTENCE_TRANSFORMERS_HOME"] = cache_dir
     os.environ["XDG_CACHE_HOME"] = cache_dir # Thêm dòng này để trị triệt để ONNX
 # 3. SAU KHI ĐÃ GÀI BIẾN MÔI TRƯỜNG XONG, MỚI IMPORT CHROMA
-import chromadb
-from chromadb.utils import embedding_functions
 
 logger = logging.getLogger("AI_COACH")
 
@@ -30,8 +31,11 @@ class RagMemory:
     Sử dụng Local AI Model để chạy 100% offline trên máy chủ cục bộ.
     """
     def __init__(self, db_path: str = "data/chroma_db"):
-        self.client = chromadb.PersistentClient(path=db_path)
-        
+        # [CẬP NHẬT KIẾN TRÚC] Tắt Telemetry để bảo vệ Privacy và chặn lỗi log rác
+        self.client = chromadb.PersistentClient(
+            path=db_path,
+            settings=Settings(anonymized_telemetry=False)
+        )
         # Kích hoạt Local AI Model tích hợp sẵn của Chroma (Không cần Google API)
         self.embed_fn = embedding_functions.DefaultEmbeddingFunction()
         
@@ -65,5 +69,11 @@ class RagMemory:
             where=where_clause
         )
         return results
-
+    def forget(self, doc_id: str):
+        """Xóa ký ức khỏi ChromaDB để AI không nhớ nhầm bài chạy đã xóa."""
+        try:
+            self.collection.delete(ids=[doc_id])
+            logger.debug(f"[RAG] Successfully erased memory item: {doc_id}")
+        except Exception as e:
+            logger.warning(f"[RAG] Ignore delete memory {doc_id} (Maybe not exists).")
 rag_db = RagMemory()
