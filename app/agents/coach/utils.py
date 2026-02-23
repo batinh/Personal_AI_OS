@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 import pytz
 import math
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -95,16 +96,17 @@ def analyze_decoupling(df):
         
     return round(decoupling, 2)
 
-def calculate_training_phase(race_date_str: str, timezone_str: str = "Asia/Ho_Chi_Minh") -> str:
+import math
+from datetime import datetime
+import pytz
+
+def calculate_training_phase(race_date_str: str, timezone_str: str = os.getenv("TZ", "Asia/Ho_Chi_Minh")) -> dict:
     """
-    Tính toán chính xác Training Phase dựa trên số tuần lịch đếm ngược đến Race Date.
-    - Tuần 1-2 (0-14 ngày): Taper Phase (Nhả khối lượng)
-    - Tuần 3-4 (15-28 ngày): Peak Phase (Đỉnh điểm, cường độ cao nhất)
-    - Tuần 5-8 (29-56 ngày): Build Phase (Tích lũy khối lượng)
-    - Tuần 9+ (>56 ngày): Base Phase (Xây nền tảng Aerobic)
+    [REFACTORED] Tính toán Phase và Microcycle. 
+    Trả về Dictionary thuần dữ liệu để AI lập luận (Agentic Reasoning).
     """
     if not race_date_str:
-        return "Base Phase (Chưa có mục tiêu cụ thể)"
+        return {"phase": "Base Phase", "weeks_left": 99, "microcycle": "Load"}
         
     try:
         tz = pytz.timezone(timezone_str)
@@ -112,20 +114,94 @@ def calculate_training_phase(race_date_str: str, timezone_str: str = "Asia/Ho_Ch
         race_date = datetime.strptime(race_date_str, "%Y-%m-%d").date()
         
         days_left = (race_date - today).days
-        
         if days_left <= 0:
-            return "Race Week (Tuần thi đấu)"
+            return {"phase": "Race Week", "weeks_left": 0, "microcycle": "Race"}
             
-        # Làm tròn lên để ra số tuần chẵn (VD: 34 ngày = 4.85 -> Tuần 5)
+        # Làm tròn lên để ra số tuần chẵn
         weeks_left = math.ceil(days_left / 7.0)
         
-        if weeks_left <= 2:
-            return f"Taper Phase (Còn {weeks_left} tuần)"
-        elif weeks_left <= 4:
-            return f"Peak Phase (Còn {weeks_left} tuần)"
-        elif weeks_left <= 8:
-            return f"Build Phase (Còn {weeks_left} tuần)"
-        else:
-            return f"Base Phase (Còn {weeks_left} tuần)"
+        # 1. Xác định Phase
+        if weeks_left <= 2: phase_name = "Taper Phase"
+        elif weeks_left <= 4: phase_name = "Peak Phase"
+        elif weeks_left <= 8: phase_name = "Build Phase"
+        else: phase_name = "Base Phase"
+        
+        # 2. Xác định Microcycle (Quy tắc 3 Load : 1 Cutback)
+        is_cutback = (weeks_left % 4 == 1) or (weeks_left <= 2)
+        microcycle_type = "Cutback / Recovery Week" if is_cutback else "Load / Progression Week"
+        
+        return {
+            "phase": f"{phase_name} (Còn {weeks_left} tuần)",
+            "weeks_left": weeks_left,
+            "microcycle": microcycle_type
+        }
     except Exception as e:
-        return "Base Phase (Lỗi tính toán ngày)"
+        return {"phase": "Error Phase", "weeks_left": 99, "microcycle": "Load"}
+def debug_log_prompt(title: str, content: str):
+    """
+    [REFACTOR] Hàm chuẩn hóa việc in log Prompt.
+    Chỉ kích hoạt khi môi trường có bật DEBUG_PROMPTS=true.
+    Giúp code ở tầng Agent và Scheduler sạch sẽ hơn.
+    """
+    if os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
+        logger.info(f"\n========== [{title}] ==========\n{content}\n==============================================")
+# =====================================================================
+# SPRINT A: WEEKLY VOLUME INTELLIGENCE (Hỗ trợ AI ra quyết định)
+# =====================================================================
+
+def gather_weekly_decision_inputs(user_id: str, week_start_date: str) -> dict:
+    """
+    [REFACTORED - DRY] Thu thập dữ liệu từ hàm get_training_loads đã nâng cấp.
+    """
+    from app.core.database import get_training_loads, get_weekly_target
+    
+    # Một mũi tên trúng 2 đích: Lấy cả TRIMP và Mileage
+    loads = get_training_loads(user_id)
+    
+    historical_avg_volume = loads.get("avg_weekly_mileage", 0)
+    safe_volume_limit = round(historical_avg_volume * 1.15, 1) if historical_avg_volume > 0 else 30.0 
+
+    chronic_load = loads.get("chronic_load_28d", 0)
+    current_acute = loads.get("acute_load_7d", 0)
+    max_safe_acute = chronic_load * 1.3
+    safe_trimp_remaining = round(max_safe_acute - current_acute, 1)
+    if safe_trimp_remaining < 0: safe_trimp_remaining = 0
+
+    db_target = get_weekly_target(user_id, week_start_date)
+
+    return {
+        "1_historical_avg_volume": historical_avg_volume,
+        "2_safe_volume_limit": safe_volume_limit,
+        "3_safe_trimp_remaining": safe_trimp_remaining,
+        "4_standard_plan_goal": db_target["standard_target_km"] if db_target else None,
+        "5_actual_target_km": db_target["actual_target_km"] if db_target else None
+    }
+
+def get_formatted_weekly_context(user_id: str) -> str:
+    """
+    [REFACTOR - DRY] Gom logic tính ngày và format chuỗi Context Tuần.
+    Hàm này được dùng chung cho cả luồng Scheduler (Sáng) và Agent Chat (Chiều).
+    """
+    import os
+    import pytz
+    from datetime import datetime, timedelta
+    
+    # Lấy múi giờ chuẩn của hệ thống (Đã chuẩn hóa từ bước trước)
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    now = datetime.now(tz)
+    
+    # Tính ngày Thứ 2 của tuần này
+    monday = now - timedelta(days=now.weekday())
+    week_start_str = monday.strftime('%Y-%m-%d')
+    
+    # Thu thập data
+    decision_inputs = gather_weekly_decision_inputs(user_id, week_start_str)
+    
+    # Format thành chuỗi Text cho Prompt
+    return f"""
+    - Lịch sử Volume (TB 4 tuần): {decision_inputs.get('1_historical_avg_volume', 0)} km
+    - Safe Volume (Giới hạn cơ học): {decision_inputs.get('2_safe_volume_limit', 0)} km
+    - Safe TRIMP (Giới hạn tim mạch): {decision_inputs.get('3_safe_trimp_remaining', 0)}
+    - Standard Plan (Mục tiêu gốc): {decision_inputs.get('4_standard_plan_goal') or 'Chưa có'} km
+    - Target thực tế đang chốt: {decision_inputs.get('5_actual_target_km') or 'Chưa chốt'} km
+    """

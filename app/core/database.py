@@ -69,14 +69,52 @@ def init_db():
         )
     ''')
 # [NEW] Bảng lưu trữ Giáo án Tập luyện (Single Source of Truth)
+# [REFACTOR MULTI-TENANT] Bảng lưu trữ Giáo án Tập luyện (Single Source of Truth)
+    # Kiểm tra xem bảng cũ có tồn tại và thiếu user_id không để Migrate
+    cursor = c.execute("PRAGMA table_info(training_plans)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    if columns and 'user_id' not in columns:
+        logger.info("[DATABASE] Migrating training_plans table to Multi-Tenant...")
+        c.execute("ALTER TABLE training_plans RENAME TO training_plans_old")
+        c.execute('''
+            CREATE TABLE training_plans (
+                user_id TEXT,
+                date TEXT,
+                workout_title TEXT,
+                description TEXT,
+                status TEXT DEFAULT 'Pending',
+                PRIMARY KEY (user_id, date)
+            )
+        ''')
+        # Chuyển dữ liệu cũ sang (gán tạm cho user mặc định hoặc bỏ trống)
+        c.execute("INSERT INTO training_plans (user_id, date, workout_title, description, status) SELECT 'default', date, workout_title, description, status FROM training_plans_old")
+        c.execute("DROP TABLE training_plans_old")
+    else:
+        # Tạo mới chuẩn Multi-Tenant
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS training_plans (
+                user_id TEXT,
+                date TEXT,
+                workout_title TEXT,
+                description TEXT,
+                status TEXT DEFAULT 'Pending',
+                PRIMARY KEY (user_id, date)
+            )
+        ''')
+    # [SPRINT A] Thêm bảng Sổ cái Quản lý Khối lượng Tuần (Ledger Pattern)
     c.execute('''
-        CREATE TABLE IF NOT EXISTS training_plans (
-            date TEXT PRIMARY KEY,
-            workout_title TEXT,
-            description TEXT,
-            status TEXT DEFAULT 'Pending'
+        CREATE TABLE IF NOT EXISTS user_weekly_targets (
+            user_id TEXT,
+            week_start_date TEXT,       -- Định dạng YYYY-MM-DD (Luôn là ngày Thứ 2)
+            standard_target_km REAL,    -- Khối lượng gốc HLV giao
+            actual_target_km REAL,      -- Khối lượng AI hoặc User chốt lại
+            ai_reasoning TEXT,          -- Lý do AI điều chỉnh
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, week_start_date)
         )
     ''')
+
     conn.commit()
     conn.close()
     logger.info("[DATABASE] Relational DB initialized successfully (Multi-Tenant Ready).")
@@ -228,34 +266,52 @@ def clear_history(user_id: str):
 # ADVANCED ANALYTICS (AI QUERIES)
 # ==========================================
 def get_training_loads(user_id: str) -> dict:
-    """Calculate Acute (7d) and Chronic (28d) load based on TRIMP from DB."""
+    """
+    [UPGRADED] Tính toán cả TRIMP Loads và Weekly Mileage trong 1 lần quét DB.
+    Trả về dữ liệu phục vụ ACWR và Luật 15% Volume.
+    """
     try:
         conn = get_db_connection()
-        c = conn.cursor()
+        cursor = conn.cursor()
         
-        # Acute Load (Tổng TRIMP 7 ngày qua)
-        c.execute('''
-            SELECT SUM(trimp_score) as acute_load 
-            FROM run_activities 
-            WHERE user_id = ? AND start_date >= date('now', '-7 days')
-        ''', (str(user_id),))
-        acute = c.fetchone()['acute_load']
-        acute = round(acute, 2) if acute else 0.0
-
-        # Chronic Load (Tổng TRIMP 28 ngày qua)
-        c.execute('''
-            SELECT SUM(trimp_score) as chronic_load 
+        # Lấy dữ liệu 28 ngày gần nhất
+        cursor.execute('''
+            SELECT trimp_score, distance_km, start_date 
             FROM run_activities 
             WHERE user_id = ? AND start_date >= date('now', '-28 days')
         ''', (str(user_id),))
-        chronic = c.fetchone()['chronic_load']
-        chronic = round(chronic, 2) if chronic else 0.0
-        
+        rows = cursor.fetchall()
         conn.close()
-        return {"acute_load_7d": acute, "chronic_load_28d": chronic}
+
+        acute_trimp = 0.0
+        chronic_trimp = 0.0
+        total_dist_28d = 0.0 # [MỚI]
+        
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        seven_days_ago = (now - timedelta(days=7)).isoformat()
+
+        for row in rows:
+            trimp = row['trimp_score'] or 0
+            dist = row['distance_km'] or 0
+            s_date = row['start_date']
+            
+            # Tính TRIMP
+            chronic_trimp += trimp
+            if s_date >= seven_days_ago:
+                acute_trimp += trimp
+            
+            # Tính Mileage [MỚI]
+            total_dist_28d += dist
+
+        return {
+            "acute_load_7d": round(acute_trimp, 1),
+            "chronic_load_28d": round(chronic_trimp / 4.0, 1), # Trung bình tuần
+            "avg_weekly_mileage": round(total_dist_28d / 4.0, 1) # [MỚI] Trung bình km/tuần
+        }
     except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to get training loads: {e}")
-        return {"acute_load_7d": 0.0, "chronic_load_28d": 0.0}
+        logger.error(f"[DB] Lỗi get_training_loads: {e}")
+        return {"acute_load_7d": 0, "chronic_load_28d": 0, "avg_weekly_mileage": 0}
 
 def get_recent_runs_log(user_id: str, limit: int = 5) -> str:
     """Get a formatted string of recent runs for the AI prompt."""
@@ -378,23 +434,19 @@ def get_historical_training_loads(user_id: str, days: int = 30) -> dict:
 # 📅 QUẢN LÝ GIÁO ÁN TẬP LUYỆN (STATEFUL PLANNING)
 # ==========================================
 
-def update_daily_plan(target_date: str, workout_title: str, description: str, status: str = "Pending") -> str:
-    """
-    [TOOL] Cập nhật hoặc thêm mới giáo án cho một ngày cụ thể.
-    Định dạng target_date bắt buộc là YYYY-MM-DD.
-    """
+def update_daily_plan(user_id: str, target_date: str, workout_title: str, description: str, status: str = "Pending") -> str:
+    """[TOOL] Cập nhật hoặc thêm mới giáo án cho một ngày cụ thể."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        # Dùng UPSERT: Nếu ngày đó chưa có thì Thêm mới, nếu có rồi thì Ghi đè
         cursor.execute('''
-            INSERT INTO training_plans (date, workout_title, description, status)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(date) DO UPDATE SET
+            INSERT INTO training_plans (user_id, date, workout_title, description, status)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, date) DO UPDATE SET
                 workout_title=excluded.workout_title,
                 description=excluded.description,
                 status=excluded.status
-        ''', (target_date, workout_title, description, status))
+        ''', (str(user_id), target_date, workout_title, description, status))
         conn.commit()
         conn.close()
         return f"✅ Đã cập nhật giáo án ngày {target_date}: {workout_title} ({status})"
@@ -402,53 +454,47 @@ def update_daily_plan(target_date: str, workout_title: str, description: str, st
         logger.error(f"[DB] Lỗi update_daily_plan: {e}")
         return f"❌ Lỗi cập nhật giáo án: {e}"
 
-def get_upcoming_plans(limit_days: int = 7) -> str:
+def get_upcoming_plans(user_id: str, limit_days: int = 7) -> str:
     """Lấy tổng quan giáo án từ hôm nay đến N ngày tới."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT date, workout_title, description, status 
             FROM training_plans 
-            WHERE date >= date('now', 'localtime') 
+            WHERE user_id = ? AND date >= date('now', 'localtime') 
             ORDER BY date ASC 
             LIMIT ?
-        ''', (limit_days,))
+        ''', (str(user_id), limit_days))
         rows = cursor.fetchall()
         conn.close()
         
-        if not rows:
-            return "Chưa có giáo án nào được lên lịch cho những ngày tới."
-        
-        plan_text = []
-        for r in rows:
-            plan_text.append(f"- Ngày {r[0]} [{r[3]}]: {r[1]} - {r[2]}")
+        if not rows: return "Chưa có giáo án nào được lên lịch cho những ngày tới."
+        plan_text = [f"- Ngày {r['date']} [{r['status']}]: {r['workout_title']} - {r['description']}" for r in rows]
         return "\n".join(plan_text)
     except Exception as e:
         logger.error(f"[DB] Lỗi get_upcoming_plans: {e}")
         return "Lỗi đọc giáo án."
 
-def get_plan_for_date(target_date: str) -> dict:
-    """Lấy chi tiết giáo án của ĐÚNG một ngày cụ thể (Dùng cho Webhook check sau khi chạy)."""
+def get_plan_for_date(user_id: str, target_date: str) -> dict:
+    """Lấy chi tiết giáo án của ĐÚNG một ngày cụ thể."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT workout_title, description, status FROM training_plans WHERE date = ?', (target_date,))
+        cursor.execute('SELECT workout_title, description, status FROM training_plans WHERE user_id = ? AND date = ?', (str(user_id), target_date))
         row = cursor.fetchone()
         conn.close()
-        if row:
-            return {"title": row[0], "description": row[1], "status": row[2]}
-        return None
+        return dict(row) if row else None
     except Exception as e:
         logger.error(f"[DB] Lỗi get_plan_for_date: {e}")
         return None
 
-def update_plan_status(target_date: str, status: str):
-    """Cập nhật trạng thái hoàn thành (Completed/Skipped) sau khi Strava báo về."""
+def update_plan_status(user_id: str, target_date: str, status: str):
+    """Cập nhật trạng thái hoàn thành."""
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('UPDATE training_plans SET status = ? WHERE date = ?', (status, target_date))
+        cursor.execute('UPDATE training_plans SET status = ? WHERE user_id = ? AND date = ?', (status, str(user_id), target_date))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -460,7 +506,7 @@ def get_weekly_volume(user_id: str, target_date: datetime = None) -> float:
     - user_id: ID của VĐV.
     - target_date: Một ngày bất kỳ trong tuần cần tính. Nếu None, mặc định là ngày hôm nay.
     """
-    tz = pytz.timezone('Asia/Ho_Chi_Minh')
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     
     if target_date is None:
         target_date = datetime.now(tz)
@@ -490,3 +536,58 @@ def get_weekly_volume(user_id: str, target_date: datetime = None) -> float:
         return 0.0
     finally:
         conn.close()
+# =====================================================================
+# SPRINT A: WEEKLY VOLUME INTELLIGENCE (Quản lý Khối lượng Tuần)
+# =====================================================================
+
+def get_weekly_target(user_id: str, week_start_date: str) -> dict:
+    """
+    Lấy thông tin mục tiêu khối lượng của một tuần cụ thể.
+    week_start_date phải là định dạng YYYY-MM-DD của ngày Thứ 2.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT standard_target_km, actual_target_km, ai_reasoning 
+            FROM user_weekly_targets 
+            WHERE user_id = ? AND week_start_date = ?
+        ''', (str(user_id), week_start_date))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                "standard_target_km": row[0],
+                "actual_target_km": row[1],
+                "ai_reasoning": row[2]
+            }
+        return None
+    except Exception as e:
+        logger.error(f"[DB] Lỗi get_weekly_target: {e}")
+        return None
+
+def upsert_weekly_target(user_id: str, week_start_date: str, standard_target_km: float, actual_target_km: float, ai_reasoning: str) -> bool:
+    """
+    Cập nhật hoặc tạo mới mục tiêu khối lượng của một tuần.
+    Hỗ trợ AI tự động lưu lại quyết định điều chỉnh của nó.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO user_weekly_targets (user_id, week_start_date, standard_target_km, actual_target_km, ai_reasoning, updated_at)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id, week_start_date) DO UPDATE SET
+                standard_target_km = excluded.standard_target_km,
+                actual_target_km = excluded.actual_target_km,
+                ai_reasoning = excluded.ai_reasoning,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (str(user_id), week_start_date, standard_target_km, actual_target_km, ai_reasoning))
+        conn.commit()
+        conn.close()
+        logger.info(f"[DB] Đã cập nhật mục tiêu tuần {week_start_date} cho {user_id}: Std={standard_target_km}, Actual={actual_target_km}")
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Lỗi upsert_weekly_target: {e}")
+        return False

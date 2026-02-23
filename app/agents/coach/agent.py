@@ -6,7 +6,6 @@ import uuid
 import time
 from datetime import datetime
 
-# Import thư viện SDK thế hệ mới của Google
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
@@ -18,202 +17,73 @@ from app.core.database import (
     update_daily_plan, get_upcoming_plans, 
     get_plan_for_date, update_plan_status, get_weekly_volume
 )
-from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase
+from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
 from app.services.rag_memory import rag_db
+# [REFACTOR] Import các template prompt
+from app.agents.coach.prompts import ANALYSIS_SYSTEM_INSTRUCTION, ANALYSIS_USER_PROMPT, CHAT_PERSONA_TEMPLATE
+from app.agents.coach.tools import (
+    update_todays_plan, check_training_status, get_recent_workouts,
+    search_long_term_memory, get_total_run_stats, set_workout_plan, set_actual_weekly_target
+)
 
-# Configure logging
 logger = logging.getLogger("AI_COACH")
 client = genai.Client()
 
-# ==========================================
-# ĐỊNH NGHĨA KẾT CẤU CHUẨN CHO ĐẦU RA CỦA AI (STRUCTURED OUTPUT)
-# ==========================================
 class RunAnalysisResult(BaseModel):
-    analysis_text: str = Field(description="Bài phân tích chi tiết, định dạng nghiêm ngặt theo đúng output_format được yêu cầu.")
-    gcs_score: int = Field(description="Điểm tự tin hoàn thành mục tiêu (Goal Confidence Score). Chỉ trả về số nguyên từ 0 đến 100.")
-
-# ==========================================
-# 🧰 BỘ CÔNG CỤ (TOOLS) CHO AI AGENT
-# ==========================================
-def update_todays_plan(workout_title: str, description: str) -> str:
-    """
-    [TOOL] Thay đổi, cập nhật hoặc hủy bỏ giáo án của ngày hôm nay.
-    Hãy sử dụng công cụ này trong các trường hợp:
-    1. VĐV chủ động yêu cầu đổi bài, đổi lịch, báo bận hoặc muốn tập nặng/nhẹ hơn.
-    2. Bạn (AI) chủ động ép VĐV nghỉ ngơi/phục hồi khi phát hiện ACWR > 1.5 hoặc VĐV than mệt.
-    3. Điều chỉnh giáo án sát với tình hình thực tế (thời tiết, tâm lý).
-    """
-    tz = pytz.timezone('Asia/Ho_Chi_Minh')
-    now_str = datetime.now(tz).strftime('%Y-%m-%d')
-    logger.info(f"[MORNING STANDUP / CHAT] 🤖 AI tự động thay đổi lịch hôm nay: {workout_title}")
-    return update_daily_plan(now_str, workout_title, description, status="Pending")
-
-def check_training_status(user_id: str) -> str:
-    """
-    Kiểm tra chỉ số chấn thương (ACWR) và tải trọng tập luyện (TRIMP) hiện tại của vận động viên.
-    Hãy gọi công cụ này khi user hỏi về tình trạng thể lực, mệt mỏi, mỏi cơ, hoặc cần tư vấn xem có nên chạy tiếp hay nghỉ ngơi.
-    """
-    logger.info(f"[TOOL-USE] 🤖 AI tự động gọi Tool: check_training_status cho User {user_id}")
-    loads = get_training_loads(user_id)
-    acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
-    return f"ACWR: {acwr_data['acwr']} ({acwr_data['status']}) | Acute Load 7d: {loads.get('acute_load_7d')} | Chronic Load 28d: {loads.get('chronic_load_28d')}"
-
-def get_recent_workouts(user_id: str) -> str:
-    """
-    Lấy danh sách 5 bài tập chạy bộ gần nhất của vận động viên trên Strava.
-    Hãy gọi công cụ này để biết trong những ngày qua user đã chạy quãng đường bao nhiêu, nhịp tim thế nào, pace ra sao.
-    """
-    logger.info(f"[TOOL-USE] 🤖 AI tự động gọi Tool: get_recent_workouts cho User {user_id}")
-    return get_recent_runs_log(user_id, limit=5)
-
-def search_long_term_memory(query: str) -> str:
-    """
-    Tìm kiếm trí nhớ dài hạn (ChromaDB) để lấy bối cảnh về các bài chạy cũ, lời khuyên quá khứ, hoặc chấn thương đã từng xảy ra.
-    Hãy gọi công cụ này khi user nhắc đến chuyện tuần trước, tháng trước, hoặc cần so sánh hiện tại với quá khứ.
-    """
-    logger.info(f"[TOOL-USE] 🤖 AI tự động gọi Tool: search_long_term_memory với từ khóa '{query}'")
-    try:
-        results = rag_db.recall(query=query, domain="coach", n_results=3)
-        if not results or not results.get('documents') or not results['documents'][0]:
-            return "Không tìm thấy ký ức nào liên quan trong não bộ."
-        docs = results['documents'][0]
-        return "\n".join([f"- Ký ức: {doc}" for doc in docs])
-    except Exception as e:
-        return f"Lỗi truy xuất ký ức: {e}"
-
-def get_total_run_stats(user_id: str) -> str:
-    """
-    Lấy thống kê tổng quãng đường chạy (km) của vận động viên (trong 4 tuần qua, năm nay, và toàn thời gian).
-    Hãy gọi công cụ này khi user hỏi về tổng số km đã chạy.
-    """
-    logger.info(f"[TOOL-USE] 🤖 AI tự động gọi Tool: get_total_run_stats cho User {user_id}")
-    try:
-        with open("data/athlete_stats.json", "r") as f:
-            stats = json.load(f)
-        return f"Volume 4 tuần qua: {stats.get('recent_run_totals', 0):.1f} km | Năm nay (YTD): {stats.get('ytd_run_totals', 0):.1f} km"
-    except Exception as e:
-        return "Chưa có dữ liệu thống kê tổng km (Auto-Harvest chưa thu thập)."
-
-def get_rag_context(query: str, n_results: int = 2) -> str:
-    try:
-        results = rag_db.recall(query=query, domain="coach", n_results=n_results)
-        if not results or not results.get('documents') or not results['documents'][0]:
-            return "No relevant long-term memories found."
-        docs = results['documents'][0]
-        return "\n".join([f"- Ký ức: {doc}" for doc in docs])
-    except Exception as e:
-        return "Memory retrieval failed."
-
-def set_workout_plan(target_date: str, workout_title: str, description: str) -> str:
-    """
-    [CÔNG CỤ QUAN TRỌNG] Cập nhật, thêm mới hoặc thay đổi giáo án tập luyện cho một ngày cụ thể.
-    Chỉ gọi công cụ này khi VĐV yêu cầu xếp lịch, đổi lịch, báo bận, hoặc AI thấy cần điều chỉnh giáo án.
-    - target_date: Định dạng bắt buộc YYYY-MM-DD (VD: 2026-02-23).
-    - workout_title: Tên bài tập ngắn gọn (VD: Chạy phục hồi 5km, Nghỉ ngơi, Long Run 21km).
-    - description: Chi tiết pace, nhịp tim mục tiêu, hoặc lý do.
-    """
-    logger.info(f"[TOOL-USE] 🤖 AI thay đổi Plan ngày {target_date}: {workout_title}")
-    return update_daily_plan(target_date, workout_title, description, status="Pending")
-
-# ==========================================
-# LUỒNG 1: PHÂN TÍCH BÀI CHẠY TỰ ĐỘNG
-# ==========================================
+    analysis_text: str = Field(description="Bài phân tích chi tiết theo format yêu cầu.")
+    gcs_score: int = Field(description="Điểm tự tin hoàn thành mục tiêu (0-100).")
+# --- LUỒNG 1: PHÂN TÍCH BÀI CHẠY ---
 def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str, meta_data: dict, config: dict):
-    activity_id = str(activity_id) 
-    logger.info(f"[COACH AGENT] Analyzing run: {activity_name} (ID: {activity_id})")
-
-    tz = pytz.timezone('Asia/Ho_Chi_Minh')
+    logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
-    # TRÍCH XUẤT NGÀY CHẠY THỰC TẾ TỪ STRAVA META_DATA
+    # 1. Chuẩn bị dữ liệu Context
     start_date_raw = meta_data.get("start_date_local", "")
-    if start_date_raw:
-        try:
-            run_date_str = start_date_raw[:10]
-        except Exception:
-            run_date_str = now.strftime('%Y-%m-%d')
-    else:
-        logger.warning(f"[COACH AGENT] Không tìm thấy start_date_local cho {activity_id}. Dùng giờ hệ thống.")
-        run_date_str = now.strftime('%Y-%m-%d')
-    
+    run_date_str = start_date_raw[:10] if start_date_raw else now.strftime('%Y-%m-%d')
     race_date_str = config.get("race_date", "")
-    current_goal = config.get("current_goal", "Duy trì thể lực")
     
-    # [CẬP NHẬT KIẾN TRÚC] Tính Phase bằng Python
-    if race_date_str:
-        phase = calculate_training_phase(race_date_str)
-        try:
-            race_date = datetime.strptime(race_date_str, "%Y-%m-%d").replace(tzinfo=tz)
-            days_to_race = (race_date - now).days
-            weeks_to_race = max(0, days_to_race // 7)
-            countdown_text = f"{weeks_to_race} weeks ({days_to_race} days) remaining to Race Day."
-        except ValueError:
-            countdown_text = "Invalid race date format."
-    else:
-        phase, countdown_text = "Off-season", f"Focus: {current_goal}"
+    phase_info = calculate_training_phase(race_date_str)
+    phase_text = phase_info["phase"]
+    countdown_text = f"Còn {phase_info['weeks_left']} tuần đến ngày đua." if race_date_str else "Duy trì thể lực."
 
-    max_hr = int(config.get("max_hr", 185))
-    rest_hr = int(config.get("rest_hr", 55))
-    
     loads = get_training_loads(str(chat_id))
-    acute_load_7d = loads.get("acute_load_7d", 0)
-    chronic_load_28d = loads.get("chronic_load_28d", 0)
-    acwr_data = calculate_acwr(acute_load_7d, chronic_load_28d)
-    recent_log = get_recent_runs_log(str(chat_id), limit=5)
-    long_term_memory = get_rag_context(query=f"Phân tích bài chạy {activity_name}", n_results=2)
-
-    # Truy xuất Giáo án ĐÚNG VÀO NGÀY CHẠY từ SQLite
-    today_plan = get_plan_for_date(run_date_str)
-    if today_plan:
-        plan_context = f"Tên bài: {today_plan['title']}\nChi tiết: {today_plan['description']}"
-    else:
-        plan_context = "Không có giáo án nào được lên lịch cho ngày này (VĐV chạy tự do)."
-
-    system_instruction = config.get("system_instruction", "You are an elite AI Running Coach.")
-    user_profile = config.get("user_profile", "")
+    acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
     
-    science_context = f"""
-    [TEMPORAL & PERIODIZATION CONTEXT]
-    - System Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')}
-    - Activity Run Date: {run_date_str}
-    - Target: {countdown_text}
-    - Current Phase: BẮT BUỘC ÁP DỤNG '{phase}'
-    
-    [GIÁO ÁN ĐƯỢC GIAO CHO NGÀY NÀY (PLAN)]
-    {plan_context}
-    
-    [SPORTS SCIENCE METRICS]
-    - Acute Load: {acute_load_7d} | Chronic Load: {chronic_load_28d}
-    - ACWR: {acwr_data['acwr']} ({acwr_data['status']})
-    
-    [RECENT WORKOUTS LOG]
-    {recent_log}
-    
-    [LONG-TERM MEMORY]
-    {long_term_memory}
-    """
+    today_plan = get_plan_for_date(str(chat_id), run_date_str)
+    plan_context = f"Tên bài: {today_plan['title']}\nChi tiết: {today_plan['description']}" if today_plan else "Chạy tự do."
 
-    full_instruction = f"{system_instruction}\n\n[USER PHYSIOLOGY]\n{user_profile}\nMax HR: {max_hr} | Rest HR: {rest_hr}\n\n{science_context}"
+    # 2. [REFACTOR] Format Prompt từ Template
+    full_instruction = ANALYSIS_SYSTEM_INSTRUCTION.format(
+        system_instruction=config.get("system_instruction", ""),
+        user_profile=config.get("user_profile", ""),
+        max_hr=config.get("max_hr", 185),
+        rest_hr=config.get("rest_hr", 55),
+        run_date_str=run_date_str,
+        phase=phase_text,
+        countdown_text=countdown_text,
+        acwr=acwr_data['acwr'],
+        acwr_status=acwr_data['status']
+    )
+
+    meta_text = "\n".join([f"Km {s['km']}: {s['pace']:.2f} m/s | HR {int(s['hr'])}" for s in meta_data.get('splits', [])])
     
-    task_description = config.get("task_description", "Analyze this run.") 
-    task_description += "\nBẮT BUỘC: Hãy so sánh kết quả chạy thực tế với [GIÁO ÁN ĐƯỢC GIAO CHO NGÀY NÀY]. VĐV có tuân thủ đúng cự ly, pace, và mục đích của giáo án không? Hãy nhận xét nghiêm khắc về tính kỷ luật."
+    prompt = ANALYSIS_USER_PROMPT.format(
+        activity_name=activity_name,
+        plan_context=plan_context,
+        meta_text=meta_text,
+        task_description=config.get("task_description", "Analyze this run."),
+        output_format=config.get("output_format", "Output JSON."),
+        csv_data=csv_data
+    )
 
-    output_format = config.get("output_format", "Output in Plain Text.")
-    current_model_name = config.get("model_name", "models/gemini-2.0-flash")
+    debug_log_prompt("DEBUG PROMPT ANALYSIS", prompt)
 
-    meta_text = f"[DEVICE] {meta_data.get('device_name', 'Unknown')}\n"
-    if meta_data.get('splits'):
-        meta_text += "\n".join([f"Km {s['km']}: {s['pace']:.2f} m/s | HR {int(s['hr'])}" for s in meta_data.get('splits', [])])
-
+    # 3. Gọi Gemini với Native Schema (Sửa lỗi Warning)
     try:
-        raw_history = load_history_for_gemini(str(chat_id), limit=50) if chat_id else []
-        formatted_history = [{"role": msg["role"], "parts": [{"text": msg["parts"][0]}]} for msg in raw_history]
-        
-        # [CẬP NHẬT KIẾN TRÚC] Ép AI trả về JSON Schema
         chat_session = client.chats.create(
-            model=current_model_name,
-            history=formatted_history,
+            model=config.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=full_instruction,
                 temperature=0.7,
@@ -221,180 +91,72 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
                 response_schema=RunAnalysisResult
             )
         )
-    except Exception as e:
-        logger.error(f"Error initializing AI: {e}")
-        return None
-
-    prompt = f"""
-    [ACTIVITY DATA] Name: {activity_name}
-    [TASK] {task_description}
-    [METADATA] {meta_text}
-    [FORMAT_REQUIREMENT] {output_format}. Đảm bảo trường 'analysis_text' tuân thủ tuyệt đối format này.
-    [RAW CSV]
-    {csv_data}
-    """
-
-    # [CẬP NHẬT KIẾN TRÚC] Log Debug Observability
-    if os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
-        logger.info(f"\n========== [DEBUG PROMPT TO GEMINI] ==========\n{prompt}\n==============================================")
-
-    max_retries = 3
-    analysis_text = None
-    
-    for attempt in range(max_retries):
-        try:
-            response = chat_session.send_message(prompt) 
-            
-            # [CẬP NHẬT KIẾN TRÚC] Parse JSON Pydantic, gỡ bỏ Regex
-            result_data = json.loads(response.text)
-            
-            analysis_text = result_data.get("analysis_text", "")
-            gcs_score = result_data.get("gcs_score", 0)
-            
-            gcs_score = max(0, min(100, gcs_score))
-            update_run_gcs_score(activity_id, str(chat_id), gcs_score)
-            
-            break
-        except json.JSONDecodeError as json_err:
-            logger.error(f"[COACH AGENT] AI không trả về chuẩn JSON: {json_err}")
-            break
-        except Exception as api_err:
-            if "429" in str(api_err):
-                logger.warning("[COACH AGENT] Rate limit 429 hit. Sleeping 60s...")
-                time.sleep(60)
-            else:
-                logger.error(f"[COACH AGENT] API Error: {api_err}")
-                break
-
-    if not analysis_text: return None
-
-    try:
+        response = chat_session.send_message(prompt)
+        result = json.loads(response.text)
+        
+        analysis_text = result.get("analysis_text", "")
+        update_run_gcs_score(activity_id, str(chat_id), result.get("gcs_score", 0))
+        
         if chat_id:
             save_message(str(chat_id), "model", f"[ANALYSIS] {activity_name}: {analysis_text}")
-            
-            memory_content = f"Sự kiện: VĐV chạy bài '{activity_name}' vào ngày {run_date_str}.\nPhân tích:\n{analysis_text}"
-            rag_db.memorize(
-                doc_id=str(activity_id), 
-                content=memory_content, 
-                domain="coach", 
-                extra_meta={"user_id": str(chat_id), "type": "run_analysis"}
-            )
-            
-            if today_plan and today_plan['status'] == 'Pending':
-                update_plan_status(run_date_str, "Completed")
-                logger.info(f"[COACH AGENT] Đã cập nhật status giáo án ngày {run_date_str} thành Completed.")
-
+            if today_plan: update_plan_status(str(chat_id), run_date_str, "Completed")
+        
         return analysis_text
     except Exception as e:
-        logger.error(f"Post-Analysis Save Error: {e}")
+        logger.error(f"[COACH AGENT] Analysis Error: {e}")
         return None
 
-# ==========================================
-# LUỒNG 2: AI AGENTIC CHAT
-# ==========================================
+# --- LUỒNG 2: CHAT TELEGRAM ---
 def handle_telegram_chat(chat_id: str, text: str, config: dict):
     chat_id = str(chat_id)
-    if text.strip().lower() in ["/clear", "/reset", "xóa nhớ"]:
+    if text.strip().lower() in ["/clear", "/reset"]:
         clear_history(chat_id)
-        send_telegram_msg(chat_id, "🧹 Não bộ đã được làm sạch. Sẵn sàng nhận lệnh mới!")
+        send_telegram_msg(chat_id, "🧹 Đã xóa sạch ký ức ngắn hạn.")
         return
 
-    tz = pytz.timezone('Asia/Ho_Chi_Minh')
-    now = datetime.now(tz)
-    now_str = now.strftime('%A, %Y-%m-%d %H:%M:%S')
+    # 1. Tính toán bối cảnh
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    phase_info = calculate_training_phase(config.get("race_date", ""))
+    actual_volume = get_weekly_volume(chat_id)
+    # ==========================================================
+    # [THÊM MỚI SPRINT A] TÍNH TOÁN QUỸ KHỐI LƯỢNG TUẦN
+    # ==========================================================
+    # Gọi hàm đã refactor DRY từ utils.py để lấy chuỗi 4 dữ kiện
+    weekly_decision_context = get_formatted_weekly_context(str(chat_id))
 
-    race_date_str = config.get("race_date", "")
-    current_goal = config.get("current_goal", "Duy trì thể lực")
-    
-    # [CẬP NHẬT KIẾN TRÚC] Tính Phase bằng Python
-    if race_date_str:
-        phase = calculate_training_phase(race_date_str)
-        try:
-            race_date = datetime.strptime(race_date_str, "%Y-%m-%d").replace(tzinfo=tz)
-            days_to_race = (race_date - now).days
-            weeks_to_race = max(0, days_to_race // 7)
-            countdown_text = f"{weeks_to_race} weeks ({days_to_race} days) remaining."
-        except ValueError:
-            countdown_text = "Invalid date."
-    else:
-        phase, countdown_text = "Off-season", f"Focus: {current_goal}"
+    # 2. [REFACTOR] Format Persona từ Template
+    full_persona = CHAT_PERSONA_TEMPLATE.format(
+        system_instruction=config.get("system_instruction", ""),
+        now_str=datetime.now(tz).strftime('%A, %Y-%m-%d %H:%M:%S'),
+        countdown_text=f"Còn {phase_info['weeks_left']} tuần đến Race.",
+        phase_text=phase_info["phase"],
+        microcycle_text=phase_info["microcycle"],
+        chat_id=chat_id,
+        actual_volume=actual_volume,
+        weekly_decision_context=weekly_decision_context,
+        current_plans=get_upcoming_plans(str(chat_id), limit_days=7),
+        user_profile=config.get("user_profile", "")
+    )
 
-    current_model_name = config.get("model_name", "models/gemini-2.0-flash")
-    system_instruction = config.get("system_instruction", "You are Coach Dyno.")
-    user_profile = config.get("user_profile", "")
-
-    current_plans = get_upcoming_plans(limit_days=7)
-
-    full_persona = f"""
-    {system_instruction}
+    debug_log_prompt("DEBUG CHAT INPUT", f"[PERSONA]:\n{full_persona}\n[TEXT]: {text}")
     
-    [CONTEXT]
-    - System Time: {now_str}
-    - Target: {countdown_text}
-    - Current Phase: BẮT BUỘC SỬ DỤNG '{phase}'
-    - User ID of the runner: {chat_id}
-    
-    [GIÁO ÁN TẬP LUYỆN HIỆN TẠI (SINGLE SOURCE OF TRUTH)]
-    {current_plans}
-    
-    [USER PROFILE]
-    {user_profile}
-    
-    [CRITICAL INSTRUCTION FOR TOOL USE]
-    - You are chatting with the user on Telegram.
-    - Dùng Tool để tra cứu ACWR/TRIMP, Lịch sử chạy, hoặc Ký ức nếu cần.
-    - NẾU user yêu cầu lên lịch, đổi lịch, báo bận, HOẶC bạn nhận thấy user cần nghỉ ngơi: BẮT BUỘC SỬ DỤNG TOOL `set_workout_plan` để cập nhật lại giáo án.
-    - If you use a tool, always pass the 'user_id' exactly as '{chat_id}'.
-    - If you lack the tools to answer a specific part of the user's question, clearly explain that to the user. DO NOT return an empty response.
-    """
-    
-    # [CẬP NHẬT KIẾN TRÚC] Log Debug Observability (Sạch & Chính xác)
-    if os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
-        logger.info(
-            f"\n========== [DEBUG TELEGRAM CHAT INPUT] ==========\n"
-            f"[FULL PERSONA (SYSTEM)]:\n{full_persona}\n"
-            f"-------------------------------------------------\n"
-            f"[USER MESSAGE (TEXT)]:\n{text}\n"
-            f"================================================="
-        )
-            
     try:
-        raw_history = load_history_for_gemini(chat_id, limit=30)
-        formatted_history = [{"role": msg["role"], "parts": [{"text": msg["parts"][0]}]} for msg in raw_history]
+        raw_history = load_history_for_gemini(chat_id, limit=20)
+        formatted_history = [{"role": m["role"], "parts": [{"text": m["parts"][0]}]} for m in raw_history]
         
-        ai_tools = [check_training_status, get_recent_workouts, search_long_term_memory, get_total_run_stats, set_workout_plan, get_weekly_volume]
-
         chat_session = client.chats.create(
-            model=current_model_name,
+            model=config.get("model_name", "models/gemini-2.0-flash"),
             history=formatted_history,
             config=types.GenerateContentConfig(
                 system_instruction=full_persona,
-                temperature=0.7,
-                tools=ai_tools 
+                tools=[check_training_status, get_recent_workouts, search_long_term_memory, set_workout_plan, set_actual_weekly_target]
             )
         )
-        
         response = chat_session.send_message(text)
+        reply = response.text or "⚠️ Coach Dyno không thể trả lời lúc này."
         
-        if response.text:
-            reply_text = response.text
-        else:
-            logger.error(f"[TELEGRAM] AI trả về kết quả Rỗng. Nguyên nhân có thể do kẹt Tool. Candidates: {response.candidates}")
-            reply_text = "⚠️ Coach Dyno đang kiểm tra số liệu nhưng gặp trục trặc khi tổng hợp (Thiếu công cụ đo lường). Anh thử hỏi tách từng ý ra nhé!"
-
         save_message(chat_id, "user", text)
-        save_message(chat_id, "model", reply_text)
-        send_telegram_msg(chat_id, reply_text)
-        
-        if len(reply_text) > 100 and "⚠️" not in reply_text:
-            doc_id = f"chat_{uuid.uuid4().hex[:8]}"
-            rag_db.memorize(
-                doc_id=doc_id, 
-                content=f"Vào {now_str}, User: '{text}'. Coach: '{reply_text}'", 
-                domain="coach", 
-                extra_meta={"user_id": chat_id, "type": "chat_advice"}
-            )
-            
+        save_message(chat_id, "model", reply)
+        send_telegram_msg(chat_id, reply)
     except Exception as e:
         logger.error(f"[TELEGRAM] Chat Error: {e}")
-        send_telegram_msg(chat_id, "⚠️ Coach Dyno đang bị 'chuột rút' (Lỗi Agent). Thử /clear xem sao!")
