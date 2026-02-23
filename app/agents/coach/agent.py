@@ -4,21 +4,21 @@ import logging
 import pytz
 import uuid
 import time
-import re
 from datetime import datetime
 
 # Import thư viện SDK thế hệ mới của Google
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
 from app.core.notification import send_telegram_msg
 from app.core.database import (
     save_message, load_history_for_gemini, clear_history,
     get_training_loads, get_recent_runs_log, update_run_gcs_score, 
     update_daily_plan, get_upcoming_plans, 
-    get_plan_for_date, update_plan_status
+    get_plan_for_date, update_plan_status, get_weekly_volume
 )
-from app.agents.coach.utils import calculate_trimp, calculate_acwr
+from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase
 from app.services.rag_memory import rag_db
 
 # Configure logging
@@ -26,9 +26,15 @@ logger = logging.getLogger("AI_COACH")
 client = genai.Client()
 
 # ==========================================
+# ĐỊNH NGHĨA KẾT CẤU CHUẨN CHO ĐẦU RA CỦA AI (STRUCTURED OUTPUT)
+# ==========================================
+class RunAnalysisResult(BaseModel):
+    analysis_text: str = Field(description="Bài phân tích chi tiết, định dạng nghiêm ngặt theo đúng output_format được yêu cầu.")
+    gcs_score: int = Field(description="Điểm tự tin hoàn thành mục tiêu (Goal Confidence Score). Chỉ trả về số nguyên từ 0 đến 100.")
+
+# ==========================================
 # 🧰 BỘ CÔNG CỤ (TOOLS) CHO AI AGENT
 # ==========================================
-# Công cụ cho AI buổi sáng
 def update_todays_plan(workout_title: str, description: str) -> str:
     """
     [TOOL] Thay đổi, cập nhật hoặc hủy bỏ giáo án của ngày hôm nay.
@@ -110,7 +116,7 @@ def set_workout_plan(target_date: str, workout_title: str, description: str) -> 
     return update_daily_plan(target_date, workout_title, description, status="Pending")
 
 # ==========================================
-# LUỒNG 1: PHÂN TÍCH BÀI CHẠY TỰ ĐỘNG (ĐÃ VÁ LỖI THỜI GIAN)
+# LUỒNG 1: PHÂN TÍCH BÀI CHẠY TỰ ĐỘNG
 # ==========================================
 def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str, meta_data: dict, config: dict):
     activity_id = str(activity_id) 
@@ -120,11 +126,10 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
-    # [FIX BUG] TRÍCH XUẤT NGÀY CHẠY THỰC TẾ TỪ STRAVA META_DATA
+    # TRÍCH XUẤT NGÀY CHẠY THỰC TẾ TỪ STRAVA META_DATA
     start_date_raw = meta_data.get("start_date_local", "")
     if start_date_raw:
         try:
-            # Cắt 10 ký tự đầu tiên để lấy YYYY-MM-DD
             run_date_str = start_date_raw[:10]
         except Exception:
             run_date_str = now.strftime('%Y-%m-%d')
@@ -135,17 +140,16 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     race_date_str = config.get("race_date", "")
     current_goal = config.get("current_goal", "Duy trì thể lực")
     
+    # [CẬP NHẬT KIẾN TRÚC] Tính Phase bằng Python
     if race_date_str:
+        phase = calculate_training_phase(race_date_str)
         try:
             race_date = datetime.strptime(race_date_str, "%Y-%m-%d").replace(tzinfo=tz)
             days_to_race = (race_date - now).days
             weeks_to_race = max(0, days_to_race // 7)
-            if weeks_to_race <= 2: phase = "Tapering (Giảm tải, giữ điểm rơi)"
-            elif weeks_to_race <= 6: phase = "Peak Training (Tích lũy tối đa)"
-            else: phase = "Base/Build (Xây dựng nền tảng)"
             countdown_text = f"{weeks_to_race} weeks ({days_to_race} days) remaining to Race Day."
         except ValueError:
-            phase, countdown_text = "Off-season", "Invalid race date format."
+            countdown_text = "Invalid race date format."
     else:
         phase, countdown_text = "Off-season", f"Focus: {current_goal}"
 
@@ -159,7 +163,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     recent_log = get_recent_runs_log(str(chat_id), limit=5)
     long_term_memory = get_rag_context(query=f"Phân tích bài chạy {activity_name}", n_results=2)
 
-    # [NEW] Truy xuất Giáo án ĐÚNG VÀO NGÀY CHẠY từ SQLite
+    # Truy xuất Giáo án ĐÚNG VÀO NGÀY CHẠY từ SQLite
     today_plan = get_plan_for_date(run_date_str)
     if today_plan:
         plan_context = f"Tên bài: {today_plan['title']}\nChi tiết: {today_plan['description']}"
@@ -172,9 +176,9 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     science_context = f"""
     [TEMPORAL & PERIODIZATION CONTEXT]
     - System Current Time: {now.strftime('%Y-%m-%d %H:%M:%S')}
-    - Activity Run Date: {run_date_str}  <-- ÉP AI BIẾT NGÀY CHẠY THỰC TẾ
+    - Activity Run Date: {run_date_str}
     - Target: {countdown_text}
-    - Current Phase: {phase}
+    - Current Phase: BẮT BUỘC ÁP DỤNG '{phase}'
     
     [GIÁO ÁN ĐƯỢC GIAO CHO NGÀY NÀY (PLAN)]
     {plan_context}
@@ -206,12 +210,15 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
         raw_history = load_history_for_gemini(str(chat_id), limit=50) if chat_id else []
         formatted_history = [{"role": msg["role"], "parts": [{"text": msg["parts"][0]}]} for msg in raw_history]
         
+        # [CẬP NHẬT KIẾN TRÚC] Ép AI trả về JSON Schema
         chat_session = client.chats.create(
             model=current_model_name,
             history=formatted_history,
             config=types.GenerateContentConfig(
                 system_instruction=full_instruction,
-                temperature=0.7
+                temperature=0.7,
+                response_mime_type="application/json",
+                response_schema=RunAnalysisResult
             )
         )
     except Exception as e:
@@ -222,10 +229,14 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     [ACTIVITY DATA] Name: {activity_name}
     [TASK] {task_description}
     [METADATA] {meta_text}
-    [FORMAT] {output_format}
+    [FORMAT_REQUIREMENT] {output_format}. Đảm bảo trường 'analysis_text' tuân thủ tuyệt đối format này.
     [RAW CSV]
     {csv_data}
     """
+
+    # [CẬP NHẬT KIẾN TRÚC] Log Debug Observability
+    if os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
+        logger.info(f"\n========== [DEBUG PROMPT TO GEMINI] ==========\n{prompt}\n==============================================")
 
     max_retries = 3
     analysis_text = None
@@ -233,21 +244,26 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     for attempt in range(max_retries):
         try:
             response = chat_session.send_message(prompt) 
-            analysis_text = response.text
             
-            gcs_pattern = r"(?:🎯|GOAL CONFIDENCE SCORE|GCS).*?[:\s](\d{1,3})%"
-            gcs_match = re.search(gcs_pattern, analysis_text, re.IGNORECASE | re.UNICODE)
+            # [CẬP NHẬT KIẾN TRÚC] Parse JSON Pydantic, gỡ bỏ Regex
+            result_data = json.loads(response.text)
             
-            if gcs_match:
-                gcs_score = int(gcs_match.group(1))
-                gcs_score = max(0, min(100, gcs_score))
-                # [FIX BUG] Truyền thêm chat_id để Database biết bài chạy này của ai
-                update_run_gcs_score(activity_id, str(chat_id), gcs_score)
+            analysis_text = result_data.get("analysis_text", "")
+            gcs_score = result_data.get("gcs_score", 0)
+            
+            gcs_score = max(0, min(100, gcs_score))
+            update_run_gcs_score(activity_id, str(chat_id), gcs_score)
+            
+            break
+        except json.JSONDecodeError as json_err:
+            logger.error(f"[COACH AGENT] AI không trả về chuẩn JSON: {json_err}")
             break
         except Exception as api_err:
             if "429" in str(api_err):
+                logger.warning("[COACH AGENT] Rate limit 429 hit. Sleeping 60s...")
                 time.sleep(60)
             else:
+                logger.error(f"[COACH AGENT] API Error: {api_err}")
                 break
 
     if not analysis_text: return None
@@ -256,7 +272,6 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
         if chat_id:
             save_message(str(chat_id), "model", f"[ANALYSIS] {activity_name}: {analysis_text}")
             
-            # [FIX BUG] Sửa lại RAG Memorize để dùng đúng ngày chạy (run_date_str) thay vì ngày hệ thống
             memory_content = f"Sự kiện: VĐV chạy bài '{activity_name}' vào ngày {run_date_str}.\nPhân tích:\n{analysis_text}"
             rag_db.memorize(
                 doc_id=str(activity_id), 
@@ -265,7 +280,6 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
                 extra_meta={"user_id": str(chat_id), "type": "run_analysis"}
             )
             
-            # [NEW] Khép kín vòng lặp: Đánh dấu Plan hôm nay là Đã hoàn thành
             if today_plan and today_plan['status'] == 'Pending':
                 update_plan_status(run_date_str, "Completed")
                 logger.info(f"[COACH AGENT] Đã cập nhật status giáo án ngày {run_date_str} thành Completed.")
@@ -276,7 +290,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
         return None
 
 # ==========================================
-# LUỒNG 2: AI AGENTIC CHAT (ĐÃ NÂNG CẤP TOOL-USE)
+# LUỒNG 2: AI AGENTIC CHAT
 # ==========================================
 def handle_telegram_chat(chat_id: str, text: str, config: dict):
     chat_id = str(chat_id)
@@ -292,24 +306,23 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     race_date_str = config.get("race_date", "")
     current_goal = config.get("current_goal", "Duy trì thể lực")
     
+    # [CẬP NHẬT KIẾN TRÚC] Tính Phase bằng Python
     if race_date_str:
+        phase = calculate_training_phase(race_date_str)
         try:
             race_date = datetime.strptime(race_date_str, "%Y-%m-%d").replace(tzinfo=tz)
             days_to_race = (race_date - now).days
             weeks_to_race = max(0, days_to_race // 7)
-            phase = "Tapering" if weeks_to_race <= 2 else "Peak Training" if weeks_to_race <= 6 else "Base/Build"
             countdown_text = f"{weeks_to_race} weeks ({days_to_race} days) remaining."
         except ValueError:
-            phase, countdown_text = "Off-season", "Invalid date."
+            countdown_text = "Invalid date."
     else:
         phase, countdown_text = "Off-season", f"Focus: {current_goal}"
 
-    # ĐÓNG GÓI NHÂN CÁCH MỎNG (THIN PERSONA)
     current_model_name = config.get("model_name", "models/gemini-2.0-flash")
     system_instruction = config.get("system_instruction", "You are Coach Dyno.")
     user_profile = config.get("user_profile", "")
 
-    # [NEW] Đọc giáo án hiện tại từ CSDL để AI nắm rõ lịch trình
     current_plans = get_upcoming_plans(limit_days=7)
 
     full_persona = f"""
@@ -318,7 +331,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     [CONTEXT]
     - System Time: {now_str}
     - Target: {countdown_text}
-    - Current Phase: {phase}
+    - Current Phase: BẮT BUỘC SỬ DỤNG '{phase}'
     - User ID of the runner: {chat_id}
     
     [GIÁO ÁN TẬP LUYỆN HIỆN TẠI (SINGLE SOURCE OF TRUTH)]
@@ -334,13 +347,22 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     - If you use a tool, always pass the 'user_id' exactly as '{chat_id}'.
     - If you lack the tools to answer a specific part of the user's question, clearly explain that to the user. DO NOT return an empty response.
     """
-
+    
+    # [CẬP NHẬT KIẾN TRÚC] Log Debug Observability (Sạch & Chính xác)
+    if os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
+        logger.info(
+            f"\n========== [DEBUG TELEGRAM CHAT INPUT] ==========\n"
+            f"[FULL PERSONA (SYSTEM)]:\n{full_persona}\n"
+            f"-------------------------------------------------\n"
+            f"[USER MESSAGE (TEXT)]:\n{text}\n"
+            f"================================================="
+        )
+            
     try:
         raw_history = load_history_for_gemini(chat_id, limit=30)
         formatted_history = [{"role": msg["role"], "parts": [{"text": msg["parts"][0]}]} for msg in raw_history]
         
-        # [NEW] Cấp thêm quyền trượng: set_workout_plan
-        ai_tools = [check_training_status, get_recent_workouts, search_long_term_memory, get_total_run_stats, set_workout_plan]
+        ai_tools = [check_training_status, get_recent_workouts, search_long_term_memory, get_total_run_stats, set_workout_plan, get_weekly_volume]
 
         chat_session = client.chats.create(
             model=current_model_name,
@@ -354,7 +376,6 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         
         response = chat_session.send_message(text)
         
-        # [FIX BUG] Bẫy lỗi an toàn cho NoneType
         if response.text:
             reply_text = response.text
         else:

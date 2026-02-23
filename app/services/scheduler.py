@@ -7,7 +7,7 @@ import logging
 import uuid
 from datetime import datetime
 
-# [FIX BUG] Nhập thư viện AI và các hàm tính toán
+# Nhập thư viện AI và các hàm tính toán
 from google import genai
 from google.genai import types
 
@@ -20,11 +20,12 @@ from app.core.database import (
     get_plan_for_date,
     update_daily_plan
 )
-from app.agents.coach.utils import calculate_acwr
+from app.agents.coach.utils import calculate_acwr, calculate_training_phase
 from app.services.rag_memory import rag_db
 from app.agents.coach.harvest import harvest_data
 from app.services.backup import perform_backup
 from app.agents.coach.agent import update_todays_plan
+
 logger = logging.getLogger("AI_COACH")
 TZ_VN = pytz.timezone('Asia/Ho_Chi_Minh')
 scheduler = AsyncIOScheduler()
@@ -40,6 +41,7 @@ async def task_morning_briefing():
 
     logger.info("[SCHEDULER] Đang kích hoạt Intelligent Morning Standup...")
     config = load_config()
+    
     now = datetime.now(TZ_VN)
     now_date_str = now.strftime('%Y-%m-%d')
     now_display_str = now.strftime('%A, %d/%m/%Y')
@@ -51,21 +53,26 @@ async def task_morning_briefing():
     
     raw_chat = load_history_for_gemini(chat_id, limit=6)
     chat_context = "\n".join([f"{msg['role'].upper()}: {msg['parts'][0]}" for msg in raw_chat]) if raw_chat else "Không có tâm sự gì gần đây."
-
+    
     # Đọc giáo án SQLite mặc định của ngày hôm nay
     today_plan = get_plan_for_date(now_date_str)
     if today_plan:
         plan_context = f"Tên bài: {today_plan['title']} | Chi tiết: {today_plan['description']}"
     else:
         plan_context = "Hôm nay chạy tự do, chưa có giáo án."
-
+        
     system_instruction = config.get("system_instruction", "You are Coach Dyno.")
+    
+    # [CẬP NHẬT KIẾN TRÚC] Tính toán Phase Deterministic bằng Python
+    race_date_str = config.get("race_date", "")
+    current_phase = calculate_training_phase(race_date_str)
     
     # 2. KIẾN TẠO PROMPT (TRUYỀN DỮ LIỆU ĐA CHIỀU)
     prompt = f"""
     [DAILY STANDUP - {now_display_str}]
     
-    1. THỂ TRẠNG:
+    1. THỂ TRẠNG & TIẾN ĐỘ:
+    - Giai đoạn tập luyện hiện tại: BẮT BUỘC ÁP DỤNG '{current_phase}'
     - ACWR: {acwr_data['acwr']} ({acwr_data['status']})
     
     2. LỊCH SỬ THỰC THI (7 ngày):
@@ -83,7 +90,11 @@ async def task_morning_briefing():
     - NẾU mọi thứ ổn định: Không cần dùng Tool, chỉ cần gửi lời chúc năng lượng và nhắc nhở thực hiện giáo án.
     - Viết một tin nhắn gửi VĐV cực kỳ ngắn gọn, sắc bén như một HLV thực thụ.
     """
-
+    
+    # [CẬP NHẬT KIẾN TRÚC] Log Debug Observability
+    if os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
+        logger.info(f"\n========== [DEBUG MORNING STANDUP PROMPT] ==========\n{prompt}\n====================================================")
+        
     try:
         model_name = config.get("model_name", "models/gemini-2.5-flash")
         
@@ -96,6 +107,7 @@ async def task_morning_briefing():
                 tools=[update_todays_plan]
             )
         )
+        
         response = chat_session.send_message(prompt)
         
         if response.text:

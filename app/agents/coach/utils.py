@@ -1,5 +1,8 @@
 import numpy as np
 import logging
+from datetime import datetime
+import pytz
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -91,3 +94,38 @@ def analyze_decoupling(df):
         decoupling = (ef1 - ef2) / ef1 * 100
         
     return round(decoupling, 2)
+
+def calculate_training_phase(race_date_str: str, timezone_str: str = "Asia/Ho_Chi_Minh") -> str:
+    """
+    Tính toán chính xác Training Phase dựa trên số tuần lịch đếm ngược đến Race Date.
+    - Tuần 1-2 (0-14 ngày): Taper Phase (Nhả khối lượng)
+    - Tuần 3-4 (15-28 ngày): Peak Phase (Đỉnh điểm, cường độ cao nhất)
+    - Tuần 5-8 (29-56 ngày): Build Phase (Tích lũy khối lượng)
+    - Tuần 9+ (>56 ngày): Base Phase (Xây nền tảng Aerobic)
+    """
+    if not race_date_str:
+        return "Base Phase (Chưa có mục tiêu cụ thể)"
+        
+    try:
+        tz = pytz.timezone(timezone_str)
+        today = datetime.now(tz).date()
+        race_date = datetime.strptime(race_date_str, "%Y-%m-%d").date()
+        
+        days_left = (race_date - today).days
+        
+        if days_left <= 0:
+            return "Race Week (Tuần thi đấu)"
+            
+        # Làm tròn lên để ra số tuần chẵn (VD: 34 ngày = 4.85 -> Tuần 5)
+        weeks_left = math.ceil(days_left / 7.0)
+        
+        if weeks_left <= 2:
+            return f"Taper Phase (Còn {weeks_left} tuần)"
+        elif weeks_left <= 4:
+            return f"Peak Phase (Còn {weeks_left} tuần)"
+        elif weeks_left <= 8:
+            return f"Build Phase (Còn {weeks_left} tuần)"
+        else:
+            return f"Base Phase (Còn {weeks_left} tuần)"
+    except Exception as e:
+        return "Base Phase (Lỗi tính toán ngày)"

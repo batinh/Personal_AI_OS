@@ -3,6 +3,7 @@ import os
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
+import pytz
 
 logger = logging.getLogger("AI_COACH")
 DB_PATH = "data/os_core.db"  # Đổi tên file để đánh dấu kỷ nguyên mới (Multi-Tenant)
@@ -452,3 +453,40 @@ def update_plan_status(target_date: str, status: str):
         conn.close()
     except Exception as e:
         logger.error(f"[DB] Lỗi update_plan_status: {e}")
+
+def get_weekly_volume(user_id: str, target_date: datetime = None) -> float:
+    """
+    [GENERIC FUNCTION] Tính tổng km đã chạy của một tuần bất kỳ.
+    - user_id: ID của VĐV.
+    - target_date: Một ngày bất kỳ trong tuần cần tính. Nếu None, mặc định là ngày hôm nay.
+    """
+    tz = pytz.timezone('Asia/Ho_Chi_Minh')
+    
+    if target_date is None:
+        target_date = datetime.now(tz)
+    elif target_date.tzinfo is None: # Đảm bảo có múi giờ
+        target_date = tz.localize(target_date)
+        
+    # Xác định Thứ 2 (Start) và Chủ Nhật (End) của tuần chứa target_date
+    monday = target_date - timedelta(days=target_date.weekday())
+    sunday = monday + timedelta(days=6)
+    
+    # Ép kiểu string để query SQLite (từ 00:00:00 Thứ 2 đến 23:59:59 Chủ Nhật)
+    start_str = monday.strftime('%Y-%m-%d 00:00:00')
+    end_str = sunday.strftime('%Y-%m-%d 23:59:59')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            SELECT SUM(distance_km) FROM run_activities 
+            WHERE user_id = ? AND start_date >= ? AND start_date <= ?
+        ''', (str(user_id), start_str, end_str))
+        
+        result = cursor.fetchone()[0]
+        return round(result, 2) if result else 0.0
+    except Exception as e:
+        logger.error(f"[DB] Lỗi tính volume tuần cho {target_date.strftime('%Y-%m-%d')}: {e}")
+        return 0.0
+    finally:
+        conn.close()
