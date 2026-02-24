@@ -72,42 +72,67 @@ graph TD
 
 ```
 
+# 🗺️ THE MASTER ROADMAP: PERSONAL AI OS (COACH DYNO)
+
+## 🟢 PHẦN 1: KỶ NGUYÊN NỀN TẢNG & NHẬN THỨC (v1.0 - v2.5)
+
+*Trạng thái: Đã hoàn thành (Completed)*
+*Mục tiêu: Xây dựng bộ khung kỹ thuật, kết nối API và tạo ra một Chatbot hiểu dữ liệu thể thao.*
+
+* **Phase 1: The Sensing Foundation (Giác quan)**
+* Tích hợp Webhook Strava (Auto-Harvest với 5s Downsampling).
+* Tích hợp Telegram Bot API (Nhận lệnh và gửi tin nhắn).
+
+
+* **Phase 2: The Dual-Memory (Trí nhớ kép)**
+* Xây dựng cơ sở dữ liệu có cấu trúc (SQLite) lưu trữ Kế hoạch và Mục tiêu tuần.
+* Tích hợp ChromaDB làm nền tảng RAG sơ khởi.
+
+
+* **Phase 3: The Tool-Using Expert (Biết dùng công cụ)**
+* Kích hoạt Automatic Function Calling (AFC) của Gemini.
+* AI bắt đầu biết gọi các hàm như `update_todays_plan` và `set_actual_weekly_target`.
+
+
+
+## 🔵 PHẦN 2: KỶ NGUYÊN ĐA KÊNH & TỰ TRỊ CƠ BẢN (v2.6 - v2.9.0)
+
+*Trạng thái: HIỆN TẠI (Current Baseline)*
+*Mục tiêu: Đưa AI từ thế "Thụ động chờ lệnh" sang "Chủ động kiểm soát", xuất bản nội dung đa nền tảng.*
+
+* **Phase 4: Proactive Autonomy & Omni-channel**
+* **Luồng Tự trị (Proactive):** Cronjob Standup buổi sáng, tự động tính toán ACWR, TRIMP bảo vệ sinh lý VĐV.
+* **Kiến trúc Prompt:** Áp dụng mô hình **4 Trụ cột** (Task, Analysis, Structure, Format), cấu hình động qua Admin Dashboard.
+* **Middleware:** Xây dựng Regex Sanitizer chống lỗi Markdown crash Telegram.
+* **SSOT (Nguồn sự thật duy nhất):** Ép AI ưu tiên đọc Database thay vì chat history, giải quyết triệt để lỗi Hallucination (Ảo giác).
+
+
+
 ---
 
-## 🗺️ 3. The Agentic Evolution Roadmap
+## *(Vạch xuất phát cho chặng đường mới)*
 
-### ✅ Phase 1 & 2: The Sensing Foundation (Completed)
+## 🚀 PHẦN 3: KỶ NGUYÊN ĐẠI DIỆN TỰ TRỊ BẬC CAO (v3.0 - v3.x)
 
-* Hybrid Strava Sync (Webhooks + Auto-Harvest with 5s Downsampling).
+*Trạng thái: Đang triển khai (In Progress)*
+*Mục tiêu: Trang bị tư duy Tự phản tỉnh (Self-Reflection), truy xuất RAG chủ động và phản ứng theo sự kiện (Event-driven).*
 
-
-* Dual-Memory architecture (SQLite + ChromaDB RAG).
-
-
-
-### ✅ Phase 3: The Tool-Using Expert (Completed)
-
-* 
-**Automatic Function Calling (AFC):** Dynamic tool usage (`update_todays_plan`, `set_actual_weekly_target`, etc.).
+* **Phase 5: The Resilient Thinker (Tư duy Bền bỉ - Dự kiến v3.0)**
+* **Task 5.1 - ReAct Error Handling:** Nâng cấp Agent để biết tự xử lý lỗi khi gọi Tool thất bại (Báo lỗi cho LLM để nó tự suy luận và gọi lại).
+* **Task 5.2 - Demarcation Line Refactor:** Dịch toàn bộ Docstrings/Comments trong source code sang Tiếng Anh (Chuẩn bị cho Docs-as-Code).
+* **Task 5.3 - Weekly Self-Reflection:** Thêm cronjob tối Chủ Nhật để AI tự review lại giáo án tuần cũ và rút kinh nghiệm cho tuần sau.
 
 
-* Data Integrity & Sync Fixes: UPSERT logic and Strava Activity Deletion hooks.
+* **Phase 6: The Proactive Scholar (Học giả Chủ động - Dự kiến v3.1)**
+* **Task 6.1 - Pre-fetch RAG:** Hệ thống tự động truy xuất tiền sử chấn thương từ ChromaDB nhúng thẳng vào Prompt trước khi hỏi AI, AI không cần phải gọi Tool để nhớ lại nữa.
+* **Task 6.2 - Docs-as-Code (DaC):** Tích hợp MkDocs, tự động render Web Tài liệu từ các file Python (đã được refactor sang Tiếng Anh ở Phase 5).
 
 
+* **Phase 7: The Omniscient Coach (Coach Toàn năng - Dự kiến v3.2)**
+* **Task 7.1 - Environment Perception:** Tích hợp API Thời tiết/AQI để AI tự đổi bài chạy ngoài trời thành chạy máy (Treadmill) nếu có bão.
+* **Task 7.2 - Event-Driven Autonomy:** Lắng nghe tín hiệu HRV/Resting HR trực tiếp từ Garmin/Apple Health giữa đêm. Nếu sức khỏe VĐV lao dốc, sáng hôm sau Agent sẽ *chủ động* can thiệp trước khi VĐV kịp thức dậy.
 
-### ✅ Phase 4: Proactive Autonomy & Omni-channel (Completed)
-
-* **Proactive Interventions:** Background workers monitor ACWR. The Agent autonomously initiates Standups and adjusts plans.
-
-
-* **4-Pillar Prompt Architecture:** Separation of Concerns (SoC) between Analysis Logic and Display Formatting.
-* **Middleware Sanitization:** Defending against LLM Markdown Hallucinations to prevent API crashes.
-* **Single Source of Truth:** Enforcing DB targets over past chat histories to prevent AI memory conflicts.
-
-### 🔮 Phase 5: The Multi-Agent Ecosystem (Late 2026)
-
-* **Self-Reflection Loop:** A weekly chron-job where the Agent evaluates its past advice.
-
+### 🔮 PHẦN 4: The Multi-Agent Ecosystem (Late 2026)
 
 * **Supervisor Orchestrator:** Convert `main.py` into a Router Agent.
 
