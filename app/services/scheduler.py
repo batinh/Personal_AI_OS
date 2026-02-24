@@ -5,9 +5,8 @@ import os
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta # Thêm timedelta để tính ngày
+from datetime import datetime, timedelta
 
-# Nhập thư viện AI và các hàm tính toán
 from google import genai
 from google.genai import types
 
@@ -19,7 +18,7 @@ from app.core.database import (
     load_history_for_gemini,
     get_plan_for_date,
     update_daily_plan,
-    get_weekly_volume  # [FIX 1] Import hàm tính volume tuần
+    get_weekly_volume
 )
 from app.agents.coach.utils import (
     calculate_acwr, 
@@ -32,7 +31,9 @@ from app.services.rag_memory import rag_db
 from app.agents.coach.harvest import harvest_data
 from app.services.backup import perform_backup
 from app.agents.coach.tools import update_todays_plan, set_actual_weekly_target
-from app.agents.coach.prompts import STANDUP_PROMPT_TEMPLATE
+
+# [REFACTOR] Import builder
+from app.agents.coach.prompts import build_system_instruction, get_shared_context_block, build_standup_prompt
 
 logger = logging.getLogger("AI_COACH")
 TZ_VN = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
@@ -53,45 +54,56 @@ async def task_morning_briefing():
     user_id_str = str(chat_id)
     
     # 1. Thu thập dữ liệu
-    # Lấy dữ liệu tải trọng (ACWR)
     loads = get_training_loads(user_id_str)
     acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
-    
-    # [FIX 2] Định nghĩa actual_volume để tránh NameError
     actual_volume = get_weekly_volume(user_id_str, now)
     
-    # Lấy thông tin Phase tập luyện
-    phase_info = calculate_training_phase(config.get("race_date", ""))
+    race_date_str = config.get("race_date", "")
+    phase_info = calculate_training_phase(race_date_str)
+    phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
+    countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race." if race_date_str else "Duy trì thể lực."
     
-    # Lấy giáo án hôm nay (Sử dụng Multi-tenant signature)
     today_plan = get_plan_for_date(user_id_str, now.strftime('%Y-%m-%d'))
     plan_context = f"{today_plan['workout_title']}: {today_plan['description']}" if today_plan else "Chạy tự do."
-
-    # Lấy context tuần (Đã refactor DRY)
     weekly_decision_context = get_formatted_weekly_context(user_id_str)
 
-    # 2. [REFACTOR] Format Prompt từ Template
-    prompt = STANDUP_PROMPT_TEMPLATE.format(
-        chat_id=user_id_str,
-        now_display_str=now.strftime('%A, %d/%m/%Y'),
-        phase=phase_info["phase"],
-        microcycle=phase_info["microcycle"],
-        acwr=acwr_data['acwr'],
-        acwr_status=acwr_data['status'],
-        actual_volume=actual_volume,  # Đã có giá trị sau khi FIX 2
-        recent_7_days_log=get_runs_in_last_days(user_id_str, days=7),
-        chat_context="...", # Có thể tích hợp thêm lịch sử chat ngắn tại đây
-        plan_context=plan_context,
-        weekly_decision_context=weekly_decision_context
+    # Lấy 5 tin nhắn gần nhất để AI nhớ bối cảnh tối qua
+    raw_history = load_history_for_gemini(user_id_str, limit=5)
+    chat_context = "Không có tương tác trò chuyện nào gần đây."
+    if raw_history:
+        chat_context_lines = []
+        for msg in reversed(raw_history): # Đảo ngược để đọc theo thứ tự thời gian
+            sender = "User" if msg["role"] == "user" else "Coach Dyno"
+            text = msg["parts"][0][:150] + "..." if len(msg["parts"][0]) > 150 else msg["parts"][0]
+            chat_context_lines.append(f"{sender}: {text}")
+        chat_context = "\n".join(chat_context_lines)
+
+    # 2. XÂY DỰNG PROMPT (Kiến trúc Lego)
+    system_inst = build_system_instruction(
+        config.get("system_instruction", ""), config.get("user_profile", ""),
+        int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+    )
+    
+    shared_context = get_shared_context_block(
+        now.strftime('%A, %d/%m/%Y'), user_id_str, phase_text, countdown_text,
+        f"{acwr_data['acwr']} ({acwr_data['status']})", 
+        actual_volume, weekly_decision_context
     )
 
-    debug_log_prompt("DEBUG STANDUP PROMPT", prompt)
+    prompt = build_standup_prompt(
+        shared_context, 
+        get_runs_in_last_days(user_id_str, days=7), 
+        plan_context, 
+        chat_context # Nạp trí nhớ ngắn hạn vào Standup
+    )
+
+    debug_log_prompt("DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
 
     try:
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
-                system_instruction=config.get("system_instruction", ""),
+                system_instruction=system_inst,
                 tools=[update_todays_plan, set_actual_weekly_target]
             )
         )

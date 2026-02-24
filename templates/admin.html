@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🏃‍♂️ AI Coach Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body { background-color: #f8f9fa; }
         .log-box { 
@@ -16,41 +17,45 @@
             padding: 10px; 
             border-radius: 5px; 
         }
+        .prompt-section {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #0d6efd;
+        }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark bg-primary mb-4">
+    <nav class="navbar navbar-dark bg-primary mb-4 shadow-sm">
         <div class="container">
-            <a class="navbar-brand" href="#">🏃‍♂️ AI Running Coach Admin</a>
-            <span class="badge bg-warning text-dark">Status: {{ "RUNNING" if service_active else "PAUSED" }}</span>
+            <a class="navbar-brand fw-bold" href="#"><i class="fas fa-running"></i> AI Running Coach Admin</a>
+            <span class="badge bg-warning text-dark fs-6">Status: {{ "RUNNING" if service_active else "PAUSED" }}</span>
         </div>
     </nav>
 
     <div class="container">
         <div class="row mb-4">
             <div class="col-md-6">
-                <div class="card">
-                    <div class="card-header bg-dark text-white">⚙️ System Control</div>
+                <div class="card shadow-sm">
+                    <div class="card-header bg-dark text-white fw-bold"><i class="fas fa-cogs"></i> System Control</div>
                     <div class="card-body">
                         <form action="/admin/toggle" method="post" class="d-inline">
                             {% if service_active %}
-                                <button type="submit" class="btn btn-danger w-100">⏸ PAUSE SERVICE (Stop Processing)</button>
+                                <button type="submit" class="btn btn-danger w-100 fw-bold"><i class="fas fa-pause-circle"></i> PAUSE SERVICE (Stop Processing)</button>
                             {% else %}
-                                <button type="submit" class="btn btn-success w-100">▶️ RESUME SERVICE</button>
+                                <button type="submit" class="btn btn-success w-100 fw-bold"><i class="fas fa-play-circle"></i> RESUME SERVICE</button>
                             {% endif %}
                         </form>
                         <hr>
-                        <button type="button" onclick="testEmail()" class="btn btn-outline-primary w-100">📧 Test Email Notification</button>
+                        <button type="button" onclick="testEmail()" class="btn btn-outline-primary w-100 fw-bold"><i class="fas fa-envelope"></i> Test Email Notification</button>
                         
                         <script>
                         async function testEmail() {
                             const logBox = document.getElementById("logBox");
                             logBox.innerHTML += "\n[SYSTEM] Sending test email...";
-
                             try {
                                 const response = await fetch('/admin/test-email');
                                 const result = await response.json();
-
                                 if (result.status === 'success') {
                                     logBox.innerHTML += "\n[SUCCESS] Email sent! Check your inbox.";
                                 } else {
@@ -67,8 +72,8 @@
             </div>
             
             <div class="col-md-6">
-                 <div class="card">
-                    <div class="card-header bg-dark text-white">📜 Live Logs (Last 50 lines)</div>
+                 <div class="card shadow-sm">
+                    <div class="card-header bg-dark text-white fw-bold"><i class="fas fa-terminal"></i> Live Logs (Last 50 lines)</div>
                     <div class="card-body p-0">
                         <div class="log-box" id="logBox">{{ logs }}</div>
                     </div>
@@ -76,22 +81,23 @@
             </div>
         </div>
 
-        <div class="card mb-5">
-            <div class="card-header bg-primary text-white">📝 Configuration Editor</div>
+        <div class="card mb-5 shadow-sm">
+            <div class="card-header bg-primary text-white fw-bold fs-5"><i class="fas fa-sliders-h"></i> Configuration Editor</div>
             <div class="card-body">
                 <form action="/admin/save" method="post">
                     
                     <div class="mb-3">
-                        <label class="form-label fw-bold">System Instruction (AI Role)</label>
-                        <textarea class="form-control" name="system_instruction" rows="2">{{ config.get('system_instruction', '') }}</textarea>
+                        <label class="form-label fw-bold">System Instruction (AI Role & Personality)</label>
+                        <textarea class="form-control border-primary" name="system_instruction" rows="4">{{ config.get('system_instruction', '') }}</textarea>
+                        <div class="form-text text-muted">Định hình nhân cách cốt lõi của Coach Dyno.</div>
                     </div>
                     
                     <div class="mb-3">
                         <label class="form-label fw-bold">User Profile</label>
-                        <textarea class="form-control" name="user_profile" rows="4">{{ config.get('user_profile', '') }}</textarea>
+                        <textarea class="form-control border-primary" name="user_profile" rows="4">{{ config.get('user_profile', '') }}</textarea>
                     </div>
                     
-                    <h5 class="mt-4 text-primary">🏃‍♂️ Sports Science & Goals</h5>
+                    <h5 class="mt-4 text-primary fw-bold"><i class="fas fa-heartbeat"></i> Sports Science & Goals</h5>
                     <div class="row">
                         <div class="col-md-3 mb-3">
                             <label class="form-label fw-bold">Max HR (bpm)</label>
@@ -112,95 +118,94 @@
                     </div>
                     <div class="form-text text-muted mb-4">Note: Leave Race Date blank to enter 'Off-season / Maintenance' phase.</div>
 
-                    <h5 class="mt-4 text-primary">⏰ Task Scheduler (Lịch chạy tự động)</h5>
-                    <div class="row bg-light p-3 border rounded mb-3 ms-1 me-1">
+                    <h5 class="mt-4 text-primary fw-bold"><i class="fas fa-clock"></i> Task Scheduler (Lịch trình tự động)</h5>
+                    <div class="row bg-light p-3 border rounded mb-4 ms-0 me-0">
                         <div class="col-md-3 mb-3">
-                            <label class="form-label fw-bold text-success">☀️ Morning Briefing Time</label>
+                            <label class="form-label fw-bold text-success"><i class="fas fa-sun"></i> Morning Briefing</label>
                             <input type="time" class="form-control" name="briefing_time" value="{{ config.get('scheduler', {}).get('briefing_time', '06:00') }}">
-                            <div class="form-text">Giờ gửi báo cáo qua Telegram.</div>
+                            <div class="form-text">Giờ gửi báo cáo sáng.</div>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label fw-bold text-danger">🛡️ Backup DB Time</label>
+                            <label class="form-label fw-bold text-danger"><i class="fas fa-database"></i> Backup DB Time</label>
                             <input type="time" class="form-control" name="backup_time" value="{{ config.get('scheduler', {}).get('backup_time', '02:00') }}">
-                            <div class="form-text">Giờ nén file backup hàng ngày.</div>
+                            <div class="form-text">Giờ nén file backup.</div>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label fw-bold text-info">🔄 Auto Sync Hours</label>
+                            <label class="form-label fw-bold text-info"><i class="fas fa-sync-alt"></i> Auto Sync Hours</label>
                             <input type="text" class="form-control" name="harvest_hours" value="{{ config.get('scheduler', {}).get('harvest_hours', '0,6,12,18') }}">
                             <div class="form-text">Các khung giờ quét Strava.</div>
                         </div>
                         <div class="col-md-3 mb-3">
-                            <label class="form-label fw-bold text-info">🔄 Auto Sync Minute</label>
+                            <label class="form-label fw-bold text-info"><i class="fas fa-stopwatch"></i> Auto Sync Minute</label>
                             <input type="number" class="form-control" name="harvest_minute" value="{{ config.get('scheduler', {}).get('harvest_minute', '15') }}" min="0" max="59">
                             <div class="form-text">Phút thực hiện quét.</div>
                         </div>
                     </div>
 
-                    <div class="mb-3 mt-4">
-                        <label class="form-label fw-bold">Task Description</label>
-                        <textarea class="form-control" name="task_description" rows="2">{{ config.get('task_description', '') }}</textarea>
+                    <div class="prompt-section mb-4">
+                        <h5 class="text-primary fw-bold mb-3"><i class="fas fa-magic"></i> Strava Analysis Architecture (Omni-channel)</h5>
+                        
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">1. Nhiệm vụ Tổng quan (Task Description)</label>
+                            <textarea class="form-control" name="task_description" rows="10" placeholder="Ví dụ: Đánh giá Pace, Chiến thuật, Cơ sinh học, Nhịp tim...">{{ config.get('task_description', '') }}</textarea>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-info"><i class="fas fa-brain"></i> 2. Tiêu chí Phân tích (Analysis Requirements)</label>
+                            <textarea class="form-control" name="analysis_requirements" rows="10" placeholder="Nhập các khía cạnh AI cần soi xét (Context, Execution, Mechanics...)...">{{ config.get('analysis_requirements', '') }}</textarea>
+                            <div class="form-text text-muted">Logic: Hướng dẫn AI cần PHÂN TÍCH VÀ SUY LUẬN những vấn đề gì.</div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-warning"><i class="fas fa-file-code"></i> 3. Khung Báo cáo (Report Structure)</label>
+                            <textarea class="form-control" name="report_structure" rows="10" placeholder="Nhập template Strava (Dấu ►, Emoji) mong muốn...">{{ config.get('report_structure', '') }}</textarea>
+                            <div class="form-text text-muted">Presentation: Bộ khung/Form điền đáp án (Đảm bảo cấu trúc nhất quán).</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">4. Quy tắc Định dạng Nền tảng (Platform Output Format)</label>
+                            <textarea class="form-control" name="output_format" rows="10" placeholder="Ví dụ: Không dùng HTML, Không Markdown, Viết hoa từ khóa...">{{ config.get('output_format', '') }}</textarea>
+                            <div class="form-text text-muted">Rules: Kỷ luật hiển thị để an toàn khi đồng bộ lên Strava.</div>
+                        </div>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Analysis Requirements</label>
-                        <textarea class="form-control" name="analysis_requirements" rows="4">{{ config.get('analysis_requirements', '') }}</textarea>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Output Format</label>
-                        <textarea class="form-control" name="output_format" rows="4">{{ config.get('output_format', '') }}</textarea>
-                    </div>
-                    
-                    <h5 class="mt-4 text-primary">📧 Email Settings</h5>
-                    <div class="row">
-                         <div class="col-md-12 mb-3 form-check ms-3">
+                    <h5 class="mt-4 text-primary fw-bold"><i class="fas fa-envelope-open-text"></i> Email Settings</h5>
+                    <div class="row border rounded bg-light p-2 ms-0 me-0 mb-4">
+                         <div class="col-md-12 form-check ms-3 mt-2">
                             <input class="form-check-input" type="checkbox" name="email_enabled" id="emailEnabled" {% if config.get('email_config', {}).get('enabled') %}checked{% endif %}>
-                            <label class="form-check-label" for="emailEnabled">Enable Email Notification</label>
+                            <label class="form-check-label fw-bold" for="emailEnabled">Enable Email Notification</label>
                         </div>
                     </div>
                     
+                    <h5 class="mt-4 text-primary fw-bold"><i class="fas fa-microchip"></i> System Processing</h5>
                     <div class="row mb-3">
                         <div class="col-md-12">
                             <div class="form-check form-switch ms-1">
                                 <input class="form-check-input" type="checkbox" name="debug_mode" id="debugMode" {% if config.get('debug_mode') %}checked{% endif %}>
-                                <label class="form-check-label fw-bold text-danger" for="debugMode">🐞 Enable Deep Debug Logging (Show Prompts & Raw Data)</label>
+                                <label class="form-check-label fw-bold text-danger" for="debugMode">🐞 Enable Deep Debug Logging (Show Prompts & Raw Data in Logs)</label>
                             </div>
                         </div>
                     </div>
                     
                     <div class="mb-4 p-3 border rounded bg-light">
-                        <label class="form-label fw-bold text-primary">🧠 AI Brain Model (Live Switch)</label>
-                        <select class="form-select" name="model_name">
-                            <option value="models/gemini-flash-latest" {% if config.get('model_name') == 'models/gemini-flash-latest' %}selected{% endif %}>
-                                Gemini Flash Latest (Luôn là bản mới nhất - Quota thấp)
-                            </option>
-                            <option value="models/gemini-2.5-flash" {% if config.get('model_name') == 'models/gemini-2.5-flash' %}selected{% endif %}>
-                                Gemini 2.5 Flash (Smarter - Tốt cho phân tích chuyên sâu)
-                            </option>
-                            <option value="models/gemini-2.0-flash" {% if config.get('model_name') == 'models/gemini-2.0-flash' %}selected{% endif %}>
-                                Gemini 2.0 Flash (Recommended - Ổn định & Nhanh)
-                            </option>
-                            <option value="models/gemini-1.5-flash" {% if config.get('model_name') == 'models/gemini-1.5-flash' %}selected{% endif %}>
-                                Gemini 1.5 Flash (Rất ổn định - Quota cao)
-                            </option>
-                            <option value="models/gemini-2.0-flash-lite-preview-02-05" {% if config.get('model_name') == 'models/gemini-2.0-flash-lite-preview-02-05' %}selected{% endif %}>
-                                Gemini 2.0 Flash Lite (Bản nhẹ - Siêu tốc)
-                            </option>
-                            <option value="models/gemini-2.0-pro-exp-02-05" {% if config.get('model_name') == 'models/gemini-2.0-pro-exp-02-05' %}selected{% endif %}>
-                                Gemini 2.0 Pro Experimental (Rất thông minh - Hay bị giới hạn)
-                            </option>
+                        <label class="form-label fw-bold text-primary"><i class="fas fa-robot"></i> AI Brain Model (Live Switch)</label>
+                        <select class="form-select border-primary" name="model_name">
+                            <option value="models/gemini-flash-latest" {% if config.get('model_name') == 'models/gemini-flash-latest' %}selected{% endif %}>Gemini Flash Latest (Luôn là bản mới nhất - Quota thấp)</option>
+                            <option value="models/gemini-2.5-flash" {% if config.get('model_name') == 'models/gemini-2.5-flash' %}selected{% endif %}>Gemini 2.5 Flash (Smarter - Tốt cho phân tích chuyên sâu)</option>
+                            <option value="models/gemini-2.0-flash" {% if config.get('model_name') == 'models/gemini-2.0-flash' %}selected{% endif %}>Gemini 2.0 Flash (Recommended - Ổn định & Nhanh)</option>
+                            <option value="models/gemini-1.5-flash" {% if config.get('model_name') == 'models/gemini-1.5-flash' %}selected{% endif %}>Gemini 1.5 Flash (Rất ổn định - Quota cao)</option>
+                            <option value="models/gemini-2.0-flash-lite-preview-02-05" {% if config.get('model_name') == 'models/gemini-2.0-flash-lite-preview-02-05' %}selected{% endif %}>Gemini 2.0 Flash Lite (Bản nhẹ - Siêu tốc)</option>
+                            <option value="models/gemini-2.0-pro-exp-02-05" {% if config.get('model_name') == 'models/gemini-2.0-pro-exp-02-05' %}selected{% endif %}>Gemini 2.0 Pro Experimental (Rất thông minh - Hay bị giới hạn)</option>
                         </select>
                         <div class="form-text text-muted">Thay đổi có hiệu lực ngay lập tức cho tin nhắn tiếp theo.</div>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary btn-lg w-100 mt-3">💾 SAVE CONFIGURATION</button>
+                    <button type="submit" class="btn btn-primary btn-lg w-100 mt-3 shadow"><i class="fas fa-save"></i> SAVE CONFIGURATION</button>
                 </form>
             </div>
         </div>
     </div>
     
     <script>
-        // Auto scroll to bottom of logs on load
         var logBox = document.getElementById("logBox");
         logBox.scrollTop = logBox.scrollHeight;
     </script>

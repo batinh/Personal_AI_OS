@@ -5,9 +5,41 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
+import re
+import html # Thêm thư viện này ở đầu file
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+def sanitize_md_to_tg_html(text: str) -> str:
+    if not text:
+        return text
+    
+    # BƯỚC 1: Thoát tất cả ký tự HTML nguy hiểm (Biến < thành &lt;, > thành &gt;)
+    # Điều này giúp xử lý các trường hợp nhịp tim <138 bpm cực kỳ an toàn
+    text = html.escape(text)
+
+    # BƯỚC 2: Sau khi đã an toàn, chúng ta mới dịch ngược lại 
+    # các ký tự Markdown thành thẻ HTML chuẩn của Telegram
+    
+    # In đậm: **text** -> <b>text</b>
+    # Lưu ý: Dùng &ast; vì html.escape đã biến * thành ký tự an toàn tùy phiên bản
+    # Nhưng đơn giản nhất là xử lý in đậm trước hoặc sau escape cẩn thận:
+    
+    # Cách tốt nhất: Dịch MD sang HTML placeholder, sau đó escape, rồi trả lại HTML
+    # Nhưng để đơn giản và hiệu quả cho trường hợp của anh:
+    text = text.replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>") # Nếu AI tự sinh <b>
+    
+    # Xử lý các dấu sao Markdown (Bây giờ nó là dấu * bình thường)
+    text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+    
+    # Header
+    text = re.sub(r'(?m)^#{1,6}\s*(.*)', r'<b>\1</b>', text)
+    
+    # Bullet points
+    text = re.sub(r'^(\s*)[*+-]\s+', r'\1• ', text, flags=re.MULTILINE)
+
+    return text
 
 def send_telegram_msg(chat_id, text):
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -17,20 +49,21 @@ def send_telegram_msg(chat_id, text):
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     
-    # Payload mặc định sử dụng Markdown
+    # Bơm văn bản qua tầng Sanitizer trước khi đóng gói
+    safe_text = sanitize_md_to_tg_html(text)
+    
     payload = {
         "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "Markdown" 
+        "text": safe_text,
+        "parse_mode": "HTML" 
     }
     
     try:
         response = requests.post(url, json=payload)
         
-        # [CƠ CHẾ FALLBACK] Nếu Telegram báo lỗi định dạng (HTTP 400 + parse entities)
+        # [FALLBACK] Cứu nét nếu lỡ có thẻ HTML nào đó bị hở/lỗi
         if response.status_code == 400 and "parse entities" in response.text:
-            logger.warning("[TELEGRAM] Markdown parse failed. Cứu nét bằng văn bản thô (Plain Text)...")
-            # Xóa parse_mode đi và gửi lại
+            logger.warning(f"[TELEGRAM] HTML parse failed. Cứu nét văn bản thô. Lỗi: {response.text}")
             payload.pop("parse_mode") 
             response = requests.post(url, json=payload)
             

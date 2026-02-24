@@ -1,86 +1,27 @@
-### 🗄️ DATABASE ARCHITECTURE DESIGN (v2.7.1 - Multi-Tenant Ready)
-
-**Triết lý thiết kế (Design Philosophy):**
-
-* **Zero-Heavy:** Sử dụng SQLite và file-based DB, không yêu cầu cài đặt Docker container DB riêng biệt.
-* **Multi-Tenant:** Tất cả các bảng và bản ghi (records) đều phải có `user_id` để cô lập dữ liệu giữa các Runner.
-* **Separation of Concerns (Phân tách trách nhiệm):** Phân chia rõ ràng giữa Dữ liệu cấu trúc (Toán học/Logic), Dữ liệu phi cấu trúc (Ngữ nghĩa/AI) và Cấu hình hệ thống.
-* **Data Integrity (Toàn vẹn dữ liệu):** Áp dụng triệt để cơ chế UPSERT (`ON CONFLICT DO UPDATE`) để xử lý xung đột giữa luồng Webhook thời gian thực và luồng Auto-Harvest ngầm.
-
----
 
 #### 🏛️ TIER 1: RELATIONAL DATABASE (Dữ liệu Cấu trúc & Tính toán)
+[cite_start]*(Các bảng users, run_activities, chat_history, training_plans giữ nguyên như v2.7.1)* [cite: 246, 248, 250, 251]
 
-**Công nghệ:** SQLite (`data/os_core.db`)
-**Mục đích:** Lưu trữ hồ sơ người dùng, các chỉ số toán học chính xác (TRIMP, ACWR), lịch sử hoạt động và Giáo án tập luyện (Stateful Planning).
-
-**1. Table: `users` (Hồ sơ Vận động viên)**
-Lưu trữ hồ sơ cá nhân hóa để mỗi Runner có một chỉ số sinh lý riêng.
-* `user_id` (TEXT, Primary Key) - *Telegram Chat ID.*
-* `name` (TEXT)
-* `max_hr` (INTEGER)
-* `rest_hr` (INTEGER)
-* `race_date` (TEXT) - *Ngày thi đấu mục tiêu (YYYY-MM-DD).*
-* `current_goal` (TEXT)
-* `is_active` (BOOLEAN) - *Trạng thái hoạt động.*
-
-**2. Table: `run_activities` (Lịch sử Strava)**
-* `activity_id` (TEXT, Primary Key) - *ID bài chạy từ Strava.*
-* `user_id` (TEXT, Foreign Key -> `users.user_id`)
-* `name` (TEXT)
-* `start_date` (DATETIME)
-* `distance_km` (REAL)
-* `moving_time_min` (REAL)
-* `avg_hr` (INTEGER)
-* `max_hr` (INTEGER)
-* `suffer_score` (INTEGER)
-* `trimp_score` (REAL)
-* `gcs_score` (INTEGER DEFAULT NULL) - *Điểm tự tin hoàn thành mục tiêu. Sử dụng cơ chế UPSERT để giữ lại điểm số này khi Harvest cập nhật các thông số khác.*
-
-**3. Table: `chat_history` (Lịch sử giao tiếp)**
-* `id` (INTEGER, Primary Key, Auto Increment)
-* `user_id` (TEXT, Foreign Key -> `users.user_id`)
-* `role` (TEXT) - *'user' hoặc 'model'.*
-* `content` (TEXT)
-* `timestamp` (DATETIME)
-
-**4. Table: `training_plans` (Quản lý Kế hoạch - Single Source of Truth)**
-Nơi AI tự chủ quyết định và lưu trữ giáo án tập luyện, tránh hiện tượng "nhớ nhầm" qua RAG.
-* `date` (TEXT, Primary Key) - *Định dạng YYYY-MM-DD.*
-* `workout_title` (TEXT) - *Tên bài tập ngắn gọn.*
-* `description` (TEXT) - *Chi tiết bài tập hoặc lời dặn dò.*
-* `status` (TEXT) - *Mặc định 'Pending'. Chuyển thành 'Completed' khi VĐV chạy xong bài ngày hôm đó.*
-
----
-
-#### 🧠 TIER 2: VECTOR DATABASE (Trí nhớ Dài hạn & Ngữ nghĩa)
-
-**Công nghệ:** ChromaDB (`data/chroma_db`)
-**Mục đích:** Lưu trữ Embeddings để AI tìm kiếm ngữ cảnh, so sánh chéo các bài chạy và nhớ lại lời khuyên cũ.
-**Đặc tính:** Vận hành hoàn toàn Local bằng `DefaultEmbeddingFunction`, đã vô hiệu hóa Telemetry để đảm bảo 100% Privacy.
-
-**Collection: `os_local_memory`**
-
-* **`id`**: Unique ID (Ví dụ: `run_12345` hoặc `chat_9876`).
-* **`document`**: Semantic Text (Văn bản chứa ngữ nghĩa).
-* **`metadata`**:
-```json
-{
-    "user_id": "telegram_id_cua_tinh",  // Bắt buộc để phân tách Multi-Tenant
-    "domain": "coach",                  // Phân loại: coach, finance, life
-    "type": "run_analysis",             // Phân loại chi tiết: run_analysis, chat_advice, daily_standup
-    "date": "2026-02-20"
-}
-
-```
+**5. [cite_start]Table: `user_weekly_targets` (Sổ cái Quản lý Khối lượng Tuần)** [cite: 273]
+Đóng vai trò là **"Single Source of Truth" (Nguồn sự thật duy nhất)** để tránh việc AI bị "ảo giác" (hallucinate) khi đọc lại lịch sử chat cũ.
+* [cite_start]`user_id` (TEXT) [cite: 274]
+* [cite_start]`week_start_date` (TEXT) - *Định dạng YYYY-MM-DD (Luôn là ngày Thứ 2).* [cite: 274]
+* [cite_start]`standard_target_km` (REAL) - *Khối lượng gốc HLV giao.* [cite: 274]
+* [cite_start]`actual_target_km` (REAL) - *Khối lượng AI hoặc User chốt lại sau khi đàm phán.* [cite: 274]
+* [cite_start]`ai_reasoning` (TEXT) - *Lý do AI quyết định điều chỉnh (Lưu lại chuỗi tư duy).* [cite: 274]
+* [cite_start]`updated_at` (TIMESTAMP) [cite: 275]
 
 ---
 
 #### ⚙️ TIER 3: SYSTEM CONFIGURATION (Trạng thái & Cấu hình App)
 
-**Công nghệ:** JSON File (`config.json` & `.env`)
-**Mục đích:** Chỉ lưu trữ các cấu hình mang tính chất **hệ thống (System-wide)**, không phụ thuộc vào cá nhân VĐV nào.
+**Công nghệ:** JSON File (`data/config.json`)
+**Mục đích:** Lưu trữ cấu hình hệ thống và đặc biệt là **Kiến trúc Prompt 4 Trụ cột (4-Pillar Prompt Architecture)** phục vụ xuất bản Đa kênh.
 
-* **`scheduler`**: Khung giờ chạy auto-sync, gửi morning briefing, sao lưu dữ liệu.
-* **`email_config`**: SMTP server, Port, Enable/Disable.
-* **`system_instruction` & `model_name**`: Quản lý phiên bản AI đang được sử dụng trực tiếp qua giao diện Admin Web.
+**Cấu trúc JSON Schema:**
+* **`task_description`**: Nhiệm vụ tối cao của AI (Domain Logic). [cite_start]Ví dụ: Đánh giá Pace, HR, GCS... [cite: 101]
+* **`analysis_requirements`**: Bộ tiêu chí phân tích chuyên sâu (Execution, Mechanics, Physiology). [cite_start]Hướng dẫn AI *cần suy luận những gì*. [cite: 102, 103]
+* **`report_structure`**: Khung xương báo cáo (Presentation Logic). [cite_start]Định nghĩa các mục tiêu đề, vị trí điền dữ liệu, Emoji bắt buộc. [cite: 104, 105]
+* **`output_format`**: Kỷ luật hiển thị nền tảng (Platform Rules). [cite_start]Ví dụ: Không dùng Markdown, viết hoa từ khóa (Dành cho Strava). [cite: 106, 107]
+
+> 💡 **Architect's Note:** Việc tách biệt `analysis_requirements` và `report_structure` cho phép Admin thay đổi giao diện báo cáo (UI) mà không làm ảnh hưởng đến trí thông minh phân tích (AI Reasoning) của hệ thống.

@@ -61,9 +61,10 @@ async def save_settings(
     request: Request,
     system_instruction: str = Form(...),
     user_profile: str = Form(...),
-    task_description: str = Form(...),
-    analysis_requirements: str = Form(...),
-    output_format: str = Form(...),
+    task_description: str = Form(""),       # <-- Chỉnh thành Form("") để cho phép trống
+    analysis_requirements: str = Form(""),  # <-- Chỉnh thành Form("")
+    report_structure: str = Form(""),       # <-- [THÊM TRƯỜNG MỚI NÀY VÀO ĐÂY]
+    output_format: str = Form(""),          # <-- Chỉnh thành Form("")
     max_hr: int = Form(185),
     rest_hr: int = Form(55),
     race_date: Optional[str] = Form(None),
@@ -85,6 +86,7 @@ async def save_settings(
     config["user_profile"] = user_profile
     config["task_description"] = task_description
     config["analysis_requirements"] = analysis_requirements
+    config["report_structure"] = report_structure   # <-- [THÊM DÒNG NÀY VÀO ĐÂY]
     config["output_format"] = output_format
     
     # 2. Cập nhật thông số Sinh lý học & Mục tiêu (Sports Science)
