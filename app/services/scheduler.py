@@ -5,7 +5,7 @@ import os
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta # Thêm timedelta để tính ngày
 
 # Nhập thư viện AI và các hàm tính toán
 from google import genai
@@ -18,9 +18,16 @@ from app.core.database import (
     get_runs_in_last_days, 
     load_history_for_gemini,
     get_plan_for_date,
-    update_daily_plan
+    update_daily_plan,
+    get_weekly_volume  # [FIX 1] Import hàm tính volume tuần
 )
-from app.agents.coach.utils import calculate_acwr, calculate_training_phase, debug_log_prompt, gather_weekly_decision_inputs, get_formatted_weekly_context
+from app.agents.coach.utils import (
+    calculate_acwr, 
+    calculate_training_phase, 
+    debug_log_prompt, 
+    gather_weekly_decision_inputs, 
+    get_formatted_weekly_context
+)
 from app.services.rag_memory import rag_db
 from app.agents.coach.harvest import harvest_data
 from app.services.backup import perform_backup
@@ -37,38 +44,43 @@ client = genai.Client()
 # ==========================================
 async def task_morning_briefing():
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    if not chat_id: return
+    if not chat_id: 
+        logger.warning("[SCHEDULER] Không tìm thấy TELEGRAM_CHAT_ID để gửi báo cáo.")
+        return
 
     config = load_config()
     now = datetime.now(TZ_VN)
+    user_id_str = str(chat_id)
     
     # 1. Thu thập dữ liệu
-    loads = get_training_loads(chat_id)
+    # Lấy dữ liệu tải trọng (ACWR)
+    loads = get_training_loads(user_id_str)
     acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
-    actual_volume = get_weekly_volume(chat_id)
+    
+    # [FIX 2] Định nghĩa actual_volume để tránh NameError
+    actual_volume = get_weekly_volume(user_id_str, now)
+    
+    # Lấy thông tin Phase tập luyện
     phase_info = calculate_training_phase(config.get("race_date", ""))
     
-    today_plan = get_plan_for_date(str(chat_id), now.strftime('%Y-%m-%d'))
-    plan_context = f"{today_plan['title']}: {today_plan['description']}" if today_plan else "Chạy tự do."
+    # Lấy giáo án hôm nay (Sử dụng Multi-tenant signature)
+    today_plan = get_plan_for_date(user_id_str, now.strftime('%Y-%m-%d'))
+    plan_context = f"{today_plan['workout_title']}: {today_plan['description']}" if today_plan else "Chạy tự do."
 
-    # Tính ngày Thứ 2 của tuần hiện tại
-    from datetime import timedelta
-    monday = now - timedelta(days=now.weekday())
-    week_start_str = monday.strftime('%Y-%m-%d')
-    
     # Lấy context tuần (Đã refactor DRY)
-    weekly_decision_context = get_formatted_weekly_context(chat_id)
+    weekly_decision_context = get_formatted_weekly_context(user_id_str)
 
     # 2. [REFACTOR] Format Prompt từ Template
     prompt = STANDUP_PROMPT_TEMPLATE.format(
+        chat_id=user_id_str,
         now_display_str=now.strftime('%A, %d/%m/%Y'),
         phase=phase_info["phase"],
         microcycle=phase_info["microcycle"],
         acwr=acwr_data['acwr'],
         acwr_status=acwr_data['status'],
-        actual_volume=actual_volume,
-        recent_7_days_log=get_runs_in_last_days(chat_id, days=7),
-        chat_context="...", # Có thể lấy lịch sử chat ngắn ở đây
+        actual_volume=actual_volume,  # Đã có giá trị sau khi FIX 2
+        recent_7_days_log=get_runs_in_last_days(user_id_str, days=7),
+        chat_context="...", # Có thể tích hợp thêm lịch sử chat ngắn tại đây
         plan_context=plan_context,
         weekly_decision_context=weekly_decision_context
     )
@@ -84,11 +96,13 @@ async def task_morning_briefing():
             )
         )
         response = chat_session.send_message(prompt)
-        if response.text: send_telegram_msg(chat_id, response.text)
+        if response.text: 
+            send_telegram_msg(chat_id, response.text)
     except Exception as e:
         logger.error(f"[SCHEDULER] Standup Error: {e}")
+
 # ==========================================
-# CÁC JOB KHÁC & QUẢN LÝ SCHEDULER
+# CÁC JOB KHÁC & QUẢN LÝ SCHEDULER (GIỮ NGUYÊN)
 # ==========================================
 async def task_auto_harvest():
     """Tự động đồng bộ Strava mỗi 6 tiếng"""
@@ -96,7 +110,7 @@ async def task_auto_harvest():
     harvest_data()
 
 def setup_jobs():
-    """Đọc cấu hình và thiết lập lịch chạy (có thể gọi lại để reload)"""
+    """Đọc cấu hình và thiết lập lịch chạy"""
     config = load_config()
     sched_cfg = config.get("scheduler", {})
     

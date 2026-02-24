@@ -10,7 +10,7 @@
         "smtp_port": 587
     },
     "debug_mode": true,
-    "model_name": "models/gemini-flash-latest",
+    "model_name": "models/gemini-2.5-flash",
     "max_hr": 185,
     "rest_hr": 50,
     "race_date": "2026-03-29",

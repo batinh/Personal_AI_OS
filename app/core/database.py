@@ -306,7 +306,7 @@ def get_training_loads(user_id: str) -> dict:
 
         return {
             "acute_load_7d": round(acute_trimp, 1),
-            "chronic_load_28d": round(chronic_trimp / 4.0, 1), # Trung bình tuần
+            "chronic_load_28d": round(chronic_trimp, 1), # Trung bình tuần
             "avg_weekly_mileage": round(total_dist_28d / 4.0, 1) # [MỚI] Trung bình km/tuần
         }
     except Exception as e:

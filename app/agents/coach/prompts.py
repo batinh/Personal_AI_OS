@@ -64,6 +64,9 @@ CHAT_PERSONA_TEMPLATE = """
 STANDUP_PROMPT_TEMPLATE = """
 [DAILY STANDUP - {now_display_str}]
 
+[THÔNG TIN HỆ THỐNG]
+- User ID thao tác: {chat_id}
+
 1. THỂ TRẠNG & TIẾN ĐỘ:
 - Giai đoạn: {phase} | Chu kỳ: {microcycle}
 - ACWR: {acwr} ({acwr_status})
