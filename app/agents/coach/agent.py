@@ -22,7 +22,7 @@ from app.services.rag_memory import rag_db
 
 # [REFACTOR] Import các builder functions
 from app.agents.coach.prompts import (
-    build_system_instruction, get_shared_context_block, build_universal_run_analysis_prompt,
+    build_system_instruction, get_shared_context_block, build_universal_run_analysis_prompt,build_chat_prompt,
     DEFAULT_ANALYSIS_TASK, DEFAULT_ANALYSIS_REQUIREMENTS, DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES
 )
 from app.agents.coach.tools import (
