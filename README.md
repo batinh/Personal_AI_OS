@@ -31,44 +31,66 @@ Unlike traditional chatbots that rely on "prompt stuffing", this system is built
 [cite_start]The system utilizes a decoupled Modular Monolith infrastructure[cite: 29].
 
 ```mermaid
-graph TD
-    %% External Inputs
-    User(("🏃 Runner")) -->|"Telegram Chat"| Telegram["Telegram Webhook"]
-    StravaCloud["Strava Cloud"] -->|"Activity Webhook"| Nginx
-
-    %% Application Layer
-    subgraph "MODULAR MONOLITH (FastAPI)"
-        Gateway["main.py Gateway"]
-        
-        subgraph "Dual-Memory System"
-            DB[("SQLite (TRIMP/ACWR)")]
-            VectorDB[("ChromaDB (RAG)")]
-            Config[("JSON Config (4-Pillars)")]
-        end
-        
-        subgraph "Domain Logic (Agents)"
-            Coach["Coach Agent Core"]
-            PromptBuilder["Omni-channel Prompt Builder"]
-        end
-        
-        subgraph "Middleware / Adapters"
-            Sanitizer["HTML Sanitizer (Regex)"]
-        end
+flowchart TB
+    %% --- TẦNG 1: GIAO TIẾP NGOẠI VI & KÍCH HOẠT ---
+    subgraph Layer1 [Layer 1: Edge & Triggers]
+        direction LR
+        StravaWH[Strava Webhook]
+        TeleWH[Telegram Webhook]
+        Cron[Cronjobs / Scheduler]
     end
 
-    %% External LLM
-    Gemini["Google Gemini 2.0 API"]
+    %% --- TẦNG 2: LÕI NHẬN THỨC ĐA TÁC TỬ ---
+    subgraph Layer2 [Layer 2: Cognitive Multi-Agent Core]
+        Router{Router / Orchestrator}
+        CoachAgent[🏃 Coach Dyno Agent]
+        MemoryAgent[🧠 Memory Manager Agent]
+        PromptEngine[[Lego Prompt Engine]]
+        
+        Router --> CoachAgent
+        Router --> MemoryAgent
+        CoachAgent --> PromptEngine
+        MemoryAgent --> PromptEngine
+    end
 
-    %% Flow
-    Gateway --> Coach
-    Coach <--> DB
-    Coach <--> Config
-    Coach --> PromptBuilder --> Gemini
-    Gemini --> Sanitizer
+    %% --- TẦNG 3: HỆ THỐNG BỘ NHỚ 4 TẦNG ---
+    subgraph Layer3 [Layer 3: 4-Tier Universal Memory]
+        WM(Tầng 1: Working Memory)
+        ActiveDB[(Tầng 2: Active Facts - SQLite)]
+        ArchiveDB[(Tầng 3: Archived Facts - SQLite)]
+        VectorDB[(Tầng 4: Episodic - ChromaDB)]
+    end
+
+    %% --- TẦNG 4: DỊCH VỤ CHUYÊN BIỆT ---
+    subgraph Layer4 [Layer 4: Domain Services]
+        SportSci[🔬 Sports Science Module\nPure Python]
+        WeatherApi[⛅ Weather Service]
+        LoadCalc[📊 TRIMP & ACWR Calculator]
+    end
+
+    %% --- LIÊN KẾT GIỮA CÁC TẦNG ---
+    Layer1 --> Router
     
-    Sanitizer -->|"HTML Bold"| TelegramOut["Telegram UI"]
-    Sanitizer -->|"Plain Text + Caps"| StravaOut["Strava Description"]
-    Sanitizer -->|"Rich HTML"| EmailOut["Email Report"]
+    PromptEngine --> WM
+    PromptEngine --> ActiveDB
+    MemoryAgent --> ArchiveDB
+    CoachAgent -. Tool Use .-> ArchiveDB
+    CoachAgent -. RAG .-> VectorDB
+    
+    CoachAgent --> SportSci
+    CoachAgent --> WeatherApi
+    CoachAgent --> LoadCalc
+    
+    %% --- TẦNG 5: HẠ TẦNG LƯU TRỮ ---
+    subgraph Layer5 [Layer 5: Infrastructure & Data Lake]
+        JSONLake[📁 Local JSON Streams\nRaw Strava Data]
+        MainSQL[(Main SQLite DB)]
+    end
+    
+    SportSci --> JSONLake
+    LoadCalc --> MainSQL
+    ActiveDB -. Sync .-> MainSQL
+    ArchiveDB -. Sync .-> MainSQL
 
 ```
 
@@ -131,4 +153,15 @@ graph TD
 * **Phase 7: The Omniscient Coach (Coach Toàn năng - Dự kiến v3.2)**
   * **Task 7.1 - Environment Perception (Standup & Race Day):** * [DONE] Tích hợp thời tiết hiện tại vào Morning Briefing.
     * [TODO] Gọi Forecast API 5 ngày vào Tuần Taper để lên chiến thuật Race Day (Nước/Muối/Pace) dựa trên nhiệt độ giải chạy.
+  * **Task 7.2 - Event-Driven Autonomy:** Lắng nghe tín hiệu HRV/Resting HR trực tiếp từ Garmin/Apple Health giữa đêm để tự động điều chỉnh bài tập sáng sớm
+  * **Phase 7: The Omniscient Coach (Coach Toàn năng - Dự kiến v3.2)**
+  * **Task 7.1 - Environment Perception (Standup & Race Day):** * [DONE] Tích hợp thời tiết hiện tại vào Morning Briefing.
+    * [TODO] Gọi Forecast API 5 ngày vào Tuần Taper để lên chiến thuật Race Day (Nước/Muối/Pace) dựa trên nhiệt độ giải chạy.
   * **Task 7.2 - Event-Driven Autonomy:** Lắng nghe tín hiệu HRV/Resting HR trực tiếp từ Garmin/Apple Health giữa đêm để tự động điều chỉnh bài tập sáng sớm.
+
+* **Phase 8: The Multi-Agent Core & Universal Memory (Hệ điều hành Đa tác tử - Dự kiến v4.0)**
+  * *Mục tiêu: Chuyển đổi từ mô hình AI đơn lẻ sang Hệ sinh thái AI chia sẻ ngữ cảnh (Coach, Work, Finance Agents) với bộ nhớ 4 tầng (4-Tier Memory System) không bao giờ quên.*
+  * **Task 8.1 - The Memory Foundation:** Nâng cấp `database.py` để tạo Core Memory (SQLite). Cấu trúc lại dữ liệu theo chuẩn JSON (Fact, Category, Domain) để quản lý kiến thức vĩnh cửu.
+  * **Task 8.2 - Autonomous Memory Manager:** Xây dựng luồng "Trích xuất ngầm" (Implicit Extraction). AI tự động phân tích lịch sử chat mỗi tuần để đúc kết chấn thương, thói quen và cập nhật trạng thái (`active`, `archived`) nhằm chống nhiễu (Hallucination).
+  * **Task 8.3 - Cross-Agent Shared Context:** Cô lập bối cảnh theo từng Agent (Ví dụ: Coach Agent chỉ thấy data thể thao). Xây dựng Tool Search Historical Memory để AI chủ động bới móc "kho lạnh" khi bị hỏi về quá khứ xa.
+  * **Task 8.4 - Agentic Expansion:** Ra mắt Work Agent (Trợ lý công việc) và Finance Agent (Trợ lý tài chính), dùng chung một bộ não với Coach Dyno nhưng hành xử độc lập.
