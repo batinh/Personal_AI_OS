@@ -150,10 +150,15 @@ def build_chat_prompt(shared_context: str, current_plans: str) -> str:
     """Flow 1: Handle Telegram Chat"""
     return f"{shared_context}\n\n[GIÁO ÁN SẮP TỚI]\n{current_plans}\n\n[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu.\n\n{CHAT_FORMAT_RULES}"
 
-def build_standup_prompt(shared_context: str, recent_logs: str, today_plan: str, chat_context: str) -> str:
-    """Flow 2: Morning Briefing (Standup) on Telegram"""
+def build_standup_prompt(shared_context: str, weather_data: str, recent_logs: str, today_plan: str, chat_context: str) -> str:
+    """Flow 2: Morning Briefing (Standup) on Telegram
+    [REUSE] Integrates Weather Awareness into the existing Standup structure.
+    """
+    weather_block = WEATHER_INSTRUCTION.format(weather_data=weather_data)
     return f"""
 {shared_context}
+
+{weather_block}
 
 [LỊCH SỬ 7 NGÀY QUA]
 {recent_logs}
@@ -212,4 +217,99 @@ def build_universal_run_analysis_prompt(
 
 [RAW DATA - THÔNG SỐ CHI TIẾT TỪNG SPLIT/GIÂY]
 {csv_data}
+"""
+
+# ==========================================
+# 🧠 LAYER 6: WEEKLY SELF-REFLECTION (CRONJOB)
+# ==========================================
+
+DEFAULT_REFLECTION_TASK = """
+[NHIỆM VỤ TỰ PHẢN TỈNH CHUYÊN SÂU]
+Với tư cách là Coach Dyno, hôm nay là Tối Chủ Nhật. Hãy thực hiện "Dual-Horizon Reflection" (Tầm nhìn kép):
+1. Microcycle (7 ngày qua): Đánh giá chi tiết mức độ hoàn thành các bài chạy trong tuần.
+2. Mesocycle (28 ngày qua): Nhìn vào tỷ lệ ACWR và Tải trọng mãn tính (Chronic Load) để quyết định xu hướng tuần tới.
+
+[HÀNH ĐỘNG BẮT BUỘC]
+Dựa trên phân tích, bạn BẮT BUỘC phải gọi tool `set_actual_weekly_target` để chốt Target Volume (Tổng số km) cho tuần mới bắt đầu từ ngày mai: {next_monday_str}.
+"""
+
+DEFAULT_REFLECTION_REQUIREMENTS = """
+[YÊU CẦU PHÂN TÍCH 5 TRỤ CỘT & NGÔI SAO PHƯƠNG BẮC (GCS)]
+1. ĐỘ TUÂN THỦ (Compliance): So sánh Thực chạy vs Target. VĐV có lười biếng hay hăng say quá mức không?
+2. CHẤT LƯỢNG (Quality): Đánh giá Pace, HR Zone 2, Cadence ở các bài Key.
+3. AN TOÀN (Safety): ACWR hiện tại đang ở đâu? Có dấu hiệu tích lũy mỏi (Cumulative Fatigue) không?
+4. CHU KỲ HUẤN LUYỆN (Periodization): ĐỌC KỸ thông tin "Giai đoạn" (Phase) và "Thời gian đếm ngược đến Race" ở phần Bối cảnh.
+   - Base / Build Phase: Ưu tiên xây dựng nền tảng, có thể tăng tải.
+   - Peak Phase: Giữ nguyên Volume, tối đa hóa cường độ.
+   - Taper Phase: BẮT BUỘC giảm tải (Cutback 30-50%). TUYỆT ĐỐI KHÔNG TĂNG TẢI.
+   - Recovery Phase: Chỉ chạy thả lỏng Zone 1.
+5. TIẾN ĐỘ MỤC TIÊU (GCS Trend): Nhìn vào điểm GCS của các bài chạy trong tuần. Xu hướng đang tăng lên, giữ nguyên, hay sụt giảm? Thể lực hiện tại có đáp ứng được mục tiêu Race không?
+6. QUYẾT ĐỊNH (Action): Kết hợp cả 5 yếu tố trên để chốt Target (km) cho tuần tới.
+"""
+
+DEFAULT_REFLECTION_STRUCTURE = """
+[CẤU TRÚC BÁO CÁO BẮT BUỘC]
+Hãy xuất báo cáo gửi cho VĐV theo đúng format dưới đây (BẮT BUỘC dùng HTML <b>...</b> cho các thông số quan trọng):
+
+🏆 WEEKLY REFLECTION: TỔNG KẾT & ĐỊNH HƯỚNG
+-----------------------------
+📍 TỔNG QUAN KHỐI LƯỢNG (MICROCYCLE)
+► Đạt [Thực chạy]/[Target] km ([X]%).
+► Đánh giá tuân thủ: [Nhận xét ngắn]
+
+⚡ CHẤT LƯỢNG & CƠ SINH HỌC
+► Điểm sáng: [Khen ngợi 1-2 yếu tố làm tốt]
+► Cần cải thiện: [Nhắc nhở điểm yếu]
+
+🩺 THỂ TRẠNG & RỦI RO (MESOCYCLE)
+► ACWR: [Giá trị] - [Nhận định mức độ an toàn và tích lũy mỏi].
+
+🎯 TIẾN ĐỘ MỤC TIÊU (GCS)
+► Xu hướng GCS: [Chỉ ra mốc GCS cao nhất đạt được trong tuần].
+► Nhận định: [Đánh giá khoảng cách thực tế giữa năng lực hiện tại và Mục tiêu Race].
+
+🚀 ĐỊNH HƯỚNG TUẦN TỚI (TỪ {next_monday_str})
+► Chu kỳ hiện tại: [Giai đoạn + Đếm ngược đến Race].
+► Quyết định: [Tăng tải / Duy trì / Taper / Phục hồi].
+► Target chốt: [X] km.
+► Trọng tâm: [Giải thích logic chốt Target dựa trên GCS, ACWR và Phase].
+"""
+
+def build_weekly_reflection_prompt(shared_context: str, recent_logs: str, next_monday_str: str) -> str:
+    """
+    Builds the modular prompt for the Sunday Weekly Reflection Cronjob.
+    [ZONE 1] English docstring. [ZONE 3] Injects data into Vietnamese prompt.
+    """
+    task_injected = DEFAULT_REFLECTION_TASK.format(next_monday_str=next_monday_str)
+    structure_injected = DEFAULT_REFLECTION_STRUCTURE.format(next_monday_str=next_monday_str)
+    
+    return f"""
+{shared_context}
+
+[LỊCH SỬ CÁC BÀI CHẠY GẦN NHẤT]
+{recent_logs}
+
+{task_injected}
+
+{DEFAULT_REFLECTION_REQUIREMENTS}
+
+{structure_injected}
+
+{CHAT_FORMAT_RULES}
+"""
+# ==========================================
+# 🌤️ LAYER 7: WEATHER AWARENESS (NEW)
+# ==========================================
+WEATHER_INSTRUCTION = """
+[BỐI CẢNH THỜI TIẾT & CHỈ THỊ AN TOÀN]
+Thời tiết hiện tại: {weather_data}
+
+Dựa trên dữ liệu thời tiết trên, bạn phải đưa ra lời khuyên thực tế:
+1. NẮNG NÓNG (Nhiệt độ > 32°C hoặc Độ ẩm > 80%): 
+   - Cảnh báo hiện tượng Cardiac Drift (nhịp tim tăng vọt dù pace không đổi).
+   - Khuyên VĐV giảm Pace mục tiêu từ 10-20 giây/km hoặc chạy sớm hơn/muộn hơn.
+2. MƯA/BÃO:
+   - Nếu mưa nhẹ: Nhắc nhở về độ trơn trượt và bảo quản thiết bị (vớ, giày).
+   - Nếu mưa to/Bão: Khuyên chuyển bài tập vào nhà (Treadmill, Zwift) hoặc tập bổ trợ.
+3. LÝ TƯỞNG (15-22°C): Khuyến khích VĐV tận dụng thời tiết để hoàn thành tốt bài Key.
 """

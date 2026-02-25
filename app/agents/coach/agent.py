@@ -4,7 +4,7 @@ import logging
 import pytz
 import uuid
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from google import genai
 from google.genai import types
@@ -15,7 +15,7 @@ from app.core.database import (
     save_message, load_history_for_gemini, clear_history,
     get_training_loads, get_recent_runs_log, update_run_gcs_score, 
     update_daily_plan, get_upcoming_plans, 
-    get_plan_for_date, update_plan_status, get_weekly_volume
+    get_plan_for_date, update_plan_status, get_weekly_volume, get_runs_in_last_days
 )
 from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
 from app.services.rag_memory import rag_db
@@ -23,7 +23,9 @@ from app.services.rag_memory import rag_db
 # [REFACTOR] Import builder functions
 from app.agents.coach.prompts import (
     build_system_instruction, get_shared_context_block, build_universal_run_analysis_prompt,build_chat_prompt,
-    DEFAULT_ANALYSIS_TASK, DEFAULT_ANALYSIS_REQUIREMENTS, DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES
+    DEFAULT_ANALYSIS_TASK, DEFAULT_ANALYSIS_REQUIREMENTS, DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES,CHAT_FORMAT_RULES,
+    build_weekly_reflection_prompt,
+    build_standup_prompt
 )
 from app.agents.coach.tools import (
     update_todays_plan, check_training_status, get_recent_workouts,
@@ -145,12 +147,98 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
         logger.error(f"[COACH AGENT] Analysis Error: {e}")
         return None
 
-# --- FLOW 2: TELEGRAM CHAT ---
+# --- FLOW 2: MORNING BRIEFING (STANDUP) ---
+def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
+    """
+    [BRAIN] Unified flow to generate the morning briefing.
+    Integrates weather awareness and training plans.
+    Can be triggered by Scheduler (Cron) or Telegram Webhook.
+    """
+    logger.info("[COACH AGENT] Starting Morning Briefing reasoning flow...")
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    now = datetime.now(tz)
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    user_id_str = str(chat_id)
+
+    # 1. Gather Data (Data Injection Pattern)
+    loads = get_training_loads(user_id_str)
+    acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
+    actual_volume = get_weekly_volume(user_id_str, now)
+    
+    race_date_str = config.get("race_date", "")
+    phase_info = calculate_training_phase(race_date_str)
+    phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
+    countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race." if race_date_str else "Duy trì thể lực."
+    
+    today_plan = get_plan_for_date(user_id_str, now.strftime('%Y-%m-%d'))
+    plan_context = f"{today_plan['workout_title']}: {today_plan['description']}" if today_plan else "Chạy tự do."
+    weekly_decision_context = get_formatted_weekly_context(user_id_str)
+
+    # Fetch short-term memory (last 5 interactions) to maintain conversation context
+    raw_history = load_history_for_gemini(user_id_str, limit=5)
+    chat_context = "Không có tương tác trò chuyện nào gần đây."
+    if raw_history:
+        chat_context_lines = []
+        for msg in reversed(raw_history): 
+            sender = "User" if msg["role"] == "user" else "Coach Dyno"
+            text = msg["parts"][0][:150] + "..." if len(msg["parts"][0]) > 150 else msg["parts"][0]
+            chat_context_lines.append(f"{sender}: {text}")
+        chat_context = "\n".join(chat_context_lines)
+
+    # 2. Build Instruction & Prompt (Lego Architecture)
+    system_inst = build_system_instruction(
+        config.get("system_instruction", ""), config.get("user_profile", ""),
+        int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+    )
+    
+    shared_context = get_shared_context_block(
+        now.strftime('%A, %d/%m/%Y'), user_id_str, phase_text, countdown_text,
+        f"{acwr_data['acwr']} ({acwr_data['status']})", 
+        actual_volume, weekly_decision_context
+    )
+
+    prompt = build_standup_prompt(
+        shared_context=shared_context, 
+        weather_data=weather_data, 
+        recent_logs=get_runs_in_last_days(user_id_str, days=7), 
+        today_plan=plan_context, 
+        chat_context=chat_context 
+    )
+
+    debug_log_prompt("DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
+
+    # 3. Execution (Resilience Pattern)
+    try:
+        chat_session = client.chats.create(
+            model=config.get("model_name", "models/gemini-2.0-flash"),
+            config=types.GenerateContentConfig(
+                system_instruction=system_inst,
+                tools=[update_todays_plan, set_actual_weekly_target]
+            )
+        )
+        response = send_message_with_retry(chat_session, prompt)
+        reply = response.text or "⚠️ Coach Dyno không thể Briefing lúc này."
+        
+        if chat_id:
+            send_telegram_msg(chat_id, reply)
+            save_message(user_id_str, "model", f"[MORNING BRIEFING] {reply}")
+    except Exception as e:
+        logger.error(f"[COACH AGENT] Morning Briefing Error: {e}")
+
 def handle_telegram_chat(chat_id: str, text: str, config: dict):
     chat_id = str(chat_id)
+    
+    # [1] Handle Memory Reset
     if text.strip().lower() in ["/clear", "/reset"]:
         clear_history(chat_id)
         send_telegram_msg(chat_id, "🧹 Đã xóa sạch ký ức ngắn hạn.")
+        return
+        
+    # [2] Handle Manual Reflection Trigger (TESTING/ADMIN MODE)
+    if text.strip().lower() == "/reflect":
+        send_telegram_msg(chat_id, "⚙️ [TEST MODE] Đang kích hoạt luồng Weekly Reflection...")
+        # Gọi trực tiếp hàm reflection
+        generate_weekly_reflection(config)
         return
 
     # 1. Calculate Context
@@ -206,3 +294,81 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         logger.error(f"[TELEGRAM] Chat Error: {e}")
         # [ZONE 3] User-facing notification remains in Vietnamese
         send_telegram_msg(chat_id, "⚠️ Google AI Server đang bảo trì hoặc quá tải. Hãy thử lại sau một chút nhé!")
+
+# --- FLOW 3: WEEKLY SELF-REFLECTION (CRONJOB) ---
+def generate_weekly_reflection(config: dict):
+    """
+    Cron-triggered flow to analyze the past week, set goals for the next week, 
+    and inject the reflection into long-term RAG memory.
+    Strictly follows Data Injection (no tool calling for data gathering).
+    """
+    logger.info("[COACH AGENT] Generating Weekly Self-Reflection...")
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    now = datetime.now(tz)
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    user_id_str = str(chat_id)
+
+    # 1. Gather Context (Data Injection Pattern)
+    race_date_str = config.get("race_date", "")
+    phase_info = calculate_training_phase(race_date_str)
+    phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
+    countdown_text = f"Còn {phase_info['weeks_left']} tuần đến ngày đua." if race_date_str else "Duy trì thể lực."
+
+    loads = get_training_loads(user_id_str)
+    acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
+    actual_volume = get_weekly_volume(user_id_str, now)
+    weekly_decision_context = get_formatted_weekly_context(user_id_str)
+    
+    # Fetch recent runs directly from DB (No AI Tool needed)
+    recent_logs = get_recent_runs_log(user_id_str)
+
+    # Calculate Next Monday's date for target setting
+    next_monday = now + timedelta(days=(7 - now.weekday()))
+    next_monday_str = next_monday.strftime('%Y-%m-%d')
+
+    # 2. Build Prompt using Lego blocks
+    system_inst = build_system_instruction(
+        config.get("system_instruction", ""), config.get("user_profile", ""),
+        int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+    )
+    
+    shared_context = get_shared_context_block(
+        now.strftime('%A, %Y-%m-%d %H:%M'), user_id_str, phase_text, countdown_text,
+        f"{acwr_data['acwr']} ({acwr_data['status']})", 
+        actual_volume, weekly_decision_context
+    )
+
+    prompt = build_weekly_reflection_prompt(shared_context, recent_logs, next_monday_str)
+    debug_log_prompt("DEBUG WEEKLY REFLECTION", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
+
+    # 3. Call Gemini with Action Tool allowed
+    try:
+        chat_session = client.chats.create(
+            model=config.get("model_name", "models/gemini-2.0-flash"),
+            config=types.GenerateContentConfig(
+                system_instruction=system_inst,
+                temperature=0.7,
+                tools=[set_actual_weekly_target] # Crucial: Let AI act on its reflection
+            )
+        )
+        
+        # Re-use Resilience Pattern
+        response = send_message_with_retry(chat_session, prompt)
+        reflection_text = response.text or "⚠️ Coach Dyno encountered an error generating the reflection."
+
+        # 4. Inject Memory into RAG (Long-term autonomous memory)
+        memory_doc_id = f"reflection_{now.strftime('%Y%m%d')}"
+        rag_db.memorize(
+            doc_id=memory_doc_id,
+            content=f"Weekly Reflection for week ending {now.strftime('%Y-%m-%d')}:\n{reflection_text}",
+            domain="coach",
+            extra_meta={"user_id": user_id_str, "type": "weekly_reflection"}
+        )
+
+        # 5. Save and Notify
+        save_message(user_id_str, "model", f"[WEEKLY REFLECTION]\n{reflection_text}")
+        if chat_id:
+            send_telegram_msg(chat_id, reflection_text)
+            
+    except Exception as e:
+        logger.error(f"[COACH AGENT] Weekly Reflection Error: {e}")

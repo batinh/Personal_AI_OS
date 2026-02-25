@@ -115,26 +115,20 @@ graph TD
 ## 🚀 PHẦN 3: KỶ NGUYÊN ĐẠI DIỆN TỰ TRỊ BẬC CAO (v3.0 - v3.x)
 
 *Trạng thái: Đang triển khai (In Progress)*
-*Mục tiêu: Trang bị tư duy Tự phản tỉnh (Self-Reflection), truy xuất RAG chủ động và phản ứng theo sự kiện (Event-driven).*
+*Mục tiêu: Trang bị tư duy Tự phản tỉnh (Self-Reflection), nền tảng Khoa học thể thao tự trị, và năng lực nhận thức môi trường.*
 
-* **Phase 5: The Resilient Thinker (Tư duy Bền bỉ - Dự kiến v3.0)**
-* **Task 5.1 - ReAct Error Handling:** Nâng cấp Agent để biết tự xử lý lỗi khi gọi Tool thất bại (Báo lỗi cho LLM để nó tự suy luận và gọi lại).
-* **Task 5.2 - Demarcation Line Refactor:** Dịch toàn bộ Docstrings/Comments trong source code sang Tiếng Anh (Chuẩn bị cho Docs-as-Code).
-* **Task 5.3 - Weekly Self-Reflection:** Thêm cronjob tối Chủ Nhật để AI tự review lại giáo án tuần cũ và rút kinh nghiệm cho tuần sau.
+* **Phase 5: The Resilient Thinker (Tư duy Bền bỉ - Đã hoàn thành v3.0)**
+  * **Task 5.1 - ReAct Error Handling:** [DONE] Nâng cấp Agent với cơ chế Exponential Backoff tự xử lý lỗi 429/503 từ Google API.
+  * **Task 5.2 - Demarcation Line Refactor:** [DONE] Áp dụng chuẩn quốc tế Zone 1 (100% English Source/DB) và Zone 2/3 (Vietnamese Logic/UI).
+  * **Task 5.3 - Weekly Self-Reflection:** [DONE] Cronjob tối Chủ Nhật tự động review giáo án tuần cũ và chốt Target Volume cho tuần mới.
 
-
-* **Phase 6: The Proactive Scholar (Học giả Chủ động - Dự kiến v3.1)**
-* **Task 6.1 - Pre-fetch RAG:** Hệ thống tự động truy xuất tiền sử chấn thương từ ChromaDB nhúng thẳng vào Prompt trước khi hỏi AI, AI không cần phải gọi Tool để nhớ lại nữa.
-* **Task 6.2 - Docs-as-Code (DaC):** Tích hợp MkDocs, tự động render Web Tài liệu từ các file Python (đã được refactor sang Tiếng Anh ở Phase 5).
-
+* **Phase 6: The Autonomous Sports Scientist (Chuyên gia Thể thao - Dự kiến v3.1)**
+  * **Task 6.1 - Local Data Lake:** Lưu trữ Raw Data Streams (Time-series) từ Strava dưới dạng JSON local, giảm tải DB và bảo vệ Quota LLM.
+  * **Task 6.2 - Pure Python Engine:** Tự xây dựng module phân tích cơ sinh học (Aerobic Decoupling, Time in Zones) bằng Python thuần (No Pandas) để thay thế việc ép LLM tính toán.
+  * **Task 6.3 - Post-Run Weather Perception:** Bóc tách `average_temp` từ thiết bị Garmin/Coros trên Strava để AI nhận diện tác động của Cardiac Drift khi chạy dưới trời nóng.
+  * **Task 6.4 - Proactive RAG:** Hệ thống tự động truy xuất tiền sử chấn thương từ ChromaDB nhúng thẳng vào Prompt trước khi Standup sáng.
 
 * **Phase 7: The Omniscient Coach (Coach Toàn năng - Dự kiến v3.2)**
-* **Task 7.1 - Environment Perception:** Tích hợp API Thời tiết/AQI để AI tự đổi bài chạy ngoài trời thành chạy máy (Treadmill) nếu có bão.
-* **Task 7.2 - Event-Driven Autonomy:** Lắng nghe tín hiệu HRV/Resting HR trực tiếp từ Garmin/Apple Health giữa đêm. Nếu sức khỏe VĐV lao dốc, sáng hôm sau Agent sẽ *chủ động* can thiệp trước khi VĐV kịp thức dậy.
-
-### 🔮 PHẦN 4: The Multi-Agent Ecosystem (Late 2026)
-
-* **Supervisor Orchestrator:** Convert `main.py` into a Router Agent.
-
-
-* **Finance Agent:** Add personal budget tracking and gear depreciation.
+  * **Task 7.1 - Environment Perception (Standup & Race Day):** * [DONE] Tích hợp thời tiết hiện tại vào Morning Briefing.
+    * [TODO] Gọi Forecast API 5 ngày vào Tuần Taper để lên chiến thuật Race Day (Nước/Muối/Pace) dựa trên nhiệt độ giải chạy.
+  * **Task 7.2 - Event-Driven Autonomy:** Lắng nghe tín hiệu HRV/Resting HR trực tiếp từ Garmin/Apple Health giữa đêm để tự động điều chỉnh bài tập sáng sớm.
