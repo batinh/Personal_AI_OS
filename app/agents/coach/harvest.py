@@ -16,7 +16,7 @@ from app.services.rag_memory import rag_db
 logger = logging.getLogger("AI_COACH")
 
 def harvest_data():
-    """Luồng Auto-harvest chạy ngầm theo lịch Cron"""
+    """Auto-harvest background process triggered by Cron"""
     logger.info("[HARVEST] Starting Strava data harvest process...")
     init_db()
     strava_client = StravaClient()
@@ -60,8 +60,8 @@ def harvest_data():
     logger.info("[HARVEST] Cron Auto-Harvest complete.")
 
 async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
-    """Luồng đồng bộ lịch sử chạy tay: Bảo vệ Quota, cấy Ký ức Python trực tiếp."""
-    logger.info(f"[SYNC] Bắt đầu đồng bộ thủ công. Limit: {limit}, Days back: {days_back}")
+    """Manual sync flow: Protects Quota and directly injects Python Memory."""
+    logger.info(f"[SYNC] Starting manual sync. Limit: {limit}, Days back: {days_back}")
     send_telegram_msg(chat_id, f"⏳ Đang thu hoạch dữ liệu Strava ({'30 ngày qua' if days_back else f'{limit} bài gần nhất'})...")
     
     init_db()
@@ -93,7 +93,7 @@ async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = Non
         act_id = str(activity.get('id'))
         if activity.get('type') not in ['Run', 'TrailRun', 'VirtualRun']: continue
 
-        # 1. Luôn tính toán và cập nhật SQLite (Lệnh REPLACE sẽ tự động chữa lành/ghi đè an toàn)
+        # 1. Always calculate and update SQLite (REPLACE command ensures safe overwrite/healing)
         dist_km = activity.get('distance', 0) / 1000
         moving_min = activity.get('moving_time', 0) / 60
         avg_hr = activity.get('average_heartrate', 0)
@@ -113,14 +113,14 @@ async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = Non
         save_run_activity(user_id=chat_id, activity_data=activity_data)
         loaded_count += 1
         
-        # 2. CHỐT CHẶN MỚI: Hỏi thẳng ChromaDB xem ký ức đã có chưa?
+        # 2. NEW GATEWAY: Check ChromaDB directly to see if memory already exists
         existing_memory = rag_db.collection.get(ids=[act_id])
         if existing_memory and existing_memory['ids']:
-            logger.info(f"[SYNC] Bỏ qua RAG cho {act_id} vì Ký ức đã tồn tại trong não bộ.")
-            continue # Nếu có rồi thì bỏ qua phần tính Streams bên dưới để tiết kiệm CPU
+            logger.info(f"[SYNC] Skipped RAG for {act_id} because memory already exists.")
+            continue # Skip Streams parsing to save CPU if memory exists
             
-        # 3. Nạp Ký ức Python cho những bài chạy bị thiếu (như các bài bị lỗi 429 trước đây)
-        logger.info(f"[SYNC] Đang vá lỗ hổng Ký ức cho bài chạy {act_id}...")
+        # 3. Inject Python Memory for missing runs (e.g., previous 429 error runs)
+        logger.info(f"[SYNC] Patching memory gaps for activity {act_id}...")
         act_name, csv_data, meta_data = strava_client.get_activity_data(act_id)
         ef_val, decoupling_val, cadence_avg, stride_avg = 0.0, 0.0, 0, 0.0
         pace_str = f"{int(moving_min/dist_km)}:{int(((moving_min/dist_km)%1)*60):02d}" if dist_km > 0 else "0:00"
@@ -132,15 +132,15 @@ async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = Non
                     decoupling_val = analyze_decoupling(df)
                     ef_val = calculate_efficiency_factor(df['Velocity_m_s'].mean() * 60, df['HR_bpm'].mean())
                     
-                    # [FIX BUG] Xử lý an toàn cho Cadence (Tránh lỗi NaN)
+                    # [FIX BUG] Safe handling for Cadence (Avoid NaN errors)
                     c_mean = df['Cadence_spm'].mean() if 'Cadence_spm' in df.columns else 0
                     cadence_avg = int(c_mean) if pd.notna(c_mean) else 0
                     
-                    # [FIX BUG] Xử lý an toàn cho Stride
+                    # [FIX BUG] Safe handling for Stride
                     s_mean = df['Stride_m'].mean() if 'Stride_m' in df.columns else 0.0
                     stride_avg = round(s_mean, 2) if pd.notna(s_mean) else 0.0
             except Exception as e:
-                logger.error(f"[SYNC] Lỗi phân tích Streams cho {act_id}: {e}")
+                logger.error(f"[SYNC] Error analyzing Streams for {act_id}: {e}")
 
         memory_content = (
             f"[HỒ SƠ BÀI CHẠY LỊCH SỬ]\n"

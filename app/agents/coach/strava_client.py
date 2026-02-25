@@ -35,7 +35,7 @@ class StravaClient:
 
     def get_activity_data(self, activity_id: str):
         """
-        Lấy Full Data: Streams (CSV), Metadata (Splits, Laps, PRs).
+        Fetch Full Data: Streams (CSV), Metadata (Splits, Laps, PRs).
         Returns: (activity_name, csv_data, extended_meta)
         """
         token = self.get_access_token()
@@ -44,7 +44,7 @@ class StravaClient:
         headers = {'Authorization': f'Bearer {token}'}
         
         try:
-            # 1. Lấy Activity Detail (Chứa Laps, Splits, Best Efforts)
+            # 1. Fetch Activity Detail (Contains Laps, Splits, Best Efforts)
             act_url = f"{self.base_url}/activities/{activity_id}"
             act_res = requests.get(act_url, headers=headers)
             if act_res.status_code != 200:
@@ -59,8 +59,8 @@ class StravaClient:
                 logger.info(f"[STRAVA] Activity {activity_id} is not a run. Skipping.")
                 return None, None, None
 
-            # 2. Trích xuất thông tin Splits & Laps & Metadata
-            # Splits (Mỗi 1km)
+            # 2. Extract Splits & Laps & Metadata information
+            # Splits (Every 1km)
             splits = act_data.get('splits_metric', [])
             splits_summary = []
             for s in splits:
@@ -70,7 +70,7 @@ class StravaClient:
                     "hr": s.get('average_heartrate', 0)
                 })
 
-            # Laps (Nếu có bấm Lap)
+            # Laps (If manually marked)
             laps = act_data.get('laps', [])
             laps_summary = []
             for l in laps:
@@ -81,23 +81,23 @@ class StravaClient:
                     "hr": l.get('average_heartrate', 0)
                 })
 
-            # Đóng gói dữ liệu bổ sung (Metadata)
+            # Package additional Metadata
             extended_meta = {
                 "start_date_local": act_data.get('start_date_local'),
                 "moving_time": act_data.get('moving_time', 0),
                 "average_heartrate": act_data.get('average_heartrate', 0),
-                "max_heartrate": act_data.get('max_heartrate', 0), # [CẬP NHẬT] Thêm trường này
-                "distance": act_data.get('distance', 0),           # [CẬP NHẬT] Thêm trường này
+                "max_heartrate": act_data.get('max_heartrate', 0), # [UPDATED] Added this field
+                "distance": act_data.get('distance', 0),           # [UPDATED] Added this field
                 "suffer_score": act_data.get('suffer_score'),
                 "device_name": act_data.get('device_name'),
                 "splits": splits_summary,
                 "best_efforts": act_data.get('best_efforts', [])
             }
-            # 3. Lấy Streams (Dữ liệu từng giây)
+            # 3. Fetch Streams (Second-by-second data)
             streams_url = f"{act_url}/streams?keys=time,heartrate,velocity_smooth,cadence,grade_smooth,watts&key_by_type=true"
             streams_res = requests.get(streams_url, headers=headers).json()
 
-            # 4. Xử lý DataFrame Pandas (PHẦN QUAN TRỌNG ĐÃ BỊ THIẾU TRƯỚC ĐÓ)
+            # 4. Pandas DataFrame Processing (CRITICAL SECTION PREVIOUSLY MISSING)
             data = {
                 'Time_sec': streams_res.get('time', {}).get('data', []),
                 'HR_bpm': streams_res.get('heartrate', {}).get('data', []),
@@ -132,8 +132,8 @@ class StravaClient:
             # Round for cleaner CSV token usage
             df = df.round({'Velocity_m_s': 2, 'Stride_m': 2, 'Grade_pct': 1})
 
-            # [NEW] DOWNSAMPLING: Lấy mẫu 5 giây/lần để giảm 80% Token rác.
-            # Cực kỳ quan trọng để bảo vệ Quota cho các bài chạy dài (Long Run).
+            # [NEW] DOWNSAMPLING: Sample every 5 seconds to reduce junk tokens by 80%.
+            # Extremely important to protect Quota for Long Runs.
             df = df.iloc[::5, :]
             # Convert to CSV string for Gemini
             csv_data = df.to_csv(index=False)
@@ -167,7 +167,7 @@ class StravaClient:
             return False
 
     def get_athlete_stats(self, athlete_id):
-        """Lấy tổng km chạy (Tuần/Tháng/Năm/Tổng)"""
+        """Fetch total running mileage (Week/Month/Year/All-time)"""
         token = self.get_access_token() 
         url = f"https://www.strava.com/api/v3/athletes/{athlete_id}/stats"
         headers = {"Authorization": f"Bearer {token}"}
@@ -187,7 +187,7 @@ class StravaClient:
         return None
 
     def get_recent_activities(self, limit=10):
-        """Lấy danh sách các bài tập gần nhất"""
+        """Fetch the list of most recent activities"""
         token = self.get_access_token()
         url = "https://www.strava.com/api/v3/athlete/activities"
         headers = {"Authorization": f"Bearer {token}"}

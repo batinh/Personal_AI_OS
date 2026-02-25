@@ -7,31 +7,31 @@ logger = logging.getLogger("AI_COACH")
 
 def perform_backup():
     """
-    Nén toàn bộ thư mục 'data/' thành file ZIP và lưu vào thư mục 'backups/'.
-    Tự động xóa các bản backup cũ, chỉ giữ lại 7 bản gần nhất (xoay vòng 1 tuần).
+    Compress the entire 'data/' directory into a ZIP file and save to 'backups/'.
+    Automatically delete old backups, retaining only the 7 most recent (1-week rotation).
     """
     source_dir = "data"
     backup_dir = "backups"
     
-    # Tạo thư mục backups nếu chưa có
+    # Create backups directory if it doesn't exist
     os.makedirs(backup_dir, exist_ok=True)
     
-    # Tạo tên file theo thời gian thực
+    # Generate filename based on current timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_filename = f"coach_data_{timestamp}"
     backup_path = os.path.join(backup_dir, backup_filename)
     
     try:
-        # Nén thư mục data/
+        # Compress the data/ directory
         shutil.make_archive(backup_path, 'zip', source_dir)
-        logger.info(f"[BACKUP] Đã sao lưu thành công: {backup_filename}.zip")
+        logger.info(f"[BACKUP] Successfully backed up: {backup_filename}.zip")
         
-        # Dọn dẹp: Chỉ giữ lại 7 bản backup gần nhất để đỡ tốn ổ cứng T440
+        # Cleanup: Keep only the 7 most recent backups to save T440 disk space
         all_backups = sorted([f for f in os.listdir(backup_dir) if f.endswith('.zip')])
         while len(all_backups) > 7:
             oldest_file = all_backups.pop(0)
             os.remove(os.path.join(backup_dir, oldest_file))
-            logger.info(f"[BACKUP] Đã xóa bản sao lưu cũ: {oldest_file}")
+            logger.info(f"[BACKUP] Deleted old backup: {oldest_file}")
             
     except Exception as e:
-        logger.error(f"[BACKUP] Lỗi khi sao lưu dữ liệu: {e}")
+        logger.error(f"[BACKUP] Error during data backup: {e}")

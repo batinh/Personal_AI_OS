@@ -7,24 +7,26 @@ import os
 from app.core.database import get_db_connection, get_training_loads, get_historical_training_loads
 from app.agents.coach.utils import calculate_acwr
 from app.core.config import load_config
+
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger("AI_COACH")
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
-    # 1. Lấy cấu hình và thông tin Athlete
+    # 1. Fetch configuration and Athlete info
     config = load_config()
-    # Lấy Chat ID từ môi trường (tương ứng với Tenant chính)
+    # Get Chat ID from environment (representing the Primary Tenant)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
-    # 2. Lấy dữ liệu tải trọng và tính ACWR
+    # 2. Fetch training loads and calculate ACWR
     loads = get_training_loads(chat_id)
     acwr_results = calculate_acwr(loads['acute_load_7d'], loads['chronic_load_28d'])
 
-    # [NEW] Lấy dữ liệu mảng thời gian 30 ngày cho biểu đồ Garmin-style
+    # [NEW] Fetch 30-day time series data for Garmin-style chart
     load_history = get_historical_training_loads(chat_id, days=30)
-    # 3. Lấy 20 bài chạy gần nhất để vẽ biểu đồ
+    
+    # 3. Fetch the last 20 run activities for charting
     conn = get_db_connection()
     c = conn.cursor()
     c.execute('''
@@ -40,7 +42,7 @@ async def user_dashboard(request: Request):
         "request": request,
         "acwr": acwr_results,
         "loads": loads,
-        "load_history": load_history, # [NEW] Bơm vào Jinja2
-        "activities": activities[::-1], # Đảo ngược để vẽ biểu đồ từ trái sang phải
+        "load_history": load_history, # [NEW] Inject into Jinja2
+        "activities": activities[::-1], # Reverse to draw chart from left to right
         "config": config
     })

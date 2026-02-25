@@ -20,7 +20,7 @@ from app.core.database import (
 from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
 from app.services.rag_memory import rag_db
 
-# [REFACTOR] Import các builder functions
+# [REFACTOR] Import builder functions
 from app.agents.coach.prompts import (
     build_system_instruction, get_shared_context_block, build_universal_run_analysis_prompt,build_chat_prompt,
     DEFAULT_ANALYSIS_TASK, DEFAULT_ANALYSIS_REQUIREMENTS, DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES
@@ -37,7 +37,33 @@ class RunAnalysisResult(BaseModel):
     analysis_text: str = Field(description="Bài phân tích chi tiết theo format yêu cầu.")
     gcs_score: int = Field(description="Điểm tự tin hoàn thành mục tiêu (0-100).")
 
-# --- LUỒNG 1: PHÂN TÍCH BÀI CHẠY ---
+# ==========================================
+# 🛡️ RESILIENCE PATTERN: EXPONENTIAL BACKOFF
+# ==========================================
+def send_message_with_retry(chat_session, message, max_retries=3):
+    """
+    Wrapper to call Gemini API with an exponential backoff retry mechanism 
+    when the Google Server is overloaded.
+    Gracefully handles 503 (Unavailable) and 429 (Too Many Requests) errors.
+    """
+    for attempt in range(max_retries):
+        try:
+            return chat_session.send_message(message)
+        except Exception as e:
+            error_msg = str(e)
+            if "503" in error_msg or "429" in error_msg or "Unavailable" in error_msg:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Wait 1s, 2s, 4s...
+                    logger.warning(f"[API RESILIENCE] Google Server overloaded (503/429). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.error("[API RESILIENCE] Max retries reached. Google Server is completely down.")
+                    raise e
+            else:
+                # If it is a different error (e.g., invalid API Key), raise immediately without retrying
+                raise e
+
+# --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str, meta_data: dict, config: dict):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
@@ -45,7 +71,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)
     
-    # 1. Chuẩn bị dữ liệu Context
+    # 1. Prepare Context data
     start_date_raw = meta_data.get("start_date_local", "")
     run_date_str = start_date_raw[:10] if start_date_raw else now.strftime('%Y-%m-%d')
     race_date_str = config.get("race_date", "")
@@ -56,13 +82,12 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
 
     loads = get_training_loads(user_id_str)
     acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
-    actual_volume = loads.get('avg_weekly_mileage', 0)
+    actual_volume = get_weekly_volume(user_id_str, now)
     weekly_decision_context = get_formatted_weekly_context(user_id_str)
     
     today_plan = get_plan_for_date(user_id_str, run_date_str)
-    plan_context = f"Tên bài: {today_plan['title']}\nChi tiết: {today_plan['description']}" if today_plan else "Chạy tự do."
-
-    # 2. XÂY DỰNG PROMPT (Kiến trúc Lego)
+    plan_context = f"Tên bài: {today_plan['workout_title']}\nChi tiết: {today_plan['description']}" if today_plan else "Chạy tự do."
+    # 2. BUILD PROMPT (Lego Architecture)
     system_inst = build_system_instruction(
         config.get("system_instruction", ""), config.get("user_profile", ""),
         int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
@@ -76,36 +101,36 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
 
     meta_text = "\n".join([f"Km {s['km']}: {s['pace']:.2f} m/s | HR {int(s['hr'])}" for s in meta_data.get('splits', [])])
     
-    # [BẢN VÁ]: Trả lại csv_data và task_description từ config    
-    # SỬ DỤNG OMNICHANNEL BUILDER, XUẤT FORMAT CHO STRAVA
+    # [HOTFIX]: Return csv_data and task_description from config    
+    # USE OMNICHANNEL BUILDER, OUTPUT FORMAT FOR STRAVA
     prompt = build_universal_run_analysis_prompt(
         shared_context=shared_context, 
         run_name=activity_name, 
         meta_text=meta_text, 
         today_plan=plan_context,
-        # Bắt đầu lấy từ Config Admin
+        # Fetching from Admin Config
         task_desc=config.get("task_description", DEFAULT_ANALYSIS_TASK),
         analysis_req=config.get("analysis_requirements", DEFAULT_ANALYSIS_REQUIREMENTS),
-        report_structure=config.get("report_structure", DEFAULT_REPORT_STRUCTURE), # Biến mới thêm!
+        report_structure=config.get("report_structure", DEFAULT_REPORT_STRUCTURE), # Added missing variable!
         format_rules=config.get("output_format", UNIVERSAL_FORMAT_RULES),
         csv_data=csv_data
     )
 
     debug_log_prompt("DEBUG STRAVA PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
 
-    # 3. Gọi Gemini với Native Schema
+    # 3. Call Gemini with Native Schema
     try:
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
-                system_instruction=system_inst, # Tách System rõ ràng
+                system_instruction=system_inst, # Explicit System Instruction separation
                 temperature=0.7,
                 response_mime_type="application/json",
                 response_schema=RunAnalysisResult,
-                tools=[update_todays_plan, set_actual_weekly_target] # Cho AI quyền sửa lịch sau bài chạy
+                tools=[update_todays_plan, set_actual_weekly_target] # Grant AI permission to adjust schedule post-run
             )
         )
-        response = chat_session.send_message(prompt)
+        response = send_message_with_retry(chat_session, prompt)
         result = json.loads(response.text)
         
         analysis_text = result.get("analysis_text", "")
@@ -120,7 +145,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
         logger.error(f"[COACH AGENT] Analysis Error: {e}")
         return None
 
-# --- LUỒNG 2: CHAT TELEGRAM ---
+# --- FLOW 2: TELEGRAM CHAT ---
 def handle_telegram_chat(chat_id: str, text: str, config: dict):
     chat_id = str(chat_id)
     if text.strip().lower() in ["/clear", "/reset"]:
@@ -128,7 +153,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         send_telegram_msg(chat_id, "🧹 Đã xóa sạch ký ức ngắn hạn.")
         return
 
-    # 1. Tính toán bối cảnh
+    # 1. Calculate Context
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     phase_info = calculate_training_phase(config.get("race_date", ""))
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
@@ -136,7 +161,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     actual_volume = get_weekly_volume(chat_id)
     weekly_decision_context = get_formatted_weekly_context(chat_id)
 
-    # 2. XÂY DỰNG PROMPT (Kiến trúc Lego)
+    # 2. BUILD PROMPT (Lego Architecture)
     system_inst = build_system_instruction(
         config.get("system_instruction", ""), config.get("user_profile", ""),
         int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
@@ -144,7 +169,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     
     shared_context = get_shared_context_block(
         datetime.now(tz).strftime('%A, %Y-%m-%d %H:%M:%S'), chat_id, phase_text, countdown_text,
-        "ACWR đang tính (Dùng tool check_training_status nếu cần)", # Nhẹ tải
+        "ACWR đang tính (Dùng tool check_training_status nếu cần)", # Offload computation
         actual_volume, weekly_decision_context
     )
     
@@ -156,7 +181,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         raw_history = load_history_for_gemini(chat_id, limit=20)
         formatted_history = [{"role": m["role"], "parts": [{"text": m["parts"][0]}]} for m in raw_history]
         
-        # Tiêm Context ngầm vào cuối History để AI nhớ luật chơi hiện tại
+        # Inject implicit Context at the end of History to enforce current rules
         current_turn_text = f"[SYSTEM CONTEXT UPDATE]\n{task_prompt}\n\n[USER MESSAGE]\n{text}"
         if formatted_history:
             formatted_history.append({"role": "user", "parts": [{"text": current_turn_text}]})
@@ -165,13 +190,13 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
 
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),
-            history=formatted_history[:-1], # Truyền history cũ
+            history=formatted_history[:-1], # Pass previous history
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 tools=[check_training_status, get_recent_workouts, search_long_term_memory, set_workout_plan, set_actual_weekly_target, update_todays_plan]
             )
         )
-        response = chat_session.send_message(formatted_history[-1]["parts"][0]["text"])
+        response = send_message_with_retry(chat_session, formatted_history[-1]["parts"][0]["text"])
         reply = response.text or "⚠️ Coach Dyno không thể trả lời lúc này."
         
         save_message(chat_id, "user", text)
@@ -179,3 +204,5 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         send_telegram_msg(chat_id, reply)
     except Exception as e:
         logger.error(f"[TELEGRAM] Chat Error: {e}")
+        # [ZONE 3] User-facing notification remains in Vietnamese
+        send_telegram_msg(chat_id, "⚠️ Google AI Server đang bảo trì hoặc quá tải. Hãy thử lại sau một chút nhé!")

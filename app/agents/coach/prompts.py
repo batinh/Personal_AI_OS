@@ -1,10 +1,10 @@
 # app/agents/coach/prompts.py
 
 # ==========================================
-# 🏛️ TẦNG 1: SYSTEM INSTRUCTION (BẤT BIẾN)
+# 🏛️ LAYER 1: SYSTEM INSTRUCTION (IMMUTABLE)
 # ==========================================
 def build_system_instruction(custom_instruction: str, user_profile: str, max_hr: int, rest_hr: int) -> str:
-    """Tạo bộ não cốt lõi cho AI. Dùng chung cho mọi luồng."""
+    """Build the core brain for the AI. Used across all flows."""
     return f"""
 Bạn là Coach Dyno, một huấn luyện viên chạy bộ chuyên nghiệp, am hiểu sinh lý học thể thao và phân tích dữ liệu.
 Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng vào vấn đề.
@@ -21,10 +21,10 @@ Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng 
 """
 
 # ==========================================
-# 🧩 TẦNG 2: SHARED CONTEXT & CORE TASKS
+# 🧩 LAYER 2: SHARED CONTEXT & CORE TASKS
 # ==========================================
 def get_shared_context_block(now_str: str, chat_id: str, phase_text: str, countdown_text: str, acwr_text: str, actual_volume: float, weekly_decision_context: str) -> str:
-    """Khối dữ liệu biến thiên, cung cấp Giác quan cho AI."""
+    """Dynamic data block providing sensory context to the AI."""
     return f"""
 [BỐI CẢNH HIỆN TẠI]
 - Thời gian hệ thống: {now_str}
@@ -51,7 +51,7 @@ Dựa vào dữ liệu buổi chạy và [ĐỐI CHIẾU GIÁO ÁN], hãy phân 
 """
 
 # ==========================================
-# 🧩 TẦNG 3: REPORT STRUCTURES (CẤU TRÚC NGHIỆP VỤ)
+# 🧩 LAYER 3: REPORT STRUCTURES (DOMAIN STRUCTURE)
 # ==========================================
 DEFAULT_ANALYSIS_REQUIREMENTS = """
 [YÊU CẦU PHÂN TÍCH CHI TIẾT]
@@ -99,7 +99,7 @@ Hãy điền dữ liệu phân tích của bạn vào đúng form dưới đây,
 """
 
 # ==========================================
-# 🎨 TẦNG 4: PLATFORM FORMATTERS (QUY TẮC GIAO DIỆN)
+# 🎨 LAYER 4: PLATFORM FORMATTERS (UI RULES)
 # ==========================================
 
 CHAT_FORMAT_RULES = """
@@ -144,14 +144,14 @@ UNIVERSAL_FORMAT_RULES = """
 """
 
 # ==========================================
-# 🏗️ TẦNG 5: TASK BUILDERS (LẮP RÁP LÊN PROMPT CUỐI)
+# 🏗️ LAYER 5: TASK BUILDERS (FINAL PROMPT ASSEMBLY)
 # ==========================================
 def build_chat_prompt(shared_context: str, current_plans: str) -> str:
-    """Luồng 1: Trả lời Chat Telegram"""
+    """Flow 1: Handle Telegram Chat"""
     return f"{shared_context}\n\n[GIÁO ÁN SẮP TỚI]\n{current_plans}\n\n[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu.\n\n{CHAT_FORMAT_RULES}"
 
 def build_standup_prompt(shared_context: str, recent_logs: str, today_plan: str, chat_context: str) -> str:
-    """Luồng 2: Báo cáo sáng (Standup) trên Telegram"""
+    """Flow 2: Morning Briefing (Standup) on Telegram"""
     return f"""
 {shared_context}
 
@@ -171,10 +171,10 @@ def build_standup_prompt(shared_context: str, recent_logs: str, today_plan: str,
 
 [NHIỆM VỤ SÁNG NAY (BẮT BUỘC)]
 1. AN TOÀN: Đánh giá Giáo án hôm nay đối chiếu với ACWR. NẾU NGUY HIỂM (ACWR > 1.3), CHỦ ĐỘNG gọi Tool `update_todays_plan` để đổi bài.
-2. ĐIỀU PHỐI TUẦN: Kiểm tra [ĐIỀU PHỐI KHỐI LƯỢNG TUẦN]. 
-   - NẾU 'Target thực tế đang chốt' là 'Chưa chốt km', hãy gọi Tool để thiết lập. 
-   - NẾU đã có con số cụ thể (ví dụ 55km), TUYỆT ĐỐI KHÔNG thay đổi trừ khi có rủi ro ACWR > 1.3. 
-   - KHÔNG thực hiện lại các yêu cầu cũ trong [TÂM LÝ/GIAO TIẾP GẦN ĐÂY] nếu nó mâu thuẫn với số liệu thực tế đang chốt.
+2. ĐIỀU PHỐI TUẦN: Kiểm tra [ĐIỀU PHỐI KHỐI LƯỢNG TUẦN].
+- NẾU 'Target thực tế đang chốt' là 'Chưa chốt km', hãy gọi Tool để thiết lập.
+- NẾU đã có con số cụ thể (ví dụ 55km), TUYỆT ĐỐI KHÔNG thay đổi trừ khi có rủi ro ACWR > 1.3.
+- KHÔNG thực hiện lại các yêu cầu cũ trong [TÂM LÝ/GIAO TIẾP GẦN ĐÂY] nếu nó mâu thuẫn với số liệu thực tế đang chốt.
 3. TƯƠNG TÁC: Báo cáo số liệu và truyền động lực.
 
 {CHAT_FORMAT_RULES}
@@ -191,7 +191,7 @@ def build_universal_run_analysis_prompt(
     format_rules: str, 
     csv_data: str
 ) -> str:
-    """Luồng 3: Phân tích bài chạy Đa kênh"""
+    """Flow 3: Omni-channel Run Analysis"""
     return f"""
 {shared_context}
 

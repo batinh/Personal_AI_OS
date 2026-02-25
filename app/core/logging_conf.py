@@ -1,11 +1,11 @@
 import logging
 from collections import deque
 
-# Bộ đệm lưu 50 dòng log cuối cùng để hiển thị lên Web Admin
+# Buffer storing the last 50 log lines to display on the Web Admin UI
 log_capture_string = deque(maxlen=50)
 
 class ListHandler(logging.Handler):
-    """Custom Handler để đẩy log vào deque"""
+    """Custom Handler to push log records into a deque buffer."""
     def emit(self, record):
         try:
             msg = self.format(record)
@@ -14,7 +14,7 @@ class ListHandler(logging.Handler):
             self.handleError(record)
 
 def setup_logging():
-    """Khởi tạo logging cho toàn bộ ứng dụng"""
+    """Initialize global application logging configuration."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -23,7 +23,7 @@ def setup_logging():
     
     logger = logging.getLogger("AI_COACH")
     
-    # Thêm ListHandler để capture log cho Admin UI
+    # Attach ListHandler to capture live logs for the Admin UI
     list_handler = ListHandler()
     list_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     logger.addHandler(list_handler)

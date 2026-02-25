@@ -1,4 +1,8 @@
 class AppState:
+    """
+    Global Application State Management using Singleton Pattern.
+    Holds temporary runtime state variables (e.g., service pause/resume).
+    """
     _instance = None
     service_active = True
 
@@ -7,5 +11,5 @@ class AppState:
             cls._instance = super(AppState, cls).__new__(cls)
         return cls._instance
 
-# Singleton instance
+# Singleton instance exported for global use
 state = AppState()

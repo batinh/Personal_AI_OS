@@ -7,7 +7,7 @@ from app.core.notification import send_telegram_msg, send_html_email
 from app.agents.coach.agent import analyze_run_with_gemini, handle_telegram_chat
 from app.agents.coach.strava_client import StravaClient
 
-# Bổ sung hàm execute_manual_sync vào import
+# Include execute_manual_sync in imports
 from app.agents.coach.harvest import harvest_data, execute_manual_sync
 from app.core.state import state
 from app.services.scheduler import task_morning_briefing
@@ -20,7 +20,10 @@ logger = logging.getLogger("AI_COACH")
 
 # --- BUSINESS LOGIC (SERVICE LAYER) ---
 def _ingest_realtime_run(activity_id: str, act_name: str, meta_data: dict, chat_id: str, config: dict):
-    """Hàm Service cô lập trách nhiệm tính toán và lưu DB, đảm bảo Data Integrity trước khi gọi LLM."""
+    """
+    Service function isolating the responsibility of calculating and saving to DB.
+    Ensures Data Integrity before calling the LLM.
+    """
     max_hr = int(config.get("max_hr", 185))
     rest_hr = int(config.get("rest_hr", 55))
     dist_km = meta_data.get('distance', 0) / 1000
@@ -41,15 +44,17 @@ def _ingest_realtime_run(activity_id: str, act_name: str, meta_data: dict, chat_
         'trimp_score': trimp_data.get('trimp', 0.0)
     }
     save_run_activity(user_id=chat_id, activity_data=activity_data)
-    logger.info(f"[*] Đã lưu Full Data (TRIMP: {trimp_data.get('trimp')}) vào SQLite cho Activity {activity_id}")
+    logger.info(f"[*] Successfully saved Full Data (TRIMP: {trimp_data.get('trimp')}) to SQLite for Activity {activity_id}")
 
 def handle_deleted_activity(activity_id: str):
-    """Service dọn dẹp hệ thống khi Strava báo xóa bài."""
-    logger.info(f"[*] Đang dọn dẹp rác cho bài chạy bị xóa: {activity_id}")
+    """Service to clean up the system when Strava reports an activity deletion."""
+    logger.info(f"[*] Cleaning up records for deleted activity: {activity_id}")
     delete_run_activity(activity_id)
     rag_db.forget(doc_id=activity_id)
+    
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if chat_id:
+        # [ZONE 3] User-facing notification remains in Vietnamese
         send_telegram_msg(chat_id, f"🗑️ **Strava Sync:** Đã tự động xóa bài chạy trùng lặp (ID: {activity_id}) khỏi hệ thống!")
 
 # --- STRAVA WORKFLOW ---
@@ -72,15 +77,15 @@ def run_strava_workflow(activity_id: str):
 
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     
-    # 1. Đảm bảo dữ liệu Toàn vẹn (Data Integrity) trước khi gọi LLM
+    # 1. Ensure Data Integrity before invoking LLM
     if chat_id:
         _ingest_realtime_run(activity_id, act_name, meta_data, chat_id, config)
 
-    # 2. Chuyển giao cho AI xử lý ngữ nghĩa và điểm GCS
+    # 2. Handover to AI for semantic analysis and GCS scoring
     logger.info("[*] Sending Data to Gemini...")
     analysis_text = analyze_run_with_gemini(activity_id, act_name, csv_data, meta_data, config)
     
-    # 3. Kích hoạt Notifications
+    # 3. Trigger Notifications
     if analysis_text:
         client.update_activity_description(activity_id, analysis_text)
         
@@ -93,6 +98,7 @@ def run_strava_workflow(activity_id: str):
         send_html_email(f"Coach Dyno Report: {act_name}", email_body, config)
 
         if chat_id:
+            # [ZONE 3] Telegram text structure remains in Vietnamese
             telegram_msg = (
                 f"🏃‍♂️ **Phân tích bài chạy mới:** {act_name}\n\n"
                 f"{analysis_text}\n\n"
@@ -108,11 +114,11 @@ async def strava_event(request: Request, background_tasks: BackgroundTasks):
     if data.get("object_type") == "activity":
         activity_id = str(data.get("object_id"))
         
-        # 1. Bắt sự kiện TẠO MỚI bài chạy
+        # 1. Catch CREATE activity event
         if data.get("aspect_type") == "create":
             background_tasks.add_task(run_strava_workflow, activity_id)
             
-        # 2. [CẬP NHẬT KIẾN TRÚC] Bắt sự kiện XÓA bài chạy
+        # 2. [ARCHITECTURE UPDATE] Catch DELETE activity event
         elif data.get("aspect_type") == "delete":
             background_tasks.add_task(handle_deleted_activity, activity_id)
             
@@ -132,11 +138,11 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
         chat_id = data["message"]["chat"]["id"]
         text = data["message"].get("text", "")
         
-        # 1. Bắt lệnh /sync thủ công
+        # 1. Catch manual /sync command
         if text.strip().startswith("/sync"):
             parts = text.strip().split()
-            limit = 3         # Mặc định 3 bài
-            days_back = None  # Mặc định không giới hạn ngày
+            limit = 3         # Default: 3 activities
+            days_back = None  # Default: no day limit
             
             if len(parts) > 1:
                 param = parts[1].lower()
@@ -146,17 +152,18 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
                 elif param.isdigit():
                     limit = int(param)
                     
-            # [FIX BUG] Kích hoạt Sync và Trả về ngay lập tức
+            # [FIX BUG] Trigger Sync and Return response immediately
             background_tasks.add_task(execute_manual_sync, str(chat_id), limit, days_back)
             return {"status": "ok"}
 
-        # 2. Bắt lệnh /standup để test báo cáo sáng
+        # 2. Catch /standup command to test morning briefing
         if text.strip().lower() == "/standup":
+            # [ZONE 3]
             send_telegram_msg(chat_id, "⏳ Đang gọi Coach Dyno dậy để rà soát ACWR và lên giáo án hôm nay...")
             background_tasks.add_task(task_morning_briefing)
             return {"status": "ok"}
 
-        # 3. Nếu không phải lệnh hệ thống thì đưa vào AI Chat
+        # 3. If not a system command, route to AI Chat
         config = load_config()
         background_tasks.add_task(handle_telegram_chat, str(chat_id), text, config)
         

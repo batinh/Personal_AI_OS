@@ -41,19 +41,19 @@ scheduler = AsyncIOScheduler()
 client = genai.Client()
 
 # ==========================================
-# ☀️ LUỒNG BÁO CÁO SÁNG (THE MORNING STANDUP)
+# ☀️ THE MORNING STANDUP FLOW
 # ==========================================
 async def task_morning_briefing():
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if not chat_id: 
-        logger.warning("[SCHEDULER] Không tìm thấy TELEGRAM_CHAT_ID để gửi báo cáo.")
+        logger.warning("[SCHEDULER] TELEGRAM_CHAT_ID not found for briefing.")
         return
 
     config = load_config()
     now = datetime.now(TZ_VN)
     user_id_str = str(chat_id)
     
-    # 1. Thu thập dữ liệu
+    # 1. Gather data
     loads = get_training_loads(user_id_str)
     acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
     actual_volume = get_weekly_volume(user_id_str, now)
@@ -67,18 +67,19 @@ async def task_morning_briefing():
     plan_context = f"{today_plan['workout_title']}: {today_plan['description']}" if today_plan else "Chạy tự do."
     weekly_decision_context = get_formatted_weekly_context(user_id_str)
 
-    # Lấy 5 tin nhắn gần nhất để AI nhớ bối cảnh tối qua
+    # Fetch 5 recent messages for AI context
     raw_history = load_history_for_gemini(user_id_str, limit=5)
     chat_context = "Không có tương tác trò chuyện nào gần đây."
     if raw_history:
         chat_context_lines = []
-        for msg in reversed(raw_history): # Đảo ngược để đọc theo thứ tự thời gian
+        # Reverse to read in chronological order
+        for msg in reversed(raw_history): 
             sender = "User" if msg["role"] == "user" else "Coach Dyno"
             text = msg["parts"][0][:150] + "..." if len(msg["parts"][0]) > 150 else msg["parts"][0]
             chat_context_lines.append(f"{sender}: {text}")
         chat_context = "\n".join(chat_context_lines)
 
-    # 2. XÂY DỰNG PROMPT (Kiến trúc Lego)
+    # 2. BUILD PROMPT (Lego Architecture)
     system_inst = build_system_instruction(
         config.get("system_instruction", ""), config.get("user_profile", ""),
         int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
@@ -94,7 +95,7 @@ async def task_morning_briefing():
         shared_context, 
         get_runs_in_last_days(user_id_str, days=7), 
         plan_context, 
-        chat_context # Nạp trí nhớ ngắn hạn vào Standup
+        chat_context # Inject short-term memory into Standup
     )
 
     debug_log_prompt("DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
@@ -114,15 +115,15 @@ async def task_morning_briefing():
         logger.error(f"[SCHEDULER] Standup Error: {e}")
 
 # ==========================================
-# CÁC JOB KHÁC & QUẢN LÝ SCHEDULER (GIỮ NGUYÊN)
+# OTHER JOBS & SCHEDULER MANAGEMENT
 # ==========================================
 async def task_auto_harvest():
-    """Tự động đồng bộ Strava mỗi 6 tiếng"""
+    """Auto-sync Strava every specified interval."""
     logger.info("[SCHEDULER] Auto-harvesting...")
     harvest_data()
 
 def setup_jobs():
-    """Đọc cấu hình và thiết lập lịch chạy"""
+    """Read config and setup scheduled jobs."""
     config = load_config()
     sched_cfg = config.get("scheduler", {})
     
@@ -141,13 +142,13 @@ def setup_jobs():
     scheduler.add_job(perform_backup, CronTrigger(hour=bkh, minute=bkm, timezone=TZ_VN), id='backup', replace_existing=True)
     scheduler.add_job(task_auto_harvest, CronTrigger(hour=harv_hours, minute=harv_min, timezone=TZ_VN), id='harvest', replace_existing=True)
     
-    logger.info(f"[SCHEDULER] Đã nạp lịch: Briefing({bh}:{bm}), Backup({bkh}:{bkm}), Harvest({harv_hours}h:{harv_min}m)")
+    logger.info(f"[SCHEDULER] Loaded jobs: Briefing({bh}:{bm}), Backup({bkh}:{bkm}), Harvest({harv_hours}h:{harv_min}m)")
 
 def start_scheduler():
-    """Khởi động bộ lập lịch lần đầu tiên"""
+    """Start the scheduler for the first time."""
     setup_jobs()
     scheduler.start()
 
 def reload_scheduler():
-    """Gọi từ Admin UI để cập nhật lịch ngay lập tức"""
+    """Called from Admin UI to instantly reload jobs."""
     setup_jobs()

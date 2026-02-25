@@ -24,18 +24,18 @@ logger = logging.getLogger("AI_COACH")
 security = HTTPBasic()
 
 def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) -> str:
-    """Kiểm tra Username và Password từ file .env"""
+    """Validate Username and Password against environment variables."""
     env_user = os.getenv("ADMIN_USERNAME", "admin")
     env_pass = os.getenv("ADMIN_PASSWORD", "123456")
     
-    # Sử dụng secrets.compare_digest để chống lỗi Timing Attacks (Bảo mật nâng cao)
+    # Use secrets.compare_digest to prevent Timing Attacks (Enhanced Security)
     is_user_ok = secrets.compare_digest(credentials.username, env_user)
     is_pass_ok = secrets.compare_digest(credentials.password, env_pass)
     
     if not (is_user_ok and is_pass_ok):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sai tài khoản hoặc mật khẩu!",
+            detail="Sai tài khoản hoặc mật khẩu!", # [ZONE 3] UI Text remains VN
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
@@ -46,7 +46,7 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) ->
 
 @router.get("/admin", response_class=HTMLResponse)
 async def admin_dashboard(request: Request, username: str = Depends(verify_credentials)):
-    """Hiển thị giao diện Admin Dashboard."""
+    """Render the Admin Dashboard interface."""
     logs_text = "\n".join(list(log_capture_string))
     
     return templates.TemplateResponse("admin.html", {
@@ -61,10 +61,10 @@ async def save_settings(
     request: Request,
     system_instruction: str = Form(...),
     user_profile: str = Form(...),
-    task_description: str = Form(""),       # <-- Chỉnh thành Form("") để cho phép trống
-    analysis_requirements: str = Form(""),  # <-- Chỉnh thành Form("")
-    report_structure: str = Form(""),       # <-- [THÊM TRƯỜNG MỚI NÀY VÀO ĐÂY]
-    output_format: str = Form(""),          # <-- Chỉnh thành Form("")
+    task_description: str = Form(""),       # <-- Form("") allows empty values
+    analysis_requirements: str = Form(""),  # <-- Form("") allows empty values
+    report_structure: str = Form(""),       
+    output_format: str = Form(""),          
     max_hr: int = Form(185),
     rest_hr: int = Form(55),
     race_date: Optional[str] = Form(None),
@@ -78,24 +78,24 @@ async def save_settings(
     model_name: str = Form("models/gemini-2.0-flash"),
     username: str = Depends(verify_credentials)
 ):
-    """Xử lý form lưu cấu hình từ Admin UI."""
+    """Process configuration saving form from Admin UI."""
     config = load_config()
     
-    # 1. Cập nhật thông tin AI Persona
+    # 1. Update AI Persona information
     config["system_instruction"] = system_instruction
     config["user_profile"] = user_profile
     config["task_description"] = task_description
     config["analysis_requirements"] = analysis_requirements
-    config["report_structure"] = report_structure   # <-- [THÊM DÒNG NÀY VÀO ĐÂY]
+    config["report_structure"] = report_structure   
     config["output_format"] = output_format
     
-    # 2. Cập nhật thông số Sinh lý học & Mục tiêu (Sports Science)
+    # 2. Update Sports Science parameters & Goals
     config["max_hr"] = max_hr
     config["rest_hr"] = rest_hr
     config["race_date"] = race_date
     config["current_goal"] = current_goal
     
-    # 3. Cập nhật Lịch trình (Scheduler)
+    # 3. Update Scheduler settings
     config["scheduler"] = {
         "briefing_time": briefing_time,
         "backup_time": backup_time,
@@ -103,14 +103,14 @@ async def save_settings(
         "harvest_minute": harvest_minute
     }
     
-    # 4. Cập nhật Email config
+    # 4. Update Email configuration
     if "email_config" not in config:
         config["email_config"] = {}
     config["email_config"]["enabled"] = True if email_enabled == "on" else False
     config["email_config"]["smtp_server"] = config.get("email_config", {}).get("smtp_server", "smtp.gmail.com")
     config["email_config"]["smtp_port"] = config.get("email_config", {}).get("smtp_port", 587)
     
-    # 5. Cập nhật System settings
+    # 5. Update System settings
     config["debug_mode"] = True if debug_mode == "on" else False
     config["model_name"] = model_name
     
@@ -123,20 +123,20 @@ async def save_settings(
 @router.get("/admin/save", include_in_schema=False)
 async def catch_accidental_get_save(username: str = Depends(verify_credentials)):
     """
-    Bẫy lỗi 405: Nếu user vô tình F5 hoặc gõ thẳng /admin/save lên thanh địa chỉ (GET),
-    hệ thống sẽ nhẹ nhàng chuyển hướng họ về lại trang chủ Admin thay vì báo lỗi.
+    Error 405 Trap: If a user accidentally refreshes (F5) or types /admin/save directly (GET),
+    gracefully redirect them back to the Admin home instead of throwing an error.
     """
-    logger.info(f"[ADMIN] Bắt được request GET đi lạc vào /admin/save từ user '{username}'. Đang đưa về trang chủ...")
+    logger.info(f"[ADMIN] Caught accidental GET request to /admin/save from user '{username}'. Redirecting to home...")
     return RedirectResponse(url="/admin", status_code=303)
 
 @router.get("/admin/test-email")
 async def test_email_route(username: str = Depends(verify_credentials)):
-    """Gửi email test để kiểm tra kết nối SMTP."""
+    """Send a test email to verify SMTP connection."""
     try:
         cfg = load_config()
         send_html_email(
             "Test Email from AI Coach", 
-            "<h1>It Works!</h1><p>Hệ thống gửi email của bạn đang hoạt động tốt.</p>", 
+            "<h1>It Works!</h1><p>Hệ thống gửi email của bạn đang hoạt động tốt.</p>", # [ZONE 3] UI Text
             cfg
         )
         return {"status": "success"}
@@ -146,7 +146,7 @@ async def test_email_route(username: str = Depends(verify_credentials)):
 
 @router.post("/admin/toggle")
 async def toggle_service(username: str = Depends(verify_credentials)):
-    """Bật/Tắt dịch vụ AI (Pause/Resume)."""
+    """Enable/Disable AI service (Pause/Resume)."""
     state.service_active = not state.service_active
     status = "RESUMED" if state.service_active else "PAUSED"
     logger.info(f"[ADMIN] User '{username}' triggered Service {status}")

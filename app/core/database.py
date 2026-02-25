@@ -6,12 +6,12 @@ from datetime import datetime, timedelta
 import pytz
 
 logger = logging.getLogger("AI_COACH")
-DB_PATH = "data/os_core.db"  # Đổi tên file để đánh dấu kỷ nguyên mới (Multi-Tenant)
+DB_PATH = "data/os_core.db"  # Renamed file to mark the new Multi-Tenant era
 
 def get_db_connection():
     """Helper function to get a database connection."""
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # Trả về kết quả dưới dạng dict thay vì tuple
+    conn.row_factory = sqlite3.Row  # Return results as dict instead of tuple
     return conn
 
 def init_db():
@@ -33,7 +33,7 @@ def init_db():
         )
     ''')
 
-# 2. Table: run_activities
+    # 2. Table: run_activities
     c.execute('''
         CREATE TABLE IF NOT EXISTS run_activities (
             activity_id TEXT PRIMARY KEY,
@@ -51,11 +51,11 @@ def init_db():
         )
     ''')
     
-    # [NEW] Auto-migrate: Thêm cột gcs_score cho DB cũ nếu chưa có
+    # [NEW] Auto-migrate: Add gcs_score column to legacy DB if not exists
     try:
         c.execute("ALTER TABLE run_activities ADD COLUMN gcs_score INTEGER DEFAULT NULL")
     except sqlite3.OperationalError:
-        pass # Bỏ qua nếu cột đã tồn tại
+        pass # Ignore if column already exists
 
     # 3. Table: chat_history (Upgraded)
     c.execute('''
@@ -68,14 +68,14 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (user_id)
         )
     ''')
-# [NEW] Bảng lưu trữ Giáo án Tập luyện (Single Source of Truth)
-# [REFACTOR MULTI-TENANT] Bảng lưu trữ Giáo án Tập luyện (Single Source of Truth)
-    # Kiểm tra xem bảng cũ có tồn tại và thiếu user_id không để Migrate
+
+    # 4. Table: training_plans (Single Source of Truth)
+    # [REFACTOR MULTI-TENANT] Check if legacy table exists and lacks user_id to Migrate
     cursor = c.execute("PRAGMA table_info(training_plans)")
     columns = [col[1] for col in cursor.fetchall()]
     
     if columns and 'user_id' not in columns:
-        logger.info("[DATABASE] Migrating training_plans table to Multi-Tenant...")
+        logger.info("[DATABASE] Migrating training_plans table to Multi-Tenant architecture...")
         c.execute("ALTER TABLE training_plans RENAME TO training_plans_old")
         c.execute('''
             CREATE TABLE training_plans (
@@ -87,11 +87,11 @@ def init_db():
                 PRIMARY KEY (user_id, date)
             )
         ''')
-        # Chuyển dữ liệu cũ sang (gán tạm cho user mặc định hoặc bỏ trống)
+        # Migrate old data (assign temporarily to 'default' user)
         c.execute("INSERT INTO training_plans (user_id, date, workout_title, description, status) SELECT 'default', date, workout_title, description, status FROM training_plans_old")
         c.execute("DROP TABLE training_plans_old")
     else:
-        # Tạo mới chuẩn Multi-Tenant
+        # Create standard Multi-Tenant table
         c.execute('''
             CREATE TABLE IF NOT EXISTS training_plans (
                 user_id TEXT,
@@ -102,14 +102,15 @@ def init_db():
                 PRIMARY KEY (user_id, date)
             )
         ''')
-    # [SPRINT A] Thêm bảng Sổ cái Quản lý Khối lượng Tuần (Ledger Pattern)
+
+    # 5. [SPRINT A] Table: user_weekly_targets (Ledger Pattern for Weekly Volume)
     c.execute('''
         CREATE TABLE IF NOT EXISTS user_weekly_targets (
             user_id TEXT,
-            week_start_date TEXT,       -- Định dạng YYYY-MM-DD (Luôn là ngày Thứ 2)
-            standard_target_km REAL,    -- Khối lượng gốc HLV giao
-            actual_target_km REAL,      -- Khối lượng AI hoặc User chốt lại
-            ai_reasoning TEXT,          -- Lý do AI điều chỉnh
+            week_start_date TEXT,       -- Format YYYY-MM-DD (Always a Monday)
+            standard_target_km REAL,    -- Original volume assigned by Coach
+            actual_target_km REAL,      -- Negotiated volume set by AI or User
+            ai_reasoning TEXT,          -- Reason for AI adjustment
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (user_id, week_start_date)
         )
@@ -157,13 +158,13 @@ def get_user(user_id: str) -> Optional[Dict]:
 # RUN ACTIVITIES CRUD
 # ==========================================
 def save_run_activity(user_id: str, activity_data: dict):
-    """Lưu bài chạy vào SQLite. Sử dụng UPSERT để đảm bảo Data Integrity giữa luồng Webhook và Harvest."""
+    """Save run activity to SQLite. Use UPSERT to ensure Data Integrity between Webhook and Harvest pipelines."""
     try:
         conn = get_db_connection()
         c = conn.cursor()
         
-        # [CẬP NHẬT KIẾN TRÚC] Sử dụng ON CONFLICT DO UPDATE (UPSERT)
-        # Nếu đã có Placeholder (do Webhook tạo), nó sẽ điền nốt các cột NULL mà KHÔNG làm mất gcs_score
+        # [ARCHITECTURE UPDATE] Use ON CONFLICT DO UPDATE (UPSERT)
+        # If a Placeholder exists (created by Webhook), it will populate NULL columns WITHOUT losing gcs_score
         c.execute('''
             INSERT INTO run_activities 
             (activity_id, user_id, name, start_date, distance_km, moving_time_min, avg_hr, max_hr, suffer_score, trimp_score)
@@ -196,13 +197,13 @@ def save_run_activity(user_id: str, activity_data: dict):
         logger.error(f"[DB_ERROR] Failed to save/upsert run activity: {e}")
 
 def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
-    """Cập nhật điểm GCS, tự động tạo placeholder nếu bài chạy chưa được Harvest."""
+    """Update GCS score, automatically creating a placeholder if the run hasn't been Harvested yet."""
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        # [FIX BUG] Tạo trước một dòng giữ chỗ để GCS không bị rơi mất
+        # [FIX BUG] Create a placeholder row first so GCS score is not lost
         c.execute("INSERT OR IGNORE INTO run_activities (activity_id, user_id) VALUES (?, ?)", (str(activity_id), str(user_id)))
-        # Sau đó mới cập nhật điểm GCS
+        # Then update the GCS score
         c.execute("UPDATE run_activities SET gcs_score = ? WHERE activity_id = ?", (gcs_score, str(activity_id)))
         conn.commit()
         conn.close()
@@ -210,21 +211,22 @@ def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
         logger.error(f"[DB_ERROR] Failed to update GCS: {e}")
 
 def delete_run_activity(activity_id: str):
-    """Xóa bài chạy khỏi Database khi nhận tín hiệu Delete từ Strava."""
+    """Delete a run activity from the database when receiving a Delete signal from Strava."""
     try:
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("DELETE FROM run_activities WHERE activity_id = ?", (str(activity_id),))
         conn.commit()
         conn.close()
-        logger.info(f"[DB] Đã xóa thành công bài chạy {activity_id} khỏi SQLite.")
+        logger.info(f"[DB] Successfully deleted run activity {activity_id} from SQLite.")
     except Exception as e:
-        logger.error(f"[DB_ERROR] Lỗi khi xóa bài chạy {activity_id}: {e}")
+        logger.error(f"[DB_ERROR] Error deleting run activity {activity_id}: {e}")
 
 # ==========================================
 # CHAT HISTORY CRUD
 # ==========================================
 def save_message(user_id: str, role: str, text: str):
+    """Save conversation message to chat history."""
     try:
         conn = get_db_connection()
         c = conn.cursor()
@@ -254,6 +256,7 @@ def load_history_for_gemini(user_id: str, limit: int = 20) -> List[Dict]:
         return []
 
 def clear_history(user_id: str):
+    """Clear conversation history for a specific user."""
     try:
         conn = get_db_connection()
         c = conn.cursor()
@@ -262,19 +265,20 @@ def clear_history(user_id: str):
         conn.close()
     except Exception as e:
         logger.error(f"[DB_ERROR] Clear History Error: {e}")
+
 # ==========================================
 # ADVANCED ANALYTICS (AI QUERIES)
 # ==========================================
 def get_training_loads(user_id: str) -> dict:
     """
-    [UPGRADED] Tính toán cả TRIMP Loads và Weekly Mileage trong 1 lần quét DB.
-    Trả về dữ liệu phục vụ ACWR và Luật 15% Volume.
+    [UPGRADED] Calculate both TRIMP Loads and Weekly Mileage in a single DB scan.
+    Returns data used for ACWR and the 15% Volume Rule.
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Lấy dữ liệu 28 ngày gần nhất
+        # Fetch data from the last 28 days
         cursor.execute('''
             SELECT trimp_score, distance_km, start_date 
             FROM run_activities 
@@ -285,7 +289,7 @@ def get_training_loads(user_id: str) -> dict:
 
         acute_trimp = 0.0
         chronic_trimp = 0.0
-        total_dist_28d = 0.0 # [MỚI]
+        total_dist_28d = 0.0 # [NEW]
         
         from datetime import datetime, timedelta
         now = datetime.now()
@@ -296,21 +300,21 @@ def get_training_loads(user_id: str) -> dict:
             dist = row['distance_km'] or 0
             s_date = row['start_date']
             
-            # Tính TRIMP
+            # Calculate TRIMP
             chronic_trimp += trimp
             if s_date >= seven_days_ago:
                 acute_trimp += trimp
             
-            # Tính Mileage [MỚI]
+            # Calculate Mileage [NEW]
             total_dist_28d += dist
 
         return {
             "acute_load_7d": round(acute_trimp, 1),
-            "chronic_load_28d": round(chronic_trimp, 1), # Trung bình tuần
-            "avg_weekly_mileage": round(total_dist_28d / 4.0, 1) # [MỚI] Trung bình km/tuần
+            "chronic_load_28d": round(chronic_trimp, 1), # 28-day total
+            "avg_weekly_mileage": round(total_dist_28d / 4.0, 1) # [NEW] Average km per week
         }
     except Exception as e:
-        logger.error(f"[DB] Lỗi get_training_loads: {e}")
+        logger.error(f"[DB_ERROR] get_training_loads Error: {e}")
         return {"acute_load_7d": 0, "chronic_load_28d": 0, "avg_weekly_mileage": 0}
 
 def get_recent_runs_log(user_id: str, limit: int = 5) -> str:
@@ -321,8 +325,7 @@ def get_recent_runs_log(user_id: str, limit: int = 5) -> str:
         c.execute('''
             SELECT start_date, name, distance_km, trimp_score, gcs_score 
             FROM run_activities 
-            WHERE user_id = ? 
-            ORDER BY start_date DESC LIMIT ?
+            WHERE user_id = ? ORDER BY start_date DESC LIMIT ?
         ''', (str(user_id), limit))
         rows = c.fetchall()
         conn.close()
@@ -338,13 +341,14 @@ def get_recent_runs_log(user_id: str, limit: int = 5) -> str:
     except Exception as e:
         logger.error(f"[DB_ERROR] Failed to get recent runs: {e}")
         return "Error loading recent runs."
+
 def get_runs_in_last_days(user_id: str, days: int = 7) -> str:
-    """Lấy log chạy bộ giới hạn chuẩn xác trong N ngày qua."""
+    """Fetch accurately bounded running logs from the last N days."""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Dùng SQLite date() để trừ lùi ngày
+        # Use SQLite date() for relative date filtering
         query = """
             SELECT start_date, name, distance_km, moving_time_min, avg_hr, trimp_score 
             FROM run_activities 
@@ -362,9 +366,10 @@ def get_runs_in_last_days(user_id: str, days: int = 7) -> str:
         for r in rows:
             date_str = r['start_date'][:10]
             
-            # Tính toán Pace (Phút/km) từ thời gian và quãng đường
+            # Calculate Pace (Min/km) from time and distance
             dist = r['distance_km']
             mins = r['moving_time_min']
+            
             if dist > 0:
                 pace_min = int(mins // dist)
                 pace_sec = int(((mins / dist) % 1) * 60)
@@ -376,15 +381,15 @@ def get_runs_in_last_days(user_id: str, days: int = 7) -> str:
             
         return "\n".join(log_lines)
     except Exception as e:
-        logger.error(f"[DB] Lỗi lấy log {days} ngày: {e}")
+        logger.error(f"[DB_ERROR] Error fetching log for last {days} days: {e}")
         return "Lỗi đọc dữ liệu."
 
 def get_historical_training_loads(user_id: str, days: int = 30) -> dict:
-    """Tính toán chuỗi thời gian Acute, Chronic và Vùng tối ưu (Optimal Range) cho biểu đồ."""
+    """Calculate the time series of Acute, Chronic, and Optimal Range for charting."""
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        # Lấy data 60 ngày để đủ cơ sở tính Chronic 28 ngày cho 30 ngày qua
+        # Fetch 60 days of data to provide enough baseline for calculating the 28-day Chronic load over the last 30 days
         c.execute('''
             SELECT start_date, trimp_score 
             FROM run_activities 
@@ -393,7 +398,7 @@ def get_historical_training_loads(user_id: str, days: int = 30) -> dict:
         rows = c.fetchall()
         conn.close()
 
-        # Gom nhóm TRIMP theo từng ngày
+        # Group TRIMP by day
         daily_trimp = {}
         for r in rows:
             date_str = r['start_date'][:10]
@@ -402,40 +407,40 @@ def get_historical_training_loads(user_id: str, days: int = 30) -> dict:
         history = {"dates": [], "acute": [], "chronic": [], "optimal_min": [], "optimal_max": []}
         base_date = datetime.now().date()
 
-        # Lặp ngược từ 30 ngày trước đến hôm nay
+        # Iterate backward from N days ago to today
         for i in range(days - 1, -1, -1):
             target_date = base_date - timedelta(days=i)
             
-            # Tính Acute (Tổng 7 ngày lùi lại)
+            # Calculate Acute (Sum of previous 7 days)
             acute = sum(daily_trimp.get((target_date - timedelta(days=j)).strftime('%Y-%m-%d'), 0) for j in range(7))
             
-            # Tính Chronic TOÀN BỘ (28 ngày)
+            # Calculate TOTAL Chronic (28 days)
             chronic_total = sum(daily_trimp.get((target_date - timedelta(days=j)).strftime('%Y-%m-%d'), 0) for j in range(28))
             
-            # [FIX BUG] ÉP CHRONIC VỀ CÙNG HỆ QUY CHIẾU VỚI ACUTE (TRUNG BÌNH 1 TUẦN)
+            # [FIX BUG] SCALE CHRONIC TO MATCH ACUTE METRICS (AVERAGE OF 1 WEEK)
             chronic_scaled = chronic_total / 4 if chronic_total > 0 else 0
 
             history["dates"].append(target_date.strftime('%m-%d'))
             history["acute"].append(round(acute, 2))
             
-            # Đẩy Chronic_Scaled ra biểu đồ để nó nằm ngang hàng với Acute
+            # Expose Chronic_Scaled for the chart so it aligns with Acute
             history["chronic"].append(round(chronic_scaled, 2)) 
             
-            # Đám mây xám lấy Chronic Scaled làm tâm (ACWR 0.8 - 1.3)
+            # Gray cloud optimal range centered on Chronic Scaled (ACWR 0.8 - 1.3)
             history["optimal_min"].append(round(chronic_scaled * 0.8, 2))
             history["optimal_max"].append(round(chronic_scaled * 1.3, 2))
 
         return history
     except Exception as e:
-        logger.error(f"[DB] Lỗi get_historical_training_loads: {e}")
+        logger.error(f"[DB_ERROR] get_historical_training_loads Error: {e}")
         return {"dates": [], "acute": [], "chronic": [], "optimal_min": [], "optimal_max": []}
 
 # ==========================================
-# 📅 QUẢN LÝ GIÁO ÁN TẬP LUYỆN (STATEFUL PLANNING)
+# 📅 TRAINING PLAN MANAGEMENT (STATEFUL PLANNING)
 # ==========================================
 
 def update_daily_plan(user_id: str, target_date: str, workout_title: str, description: str, status: str = "Pending") -> str:
-    """[TOOL] Cập nhật hoặc thêm mới giáo án cho một ngày cụ thể."""
+    """[TOOL] Update or insert a new training plan for a specific date."""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -451,11 +456,11 @@ def update_daily_plan(user_id: str, target_date: str, workout_title: str, descri
         conn.close()
         return f"✅ Đã cập nhật giáo án ngày {target_date}: {workout_title} ({status})"
     except Exception as e:
-        logger.error(f"[DB] Lỗi update_daily_plan: {e}")
+        logger.error(f"[DB_ERROR] update_daily_plan Error: {e}")
         return f"❌ Lỗi cập nhật giáo án: {e}"
 
 def get_upcoming_plans(user_id: str, limit_days: int = 7) -> str:
-    """Lấy tổng quan giáo án từ hôm nay đến N ngày tới."""
+    """Get an overview of training plans from today up to N days into the future."""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -470,14 +475,15 @@ def get_upcoming_plans(user_id: str, limit_days: int = 7) -> str:
         conn.close()
         
         if not rows: return "Chưa có giáo án nào được lên lịch cho những ngày tới."
+        
         plan_text = [f"- Ngày {r['date']} [{r['status']}]: {r['workout_title']} - {r['description']}" for r in rows]
         return "\n".join(plan_text)
     except Exception as e:
-        logger.error(f"[DB] Lỗi get_upcoming_plans: {e}")
+        logger.error(f"[DB_ERROR] get_upcoming_plans Error: {e}")
         return "Lỗi đọc giáo án."
 
 def get_plan_for_date(user_id: str, target_date: str) -> dict:
-    """Lấy chi tiết giáo án của ĐÚNG một ngày cụ thể."""
+    """Retrieve detailed training plan for an EXACT specific date."""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -486,11 +492,11 @@ def get_plan_for_date(user_id: str, target_date: str) -> dict:
         conn.close()
         return dict(row) if row else None
     except Exception as e:
-        logger.error(f"[DB] Lỗi get_plan_for_date: {e}")
+        logger.error(f"[DB_ERROR] get_plan_for_date Error: {e}")
         return None
 
 def update_plan_status(user_id: str, target_date: str, status: str):
-    """Cập nhật trạng thái hoàn thành."""
+    """Update the completion status of a training plan."""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -498,26 +504,26 @@ def update_plan_status(user_id: str, target_date: str, status: str):
         conn.commit()
         conn.close()
     except Exception as e:
-        logger.error(f"[DB] Lỗi update_plan_status: {e}")
+        logger.error(f"[DB_ERROR] update_plan_status Error: {e}")
 
 def get_weekly_volume(user_id: str, target_date: datetime = None) -> float:
     """
-    [GENERIC FUNCTION] Tính tổng km đã chạy của một tuần bất kỳ.
-    - user_id: ID của VĐV.
-    - target_date: Một ngày bất kỳ trong tuần cần tính. Nếu None, mặc định là ngày hôm nay.
+    [GENERIC FUNCTION] Calculate total kilometers run for any given week.
+    - user_id: Athlete ID.
+    - target_date: Any date falling within the target week. If None, defaults to today.
     """
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     
     if target_date is None:
         target_date = datetime.now(tz)
-    elif target_date.tzinfo is None: # Đảm bảo có múi giờ
+    elif target_date.tzinfo is None: # Ensure timezone is attached
         target_date = tz.localize(target_date)
         
-    # Xác định Thứ 2 (Start) và Chủ Nhật (End) của tuần chứa target_date
+    # Determine Monday (Start) and Sunday (End) of the week containing target_date
     monday = target_date - timedelta(days=target_date.weekday())
     sunday = monday + timedelta(days=6)
     
-    # Ép kiểu string để query SQLite (từ 00:00:00 Thứ 2 đến 23:59:59 Chủ Nhật)
+    # Cast to string for SQLite query (from 00:00:00 Monday to 23:59:59 Sunday)
     start_str = monday.strftime('%Y-%m-%d 00:00:00')
     end_str = sunday.strftime('%Y-%m-%d 23:59:59')
     
@@ -532,18 +538,19 @@ def get_weekly_volume(user_id: str, target_date: datetime = None) -> float:
         result = cursor.fetchone()[0]
         return round(result, 2) if result else 0.0
     except Exception as e:
-        logger.error(f"[DB] Lỗi tính volume tuần cho {target_date.strftime('%Y-%m-%d')}: {e}")
+        logger.error(f"[DB_ERROR] Error calculating weekly volume for {target_date.strftime('%Y-%m-%d')}: {e}")
         return 0.0
     finally:
         conn.close()
+
 # =====================================================================
-# SPRINT A: WEEKLY VOLUME INTELLIGENCE (Quản lý Khối lượng Tuần)
+# SPRINT A: WEEKLY VOLUME INTELLIGENCE (Weekly Volume Ledger)
 # =====================================================================
 
 def get_weekly_target(user_id: str, week_start_date: str) -> dict:
     """
-    Lấy thông tin mục tiêu khối lượng của một tuần cụ thể.
-    week_start_date phải là định dạng YYYY-MM-DD của ngày Thứ 2.
+    Retrieve volume target information for a specific week.
+    week_start_date MUST be in YYYY-MM-DD format representing a Monday.
     """
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -564,13 +571,13 @@ def get_weekly_target(user_id: str, week_start_date: str) -> dict:
             }
         return None
     except Exception as e:
-        logger.error(f"[DB] Lỗi get_weekly_target: {e}")
+        logger.error(f"[DB_ERROR] get_weekly_target Error: {e}")
         return None
 
 def upsert_weekly_target(user_id: str, week_start_date: str, standard_target_km: float, actual_target_km: float, ai_reasoning: str) -> bool:
     """
-    Cập nhật hoặc tạo mới mục tiêu khối lượng của một tuần.
-    Hỗ trợ AI tự động lưu lại quyết định điều chỉnh của nó.
+    Update or create a new volume target for a week.
+    Allows the AI to autonomously document its adjustment reasoning.
     """
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -586,8 +593,8 @@ def upsert_weekly_target(user_id: str, week_start_date: str, standard_target_km:
         ''', (str(user_id), week_start_date, standard_target_km, actual_target_km, ai_reasoning))
         conn.commit()
         conn.close()
-        logger.info(f"[DB] Đã cập nhật mục tiêu tuần {week_start_date} cho {user_id}: Std={standard_target_km}, Actual={actual_target_km}")
+        logger.info(f"[DB] Updated weekly target for week {week_start_date} for user {user_id}: Std={standard_target_km}, Actual={actual_target_km}")
         return True
     except Exception as e:
-        logger.error(f"[DB] Lỗi upsert_weekly_target: {e}")
+        logger.error(f"[DB_ERROR] upsert_weekly_target Error: {e}")
         return False
