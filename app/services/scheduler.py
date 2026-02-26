@@ -34,7 +34,7 @@ from app.agents.coach.tools import update_todays_plan, set_actual_weekly_target
 
 # [REFACTOR] Import builder
 from app.agents.coach.prompts import build_system_instruction, get_shared_context_block, build_standup_prompt
-from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing
+from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, generate_weekly_reflection, extract_implicit_memory
 from app.services.weather import get_today_weather
 
 logger = logging.getLogger("AI_COACH")
@@ -101,14 +101,23 @@ def setup_jobs():
     logger.info(f"[SCHEDULER] Loaded jobs: Briefing({bh}:{bm}), Backup({bkh}:{bkm}), Harvest({harv_hours}h:{harv_min}m)")
 
 async def task_weekly_reflection():
-    """Trigger the Weekly Self-Reflection Agentic Flow."""
-    logger.info("[SCHEDULER] Triggering Sunday Weekly Reflection...")
-    config = load_config()
+    """
+    [ORCHESTRATOR] Cron trigger for Weekly Reflection & Background Memory Extraction.
+    """
+    logger.info("[SCHEDULER] Triggering Weekly Reflection...")
+    cfg = load_config()
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    
     if chat_id:
-        # [ZONE 3] User-facing message in Vietnamese
-        send_telegram_msg(chat_id, "⏳ Coach Dyno đang tổng hợp dữ liệu để viết Bản Đánh giá Tuần và chốt Target tuần mới...")
-    generate_weekly_reflection(config)
+        user_id_str = str(chat_id)
+        
+        # BƯỚC 1: LƯU BỘ NHỚ (AI Lần 1 - Trích xuất)
+        logger.info("[SCHEDULER] Step 1: Triggering implicit memory extraction...")
+        extract_implicit_memory(user_id_str)
+        
+    # BƯỚC 2: DÙNG BỘ NHỚ (AI Lần 2 - Viết báo cáo & Plan)
+    logger.info("[SCHEDULER] Step 2: Generating and sending Weekly Reflection...")
+    generate_weekly_reflection(cfg)
 
 def start_scheduler():
     """Start the scheduler for the first time."""

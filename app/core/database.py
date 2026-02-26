@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import uuid
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
@@ -68,7 +69,18 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (user_id)
         )
     ''')
-
+    # [NEW] Add Long-term Memory table
+    logger.info(f"[DATABASE] Checking 'long_term_memory' table...")
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS long_term_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            category TEXT NOT NULL,
+            fact TEXT NOT NULL,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     # 4. Table: training_plans (Single Source of Truth)
     # [REFACTOR MULTI-TENANT] Check if legacy table exists and lacks user_id to Migrate
     cursor = c.execute("PRAGMA table_info(training_plans)")
@@ -115,6 +127,30 @@ def init_db():
             PRIMARY KEY (user_id, week_start_date)
         )
     ''')
+# [PHASE 8] Multi-Agent Core Memory Table (Multi-Tenant Ready)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS core_memory (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL DEFAULT 'default_user',
+            domain TEXT NOT NULL,
+            category TEXT NOT NULL,
+            fact TEXT NOT NULL,
+            confidence REAL DEFAULT 1.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT DEFAULT 'active'
+        )
+    ''')
+    
+    # [DATABASE MIGRATION] Zero-downtime column injection for existing DB
+    try:
+        cursor_check = c.execute("PRAGMA table_info(core_memory)")
+        columns = [col[1] for col in cursor_check.fetchall()]
+        if 'user_id' not in columns:
+            logger.info("[DATABASE] Migrating core_memory to support Multi-Tenant (adding user_id)...")
+            c.execute("ALTER TABLE core_memory ADD COLUMN user_id TEXT DEFAULT 'default_user'")
+    except Exception as e:
+        logger.error(f"[DATABASE] Migration error on core_memory: {e}")
 
     conn.commit()
     conn.close()
@@ -598,3 +634,89 @@ def upsert_weekly_target(user_id: str, week_start_date: str, standard_target_km:
     except Exception as e:
         logger.error(f"[DB_ERROR] upsert_weekly_target Error: {e}")
         return False
+# ==========================================
+# 🧠 MULTI-AGENT MEMORY MANAGEMENT (PHASE 8 - MULTI-TENANT)
+# ==========================================
+
+def insert_memory(user_id: str, domain: str, category: str, fact: str):
+    """
+    [DATABASE] Inserts a fact into 'core_memory'. 
+    Follows Multi-Tenant and Zone 1 standards.
+    """
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        # Generate a unique ID for the TEXT PRIMARY KEY in core_memory
+        mem_id = str(uuid.uuid4())
+        
+        # [ZONE 1] English Schema: id, user_id, domain, category, fact, status
+        c.execute('''
+            INSERT INTO core_memory (id, user_id, domain, category, fact, status)
+            VALUES (?, ?, ?, ?, ?, 'active')
+        ''', (mem_id, str(user_id), domain, category, fact))
+        
+        conn.commit()
+        conn.close()
+        logger.info(f"[DATABASE] Fact successfully committed to core_memory: {fact[:50]}...")
+    except Exception as e:
+        logger.error(f"[DATABASE] Error inserting memory: {e}")
+
+def get_active_memories(user_id: str, domain: str) -> list:
+    """
+    [BRAIN] Retrieve all 'active' facts for a SPECIFIC user and domain.
+    Automatically updates the 'last_accessed' timestamp.
+    """
+    conn = get_db_connection()
+    memories = []
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, category, fact FROM core_memory 
+            WHERE user_id = ? AND domain = ? AND status = 'active'
+        ''', (str(user_id), domain))
+        rows = cursor.fetchall()
+        
+        memory_ids = []
+        for row in rows:
+            memories.append({
+                "id": row["id"],
+                "category": row["category"],
+                "fact": row["fact"]
+            })
+            memory_ids.append(row["id"])
+            
+        # Update last_accessed to prevent decay
+        if memory_ids:
+            placeholders = ','.join('?' * len(memory_ids))
+            # Protect update with user_id to prevent cross-tenant tampering
+            cursor.execute(f'''
+                UPDATE core_memory SET last_accessed = CURRENT_TIMESTAMP
+                WHERE id IN ({placeholders}) AND user_id = ?
+            ''', (*memory_ids, str(user_id)))
+            conn.commit()
+            
+        return memories
+    except Exception as e:
+        logger.error(f"[DB] Error retrieving active memories for {user_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+def archive_memory(user_id: str, memory_id: str) -> bool:
+    """
+    [BRAIN] Mark a memory as 'archived'. Secured by user_id.
+    """
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE core_memory SET status = 'archived' WHERE id = ? AND user_id = ?
+        ''', (memory_id, str(user_id)))
+        conn.commit()
+        logger.info(f"[DB] Archived memory ID: {memory_id} for user {user_id}")
+        return True
+    except Exception as e:
+        logger.error(f"[DB] Error archiving memory: {e}")
+        return False
+    finally:
+        conn.close()

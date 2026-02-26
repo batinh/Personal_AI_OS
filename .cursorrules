@@ -30,6 +30,3 @@ Rule cho Code review:
 
 Rule cho new feature:
 1. đọc file: docs/feature_design_template.md
-
-Rule for database:
-1. Database từ nay sẽ BẮT BUỘC phải nhận một biến user_id.

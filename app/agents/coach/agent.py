@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import logging
 import pytz
 import uuid
@@ -15,7 +16,8 @@ from app.core.database import (
     save_message, load_history_for_gemini, clear_history,
     get_training_loads, get_recent_runs_log, update_run_gcs_score, 
     update_daily_plan, get_upcoming_plans, 
-    get_plan_for_date, update_plan_status, get_weekly_volume, get_runs_in_last_days
+    get_plan_for_date, update_plan_status, get_weekly_volume, get_runs_in_last_days,
+    load_history_for_gemini, insert_memory, get_active_memories
 )
 from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
 from app.services.rag_memory import rag_db
@@ -25,7 +27,8 @@ from app.agents.coach.prompts import (
     build_system_instruction, get_shared_context_block, build_universal_run_analysis_prompt,build_chat_prompt,
     DEFAULT_ANALYSIS_TASK, DEFAULT_ANALYSIS_REQUIREMENTS, DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES,CHAT_FORMAT_RULES,
     build_weekly_reflection_prompt,
-    build_standup_prompt
+    build_standup_prompt,
+    build_memory_extraction_prompt
 )
 from app.agents.coach.tools import (
     update_todays_plan, check_training_status, get_recent_workouts,
@@ -196,13 +199,31 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         f"{acwr_data['acwr']} ({acwr_data['status']})", 
         actual_volume, weekly_decision_context
     )
+# 1. Fetch Active Memories (Domain: sports & health) - MULTI-TENANT SAFE
+    memories = []
+    memories.extend(get_active_memories(user_id_str, "sports"))
+    memories.extend(get_active_memories(user_id_str, "health"))
+    memories.extend(get_active_memories(user_id_str, "general"))
+    
+    # 2. Format Memories into Text
+    if memories:
+        memory_lines = []
+        for m in memories:
+            # Format: - [INJURY]: Has right knee pain
+            memory_lines.append(f"- [{m['category'].upper()}]: {m['fact']}")
+        active_memories_text = "\n".join(memory_lines)
+    else:
+        active_memories_text = "Hệ thống chưa ghi nhận trạng thái đặc biệt nào gần đây."
+        
+    logger.info(f"[COACH AGENT] Injected {len(memories)} active memories into prompt.")
 
     prompt = build_standup_prompt(
         shared_context=shared_context, 
         weather_data=weather_data, 
         recent_logs=get_runs_in_last_days(user_id_str, days=7), 
         today_plan=plan_context, 
-        chat_context=chat_context 
+        chat_context=chat_context,
+        active_memories=active_memories_text 
     )
 
     debug_log_prompt("DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
@@ -235,10 +256,25 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         return
         
     # [2] Handle Manual Reflection Trigger (TESTING/ADMIN MODE)
-    if text.strip().lower() == "/reflect":
-        send_telegram_msg(chat_id, "⚙️ [TEST MODE] Đang kích hoạt luồng Weekly Reflection...")
-        # Gọi trực tiếp hàm reflection
-        generate_weekly_reflection(config)
+    # Hỗ trợ cả 2 cách gõ lệnh để tránh user gõ nhầm
+    if text in ["/reflect", "/reflection"]:
+        send_telegram_msg(chat_id, "⚙️ [TEST MODE] Đang kích hoạt luồng Phân tích Ký ức & Tổng kết tuần. Quá trình này sẽ mất khoảng 15-30 giây...")
+        
+        try:
+            logger.info(f"[WEBHOOK] Manual reflection triggered by {chat_id}")
+            
+            # BƯỚC 1: LƯU BỘ NHỚ (Extraction MUST run first)
+            logger.info("[WEBHOOK] Step 1: Extracting implicit memory...")
+            extract_implicit_memory(chat_id)
+            
+            # BƯỚC 2: VIẾT BÁO CÁO (Reflection uses the newly extracted memory)
+            logger.info("[WEBHOOK] Step 2: Generating weekly reflection...")
+            generate_weekly_reflection(config)
+            
+        except Exception as e:
+            logger.error(f"[WEBHOOK] Error during manual reflection: {e}")
+            send_telegram_msg(chat_id, "❌ Có lỗi xảy ra trong quá trình chạy Reflection. Vui lòng check log.")
+    
         return
 
     # 1. Calculate Context
@@ -322,6 +358,18 @@ def generate_weekly_reflection(config: dict):
     # Fetch recent runs directly from DB (No AI Tool needed)
     recent_logs = get_recent_runs_log(user_id_str)
 
+    # [NEW FIX] Fetch Active Memories (Domain: sports & health) - MULTI-TENANT SAFE
+    memories = []
+    memories.extend(get_active_memories(user_id_str, "sports"))
+    memories.extend(get_active_memories(user_id_str, "health"))
+    memories.extend(get_active_memories(user_id_str, "general"))
+    
+    if memories:
+        memory_lines = [f"- [{m['category'].upper()}]: {m['fact']}" for m in memories]
+        active_memories_text = "\n".join(memory_lines)
+    else:
+        active_memories_text = "Hệ thống chưa ghi nhận trạng thái đặc biệt nào gần đây."
+
     # Calculate Next Monday's date for target setting
     next_monday = now + timedelta(days=(7 - now.weekday()))
     next_monday_str = next_monday.strftime('%Y-%m-%d')
@@ -338,7 +386,8 @@ def generate_weekly_reflection(config: dict):
         actual_volume, weekly_decision_context
     )
 
-    prompt = build_weekly_reflection_prompt(shared_context, recent_logs, next_monday_str)
+    # [NEW FIX] Inject active_memories_text into the builder
+    prompt = build_weekly_reflection_prompt(shared_context, recent_logs, next_monday_str, active_memories=active_memories_text)
     debug_log_prompt("DEBUG WEEKLY REFLECTION", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
 
     # 3. Call Gemini with Action Tool allowed
@@ -372,3 +421,78 @@ def generate_weekly_reflection(config: dict):
             
     except Exception as e:
         logger.error(f"[COACH AGENT] Weekly Reflection Error: {e}")
+
+# --- FLOW 3: AUTONOMOUS MEMORY MANAGER ---
+def extract_implicit_memory(user_id_str: str):
+    """
+    [BRAIN] Analyzes recent chats to extract implicit memory.
+    Uses ENABLE_MEMORY_DEBUG flag to control log verbosity.
+    """
+    # Fetch debug flag from environment variables (default is False)
+    debug_mode = os.getenv("ENABLE_MEMORY_DEBUG", "false").lower() == "true"
+    
+    logger.info(f"[MEMORY] Starting extraction for user: {user_id_str}")
+    
+    raw_history = load_history_for_gemini(user_id_str, limit=30)
+    if not raw_history:
+        if debug_mode:
+            logger.info("[MEMORY DEBUG] History is empty.")
+        return
+
+    chat_history_text = "\n".join([f"{'User' if m['role']=='user' else 'AI'}: {m['parts'][0]}" for m in reversed(raw_history)])
+    prompt = build_memory_extraction_prompt(chat_history_text)
+    
+    try:
+        from app.core.config import load_config
+        cfg = load_config()
+        
+        chat_session = client.chats.create(model=cfg.get("model_name", "models/gemini-2.0-flash"))
+        response = send_message_with_retry(chat_session, prompt)
+        
+        raw_text = response.text if response and response.text else "EMPTY_RESPONSE"
+        
+        if debug_mode:
+            logger.info(f"[MEMORY DEBUG] Raw AI Response: {raw_text}")
+
+        cleaned_text = re.sub(r'```json\n|\n```|```', '', raw_text).strip()
+        
+        if debug_mode:
+            logger.info(f"[MEMORY DEBUG] Cleaned Text for JSON: {cleaned_text}")
+            
+        extracted_facts = json.loads(cleaned_text)
+        
+        if debug_mode:
+            logger.info(f"[MEMORY DEBUG] Parsed Type: {type(extracted_facts)}")
+        
+        if isinstance(extracted_facts, dict):
+            extracted_facts = [extracted_facts]
+            
+        valid_count = 0
+        for i, item in enumerate(extracted_facts):
+            if debug_mode:
+                logger.info(f"[MEMORY DEBUG] Inspecting item {i}: {item}")
+            
+            if isinstance(item, dict):
+                # Use safe get() to avoid KeyError
+                domain = item.get("domain", "general")
+                category = item.get("category", "other")
+                fact = item.get("fact")
+                
+                if fact:
+                    try:
+                        if debug_mode:
+                            logger.info(f"[MEMORY DEBUG] Attempting DB insert for {user_id_str} | Domain: {domain}")
+                        insert_memory(user_id_str, domain, category, fact)
+                        valid_count += 1
+                    except Exception as db_err:
+                        logger.error(f"[MEMORY] DB Insert failed: {db_err}")
+                
+        # Always output the final summary of the extraction process
+        logger.info(f"[MEMORY] Success. Saved {valid_count} facts into core_memory.")
+            
+    except json.JSONDecodeError as e:
+        logger.error(f"[MEMORY] JSON Parse Error: {e}")
+    except Exception as e:
+        import traceback
+        logger.error(f"[MEMORY] CRITICAL ERROR: {str(e)}")
+        logger.error(traceback.format_exc())

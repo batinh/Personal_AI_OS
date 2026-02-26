@@ -1,0 +1,35 @@
+# Git
+.git
+.gitignore
+
+# Python Cache & Envs
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Data & Database (Gắn qua Volumes)
+data/
+*.sqlite
+*.db
+
+# Infrastructure & Logs
+infra/
+*.log
+
+# Backups
+backups/
+
+# Dev Tools, Docs & Context Files (Không cần cho Runtime)
+full_system_context.txt
+get_full_context.py
+docs/
+Rules.txt
+README.md
+docker-compose.yml
+config.example.json
+
+# Environment variables
+.env

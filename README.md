@@ -165,3 +165,11 @@ flowchart TB
   * **Task 8.2 - Autonomous Memory Manager:** Xây dựng luồng "Trích xuất ngầm" (Implicit Extraction). AI tự động phân tích lịch sử chat mỗi tuần để đúc kết chấn thương, thói quen và cập nhật trạng thái (`active`, `archived`) nhằm chống nhiễu (Hallucination).
   * **Task 8.3 - Cross-Agent Shared Context:** Cô lập bối cảnh theo từng Agent (Ví dụ: Coach Agent chỉ thấy data thể thao). Xây dựng Tool Search Historical Memory để AI chủ động bới móc "kho lạnh" khi bị hỏi về quá khứ xa.
   * **Task 8.4 - Agentic Expansion:** Ra mắt Work Agent (Trợ lý công việc) và Finance Agent (Trợ lý tài chính), dùng chung một bộ não với Coach Dyno nhưng hành xử độc lập.
+
+### 🚀 Future Roadmap: SaaS & Multi-Tenant Architecture (Tech Debt)
+*Hiện tại hệ thống đang chạy dạng Single-Tenant (Personal AI OS), dùng `TELEGRAM_CHAT_ID` trong file `.env` làm định danh duy nhất.*
+*Khi scale up cho nhiều users, cần thực hiện gói Migration sau:*
+- [ ] **Identity Router:** Tạo bảng `users` quản lý Telegram ID và Strava ID.
+- [ ] **SQLite Migration:** Thêm cột `user_id` vào các bảng `core_memory`, `runs`, `plans`.
+- [ ] **Vector DB Migration:** Thêm metadata `{"user_id": "..."}` cho toàn bộ Document trong ChromaDB.
+- [ ] **Code Refactor:** Xóa bỏ việc gọi `os.getenv("TELEGRAM_CHAT_ID")` rải rác trong các Agent, thay bằng Context User ID.

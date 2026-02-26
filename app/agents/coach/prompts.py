@@ -150,7 +150,7 @@ def build_chat_prompt(shared_context: str, current_plans: str) -> str:
     """Flow 1: Handle Telegram Chat"""
     return f"{shared_context}\n\n[GIÁO ÁN SẮP TỚI]\n{current_plans}\n\n[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu.\n\n{CHAT_FORMAT_RULES}"
 
-def build_standup_prompt(shared_context: str, weather_data: str, recent_logs: str, today_plan: str, chat_context: str) -> str:
+def build_standup_prompt(shared_context: str, weather_data: str, recent_logs: str, today_plan: str, chat_context: str, active_memories: str = "Không có ghi chú đặc biệt.") -> str:
     """Flow 2: Morning Briefing (Standup) on Telegram
     [REUSE] Integrates Weather Awareness into the existing Standup structure.
     """
@@ -166,8 +166,15 @@ def build_standup_prompt(shared_context: str, weather_data: str, recent_logs: st
 [GIÁO ÁN HÔM NAY]
 {today_plan}
 
+[KÝ ỨC NGẮN HẠN & TRẠNG THÁI HIỆN TẠI]
+Dưới đây là những sự thật quan trọng về VĐV đang được lưu trữ (Chấn thương, sở thích, mục tiêu):
+{active_memories}
+
+Lưu ý: Nếu VĐV đang có chấn thương, BẮT BUỘC phải nhắc nhở an toàn hoặc điều chỉnh bài tập hôm nay cho phù hợp.
+
 [TÂM LÝ/GIAO TIẾP GẦN ĐÂY]
 {chat_context}
+
 
 [QUY TẮC ƯU TIÊN DỮ LIỆU]
 1. SỐ LIỆU THỰC TẾ TRONG [BỐI CẢNH HIỆN TẠI] LÀ NGUỒN SỰ THẬT DUY NHẤT.
@@ -275,7 +282,7 @@ Hãy xuất báo cáo gửi cho VĐV theo đúng format dưới đây (BẮT BU�
 ► Trọng tâm: [Giải thích logic chốt Target dựa trên GCS, ACWR và Phase].
 """
 
-def build_weekly_reflection_prompt(shared_context: str, recent_logs: str, next_monday_str: str) -> str:
+def build_weekly_reflection_prompt(shared_context: str, recent_logs: str, next_monday_str: str, active_memories: str = "Không có ghi chú đặc biệt.") -> str:
     """
     Builds the modular prompt for the Sunday Weekly Reflection Cronjob.
     [ZONE 1] English docstring. [ZONE 3] Injects data into Vietnamese prompt.
@@ -289,6 +296,11 @@ def build_weekly_reflection_prompt(shared_context: str, recent_logs: str, next_m
 [LỊCH SỬ CÁC BÀI CHẠY GẦN NHẤT]
 {recent_logs}
 
+[KÝ ỨC NGẮN HẠN & TRẠNG THÁI HIỆN TẠI]
+Các sự thật quan trọng về VĐV đang được lưu trữ:
+{active_memories}
+Lưu ý: BẮT BUỘC xem xét kỹ các chấn thương (nếu có) hoặc sự thay đổi mục tiêu trong phần ký ức này trước khi chốt Target Volume cho tuần tới!
+
 {task_injected}
 
 {DEFAULT_REFLECTION_REQUIREMENTS}
@@ -297,6 +309,7 @@ def build_weekly_reflection_prompt(shared_context: str, recent_logs: str, next_m
 
 {CHAT_FORMAT_RULES}
 """
+
 # ==========================================
 # 🌤️ LAYER 7: WEATHER AWARENESS (NEW)
 # ==========================================
@@ -313,3 +326,39 @@ Dựa trên dữ liệu thời tiết trên, bạn phải đưa ra lời khuyên
    - Nếu mưa to/Bão: Khuyên chuyển bài tập vào nhà (Treadmill, Zwift) hoặc tập bổ trợ.
 3. LÝ TƯỞNG (15-22°C): Khuyến khích VĐV tận dụng thời tiết để hoàn thành tốt bài Key.
 """
+# ==========================================
+# 🧠 LAYER 8: AUTONOMOUS MEMORY EXTRACTION
+# ==========================================
+
+# ==========================================
+# 🧠 LAYER 8: AUTONOMOUS MEMORY EXTRACTION (ULTIMATE FILTER)
+# ==========================================
+
+MEMORY_EXTRACTION_PROMPT = """
+[SYSTEM ROLE]
+You are the "Background Memory Manager" for a High-Performance Sports AI OS.
+... (giữ nguyên phần trên) ...
+
+[JSON OUTPUT FORMAT STRICTLY]
+You MUST return ONLY a valid JSON list of objects. Do NOT include markdown formatting, backticks, or any explanation.
+If no new important facts are found, return an empty list: []
+
+Example of expected output:
+[
+  {{ "domain": "sports", "category": "goal_change", "fact": "Athlete is likely skipping the upcoming Nha Trang race" }},
+  {{ "domain": "health", "category": "injury", "fact": "Experiencing acute pain in the right knee after long runs" }},
+  {{ "domain": "health", "category": "nutrition", "fact": "Stomach reacts badly to Maurten gels, prefers GU" }},
+  {{ "domain": "sports", "category": "lifestyle", "fact": "Working night shifts next week, needs flexible training schedule" }}
+]
+
+[CHAT HISTORY]
+{chat_history}
+"""
+
+def build_memory_extraction_prompt(chat_history: str) -> str:
+    """
+    [PROMPT] Use replace instead of format to bypass Python's f-string/format curly brace logic.
+    This ensures that JSON structures in the prompt don't trigger KeyErrors.
+    """
+    # Simply swap the placeholder with the actual data
+    return MEMORY_EXTRACTION_PROMPT.replace("{chat_history}", chat_history)
