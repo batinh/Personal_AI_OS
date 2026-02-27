@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
+# [REFACTOR] Removed Pydantic models from here to comply with Single Responsibility Principle
 
 from app.core.notification import send_telegram_msg
 from app.core.database import (
@@ -17,7 +17,7 @@ from app.core.database import (
     get_training_loads, get_recent_runs_log, update_run_gcs_score, 
     update_daily_plan, get_upcoming_plans, 
     get_plan_for_date, update_plan_status, get_weekly_volume, get_runs_in_last_days,
-    load_history_for_gemini, insert_memory, get_active_memories
+    insert_memory, get_all_active_memories # [ARCHITECTURE UPDATE] Using global deduplication
 )
 from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
 from app.services.rag_memory import rag_db
@@ -35,12 +35,11 @@ from app.agents.coach.tools import (
     search_long_term_memory, get_total_run_stats, set_workout_plan, set_actual_weekly_target
 )
 
+# [ARCHITECTURE UPDATE] Import Strict Data Contracts
+from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
+
 logger = logging.getLogger("AI_COACH")
 client = genai.Client()
-
-class RunAnalysisResult(BaseModel):
-    analysis_text: str = Field(description="Bài phân tích chi tiết theo format yêu cầu.")
-    gcs_score: int = Field(description="Điểm tự tin hoàn thành mục tiêu (0-100).")
 
 # ==========================================
 # 🛡️ RESILIENCE PATTERN: EXPONENTIAL BACKOFF
@@ -199,17 +198,14 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         f"{acwr_data['acwr']} ({acwr_data['status']})", 
         actual_volume, weekly_decision_context
     )
-# 1. Fetch Active Memories (Domain: sports & health) - MULTI-TENANT SAFE
-    memories = []
-    memories.extend(get_active_memories(user_id_str, "sports"))
-    memories.extend(get_active_memories(user_id_str, "health"))
-    memories.extend(get_active_memories(user_id_str, "general"))
     
-    # 2. Format Memories into Text
+    # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
+    memories = get_all_active_memories(user_id_str)
+    
     if memories:
         memory_lines = []
         for m in memories:
-            # Format: - [INJURY]: Has right knee pain
+            # Format: - [INJURY_STATUS]: Has right knee pain
             memory_lines.append(f"- [{m['category'].upper()}]: {m['fact']}")
         active_memories_text = "\n".join(memory_lines)
     else:
@@ -358,11 +354,8 @@ def generate_weekly_reflection(config: dict):
     # Fetch recent runs directly from DB (No AI Tool needed)
     recent_logs = get_recent_runs_log(user_id_str)
 
-    # [NEW FIX] Fetch Active Memories (Domain: sports & health) - MULTI-TENANT SAFE
-    memories = []
-    memories.extend(get_active_memories(user_id_str, "sports"))
-    memories.extend(get_active_memories(user_id_str, "health"))
-    memories.extend(get_active_memories(user_id_str, "general"))
+    # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
+    memories = get_all_active_memories(user_id_str)
     
     if memories:
         memory_lines = [f"- [{m['category'].upper()}]: {m['fact']}" for m in memories]
@@ -425,10 +418,10 @@ def generate_weekly_reflection(config: dict):
 # --- FLOW 3: AUTONOMOUS MEMORY MANAGER ---
 def extract_implicit_memory(user_id_str: str):
     """
-    [BRAIN] Analyzes recent chats to extract implicit memory.
-    Uses ENABLE_MEMORY_DEBUG flag to control log verbosity.
+    [BRAIN] Analyzes recent chats to extract or mutate implicit memory states.
+    Uses Structured Outputs via Pydantic to strictly enforce Categories.
     """
-    # Fetch debug flag from environment variables (default is False)
+    # [FEATURE FLAG] Fetch debug flag from environment variables (default is False)
     debug_mode = os.getenv("ENABLE_MEMORY_DEBUG", "false").lower() == "true"
     
     logger.info(f"[MEMORY] Starting extraction for user: {user_id_str}")
@@ -440,13 +433,30 @@ def extract_implicit_memory(user_id_str: str):
         return
 
     chat_history_text = "\n".join([f"{'User' if m['role']=='user' else 'AI'}: {m['parts'][0]}" for m in reversed(raw_history)])
-    prompt = build_memory_extraction_prompt(chat_history_text)
+    
+    # [NEW] Fetch existing active memories globally (Cross-Domain Deduplication)
+    memories = get_all_active_memories(user_id_str)
+    
+    if memories:
+        existing_text = "\n".join([f"- [{m['category'].upper()}]: {m['fact']}" for m in memories])
+    else:
+        existing_text = "No existing states recorded."
+
+    # Build the state-aware prompt
+    prompt = build_memory_extraction_prompt(chat_history_text, existing_text)
     
     try:
         from app.core.config import load_config
         cfg = load_config()
         
-        chat_session = client.chats.create(model=cfg.get("model_name", "models/gemini-2.0-flash"))
+        chat_session = client.chats.create(
+            model=cfg.get("model_name", "models/gemini-2.0-flash"),
+            config=types.GenerateContentConfig(
+                temperature=0.2, # Lowered temperature to minimize hallucinations
+                response_mime_type="application/json",
+                response_schema=MemoryExtractionResult # [ARCHITECTURE UPDATE] Strict Pydantic Enforcement
+            )
+        )
         response = send_message_with_retry(chat_session, prompt)
         
         raw_text = response.text if response and response.text else "EMPTY_RESPONSE"
@@ -459,40 +469,39 @@ def extract_implicit_memory(user_id_str: str):
         if debug_mode:
             logger.info(f"[MEMORY DEBUG] Cleaned Text for JSON: {cleaned_text}")
             
-        extracted_facts = json.loads(cleaned_text)
+        extracted_data = json.loads(cleaned_text)
         
-        if debug_mode:
-            logger.info(f"[MEMORY DEBUG] Parsed Type: {type(extracted_facts)}")
+        # Extract the 'items' list mapped from the Pydantic wrapper
+        extracted_facts = extracted_data.get("items", [])
         
-        if isinstance(extracted_facts, dict):
-            extracted_facts = [extracted_facts]
-            
         valid_count = 0
         for i, item in enumerate(extracted_facts):
             if debug_mode:
                 logger.info(f"[MEMORY DEBUG] Inspecting item {i}: {item}")
             
             if isinstance(item, dict):
-                # Use safe get() to avoid KeyError
+                # Enforced by Schema, guaranteed to match Enum
                 domain = item.get("domain", "general")
                 category = item.get("category", "other")
                 fact = item.get("fact")
+                status = item.get("status", "active") # Parse dynamic status
                 
                 if fact:
                     try:
                         if debug_mode:
-                            logger.info(f"[MEMORY DEBUG] Attempting DB insert for {user_id_str} | Domain: {domain}")
-                        insert_memory(user_id_str, domain, category, fact)
+                            logger.info(f"[MEMORY DEBUG] Attempting DB insert for {user_id_str} | Category: {category} | Status: {status}")
+                        insert_memory(user_id_str, domain, category, fact, status)
                         valid_count += 1
                     except Exception as db_err:
                         logger.error(f"[MEMORY] DB Insert failed: {db_err}")
                 
-        # Always output the final summary of the extraction process
-        logger.info(f"[MEMORY] Success. Saved {valid_count} facts into core_memory.")
+        # Always output the final summary
+        logger.info(f"[MEMORY] Success. Mutated {valid_count} states in core_memory.")
             
     except json.JSONDecodeError as e:
         logger.error(f"[MEMORY] JSON Parse Error: {e}")
     except Exception as e:
         import traceback
         logger.error(f"[MEMORY] CRITICAL ERROR: {str(e)}")
-        logger.error(traceback.format_exc())
+        if debug_mode:
+            logger.error(traceback.format_exc())

@@ -1,47 +1,65 @@
 # Kiến trúc Bộ nhớ Đa tác tử (Multi-Agent Memory Architecture)
-**Dự án:** Personal AI OS
-**Trạng thái:** Đề xuất & Thiết kế lõi
-**Mục tiêu:** Xây dựng hệ thống trí nhớ AI có khả năng chia sẻ ngữ cảnh giữa nhiều Agent (Coach, Finance, Work), duy trì hiệu năng cao trong hàng chục năm mà không bị phình to (bloat), và có khả năng truy xuất chính xác sự kiện trong quá khứ xa.
+**Dự án:** Personal AI OS  
+**Phiên bản:** v3.2.0 (State-Aware Agentic Memory)  
+**Trạng thái:** Triển khai lõi (Core Implementation)  
+**Mục tiêu:** Xây dựng hệ thống trí nhớ AI có khả năng chia sẻ ngữ cảnh giữa nhiều Agent (Coach, Finance, Work), duy trì hiệu năng cao trong hàng chục năm mà không bị phình to (Memory Bloat), loại bỏ ảo giác lặp từ (Echo Chamber), và hỗ trợ Multi-Tenant.
 
+---
 
+## 1. Triết lý Thiết kế (The 3-Tier Holistic Memory Model)
+Hệ thống chuyển đổi từ mô hình "Sổ nhật ký" (Append-Only Log) sang mô hình "Máy trạng thái" (Entity State Machine), phân chia ký ức thành 3 tầng ranh giới rõ rệt:
 
-## 1. Triết lý Thiết kế (The 4-Tier Memory System)
-Hệ thống mô phỏng bộ não người, phân chia ký ức thành 4 tầng ranh giới rõ rệt nhằm tối ưu hóa Context Window và hạn chế Hallucination:
+### Tier 1: Working Memory (Trí nhớ ngắn hạn / Ngữ cảnh làm việc)
+* **Lưu trữ:** RAM / Payload truyền vào LLM (từ bảng `chat_history`).
+* **Nội dung:** 30 tin nhắn chat gần nhất + Context cấu hình hệ thống hiện tại (Thời gian, ACWR, Weekly Volume).
+* **Anti-Bloat Mechanism:** Cơ chế cửa sổ trượt (Sliding Window `limit=30`). Tin nhắn cũ tự động rơi rụng khi kết thúc phiên hoặc vượt giới hạn.
 
-1. **Working Memory (Tầng 1 - Chat Session):** Context hiện tại đang trò chuyện. Rớt não ngay khi kết thúc phiên. Tốc độ cực nhanh.
-2. **Active Structured Memory (Tầng 2 - Sự thật ưu tiên):** Những thói quen, chấn thương, mục tiêu *hiện tại*. Luôn được tiêm ngầm (inject) vào System Prompt của Agent tương ứng.
-3. **Archived Structured Memory (Tầng 3 - Kho lưu trữ lạnh):** Các sự thật/sự kiện đã diễn ra trong quá khứ (ví dụ: đau gối năm 2024). Bị chặn không cho tiêm vào Prompt hàng ngày. Chỉ được gọi lên thông qua Tool Use (Function Calling).
-4. **Episodic Memory (Tầng 4 - Vector RAG):** ChromaDB lưu trữ toàn bộ văn bản thô (Raw text) của các cuộc hội thoại và báo cáo tuần. Dùng để lấy lại "cảm xúc" và bối cảnh chi tiết.
+### Tier 2: Core Memory (Máy trạng thái thực thể - Entity State Machine)
+* **Lưu trữ:** Relational DB (`os_core.db` -> bảng `core_memory`).
+* **Bản chất:** Quản lý trạng thái của VĐV theo nguyên tắc Key-Value:
+    * **Fixed Domains (Ngăn tủ):** Giới hạn cứng theo 6-Pillar Filter (`sports`, `health`, `physiological`, `lifestyle`, `nutrition`, `psychology`).
+    * **Dynamic Categories (Hồ sơ):** Chuỗi `snake_case` do LLM tự sinh ra để bám sát thực thể (VD: `achilles_injury`, `hm_goal`, `shoe_preference`).
+* **Anti-Bloat Mechanism (Retrieval Deduplication):** Bất kể có bao nhiêu thay đổi được insert vào DB, khi Agent truy vấn, hệ thống dùng SQL `INNER JOIN` kết hợp `MAX(timestamp)` và `GROUP BY category`. LLM chỉ nhận được đúng **1 trạng thái mới nhất** của mỗi thực thể.
+* **Archiving (Đóng hồ sơ):** Quản lý qua cột `status`. Nếu một chấn thương đã khỏi, status chuyển thành `inactive` và tự động bị loại khỏi Context Injection hàng ngày.
+
+### Tier 3: Long-Term Semantic Memory (Trí nhớ ngữ nghĩa / Vector)
+* **Lưu trữ:** Vector DB (`chroma_db`).
+* **Bản chất:** Một cuốn sổ cái (Immutable ledger) lưu trữ toàn bộ lịch sử biến thiên của các sự thật (Ví dụ: Hành trình từ đau gót chân đến lúc khỏi bệnh).
+* **Anti-Bloat Mechanism:** Dữ liệu này **TUYỆT ĐỐI KHÔNG** được tự động bơm vào Prompt. Nó chỉ được kéo ra thông qua Tool `search_long_term_memory` khi Agent chủ động muốn lục lọi quá khứ xa.
+
+---
 
 ## 2. Thiết kế Cơ sở dữ liệu (Database Schema)
-**Công nghệ:** SQLite (Zone 1 - 100% English Standard)
-**Bảng:** `core_memory`
+**Công nghệ:** SQLite (Zone 1 - 100% English Standard)  
+**Bảng:** `core_memory` (Hỗ trợ Multi-Tenant)
 
 | Column Name | Type | Description |
 | :--- | :--- | :--- |
-| `id` | UUID | Khóa chính. |
-| `domain` | String | Lĩnh vực của Agent (`sports`, `health`, `work`, `finance`, `general`). Dùng để cách ly bối cảnh. |
-| `category` | String | Phân loại ký ức (`injury`, `preference`, `goal`, `relationship`). |
-| `fact` | String | Nội dung cốt lõi trích xuất được (VD: "Has right knee pain"). |
-| `confidence` | Float | Độ tự tin của AI khi trích xuất (0.0 - 1.0). |
-| `created_at` | DateTime | Thời điểm trích xuất ký ức. |
+| `id` | UUID | Khóa chính, dùng để map 1-1 với Vector ID trong ChromaDB. |
+| `user_id` | String | Định danh người dùng (Multi-tenant requirement). |
+| `domain` | String | Phân vùng Agent (VD: `sports`, `health`). Cố định. |
+| `category` | String | Thực thể theo dõi (VD: `injury`, `goal`). Sinh động bởi AI. |
+| `fact` | String | Trạng thái/Sự thật cốt lõi (VD: "Athlete reported zero pain today"). |
+| `status` | String | `active` (Bơm vào Prompt) / `inactive` (Archived, ẩn khỏi Prompt). |
+| `timestamp` | DateTime | Thời điểm đột biến trạng thái (State mutation time). |
 | `last_accessed`| DateTime | Lần cuối cùng Agent query lấy ký ức này. |
-| `status` | String | `active` (Tiêm vào Prompt) / `archived` (Chỉ lấy khi Tool gọi) / `conflicted`. |
 
-## 3. Vòng đời Ký ức (Memory Lifecycle)
+---
 
-### A. Ingestion & Extraction (Nạp ngầm)
-- Chạy ngầm định kỳ (VD: Tối Chủ Nhật).
-- Đọc lịch sử chat, AI trả về chuẩn JSON (`Structured Output`).
-- Nếu có xung đột (Conflict) với fact cũ, Memory Manager tự động chuyển status fact cũ thành `archived`, nạp fact mới thành `active`.
+## 3. Vòng đời Ký ức (The Deduplication Workflow)
 
-### B. Daily Injection (Bơm ngữ cảnh hàng ngày)
-- Agent nào hoạt động thì chỉ query domain của Agent đó.
-- `SELECT fact FROM core_memory WHERE domain IN ('sports', 'health') AND status = 'active'`
+### Bước 1: State-Aware Extraction (Trích xuất có nhận thức)
+* **Kỹ thuật:** Differential Prompting (Prompt tính toán độ lệch).
+* AI được cấp `[EXISTING KNOWLEDGE]` (Danh sách các trạng thái `active` hiện tại) trước khi đọc tin nhắn mới.
+* AI chỉ trích xuất thông tin nếu nó là **MỚI** hoặc là một **SỰ THAY ĐỔI** so với trạng thái hiện tại. Nếu trùng lặp, trả về `[]`.
 
-### C. Decay & Forgetting (Sự lãng quên chủ động)
-- **Tuyệt đối không dùng lệnh DELETE.**
-- Cronjob hàng tháng quét bảng `core_memory`. Các records có `last_accessed` > 60 ngày (trừ category `goal`) sẽ bị update `status = 'archived'`. Giúp Prompt nhẹ nhàng, tiết kiệm Token.
+### Bước 2: State Mutation (Đột biến trạng thái)
+* Hàm `insert_memory` tạo UUID và `INSERT` bản ghi mới vào `core_memory`.
+* Nếu thực thể không còn tồn tại hoặc đã được giải quyết (hủy giải, hết chấn thương), AI gán `"status": "inactive"`.
+
+### Bước 3: Context Injection (Bơm ngữ cảnh)
+* Trước mỗi tác vụ (Briefing, Reflection), Agent gọi `get_active_memories(user_id, domain)`.
+* Hệ thống lọc SQL (chỉ lấy `status = 'active'` + `GROUP BY category` mới nhất) và bơm vào System Prompt. Ký ức được truyền đi cực kỳ sắc bén và tối ưu Token.
 
 ## 4. Cơ chế Truy xuất Quá khứ Xa (Long-term Retrieval Scenario)
 **Kịch bản:** Vài năm sau (2028), VĐV hỏi: *"Hồi 2024 tôi xử lý cái gối bị đau thế nào nhỉ?"*

@@ -367,7 +367,6 @@ def get_recent_runs_log(user_id: str, limit: int = 5) -> str:
         conn.close()
         
         if not rows: return "No recent runs found in database."
-        
         log_lines = []
         for r in rows:
             date_str = r['start_date'][:10]
@@ -397,7 +396,6 @@ def get_runs_in_last_days(user_id: str, days: int = 7) -> str:
 
         if not rows:
             return f"Không có bài chạy nào trong {days} ngày qua."
-
         log_lines = []
         for r in rows:
             date_str = r['start_date'][:10]
@@ -511,7 +509,6 @@ def get_upcoming_plans(user_id: str, limit_days: int = 7) -> str:
         conn.close()
         
         if not rows: return "Chưa có giáo án nào được lên lịch cho những ngày tới."
-        
         plan_text = [f"- Ngày {r['date']} [{r['status']}]: {r['workout_title']} - {r['description']}" for r in rows]
         return "\n".join(plan_text)
     except Exception as e:
@@ -634,46 +631,57 @@ def upsert_weekly_target(user_id: str, week_start_date: str, standard_target_km:
     except Exception as e:
         logger.error(f"[DB_ERROR] upsert_weekly_target Error: {e}")
         return False
+        
 # ==========================================
 # 🧠 MULTI-AGENT MEMORY MANAGEMENT (PHASE 8 - MULTI-TENANT)
 # ==========================================
 
-def insert_memory(user_id: str, domain: str, category: str, fact: str):
+def insert_memory(user_id: str, domain: str, category: str, fact: str, status: str = 'active'):
     """
-    [DATABASE] Inserts a fact into 'core_memory'. 
-    Follows Multi-Tenant and Zone 1 standards.
+    [DATABASE] Inserts or mutates a state in 'core_memory'.
+    Allows AI to archive obsolete facts by setting status='inactive'.
     """
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        # Generate a unique ID for the TEXT PRIMARY KEY in core_memory
         mem_id = str(uuid.uuid4())
         
-        # [ZONE 1] English Schema: id, user_id, domain, category, fact, status
+        # [ZONE 1] Dynamic status insertion
         c.execute('''
             INSERT INTO core_memory (id, user_id, domain, category, fact, status)
-            VALUES (?, ?, ?, ?, ?, 'active')
-        ''', (mem_id, str(user_id), domain, category, fact))
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (mem_id, str(user_id), domain, category, fact, status))
         
         conn.commit()
         conn.close()
-        logger.info(f"[DATABASE] Fact successfully committed to core_memory: {fact[:50]}...")
+        logger.info(f"[DATABASE] Memory committed: [{category}] {fact[:30]}... (Status: {status})")
     except Exception as e:
         logger.error(f"[DATABASE] Error inserting memory: {e}")
 
-def get_active_memories(user_id: str, domain: str) -> list:
+
+def get_all_active_memories(user_id: str) -> list:
     """
-    [BRAIN] Retrieve all 'active' facts for a SPECIFIC user and domain.
-    Automatically updates the 'last_accessed' timestamp.
+    [DATABASE] Fetch the absolute latest active state for each category.
+    Uses MAX(rowid) to guarantee exactly 1 unique record per category globally,
+    eliminating Timestamp Collisions and Domain Drift.
     """
     conn = get_db_connection()
     memories = []
     try:
         cursor = conn.cursor()
+        
+        # [ZONE 1] Global Deduplication Subquery
         cursor.execute('''
-            SELECT id, category, fact FROM core_memory 
-            WHERE user_id = ? AND domain = ? AND status = 'active'
-        ''', (str(user_id), domain))
+            SELECT m1.id, m1.domain, m1.category, m1.fact 
+            FROM core_memory m1
+            INNER JOIN (
+                SELECT category, MAX(rowid) as max_rowid
+                FROM core_memory
+                WHERE user_id = ? AND status = 'active'
+                GROUP BY category
+            ) m2 ON m1.rowid = m2.max_rowid
+        ''', (str(user_id),))
+        
         rows = cursor.fetchall()
         
         memory_ids = []
@@ -688,7 +696,6 @@ def get_active_memories(user_id: str, domain: str) -> list:
         # Update last_accessed to prevent decay
         if memory_ids:
             placeholders = ','.join('?' * len(memory_ids))
-            # Protect update with user_id to prevent cross-tenant tampering
             cursor.execute(f'''
                 UPDATE core_memory SET last_accessed = CURRENT_TIMESTAMP
                 WHERE id IN ({placeholders}) AND user_id = ?
@@ -697,14 +704,15 @@ def get_active_memories(user_id: str, domain: str) -> list:
             
         return memories
     except Exception as e:
-        logger.error(f"[DB] Error retrieving active memories for {user_id}: {e}")
+        logger.error(f"[DATABASE] Error global memory fetch: {e}")
         return []
     finally:
         conn.close()
 
 def archive_memory(user_id: str, memory_id: str) -> bool:
     """
-    [BRAIN] Mark a memory as 'archived'. Secured by user_id.
+    [BRAIN] Mark a memory as 'archived'.
+    Secured by user_id.
     """
     conn = get_db_connection()
     try:

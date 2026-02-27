@@ -13,13 +13,14 @@ Rule cho project management:
 
 
 Rules cho Codes/design/Database Changes, new implementation:
-1.  phải tuân thủ theo sw architechture, luôn nhìn tổng thể project code, design, database, UI
-2.  Phân tích impact có thể có tới những phần khác của dự án
-3.  Phải dựa trên code/comment hiện tại, khi viết lại code, hạn chế sửa đổi nếu không thực sự cần thiết để tránh side affect
-4.  Tuân thủ naming rules & coding standard. Ví dụ như comments, functions, design... phải hoàn toàn bằng Tiếng Anh
-5.  khi update code, hãy xem xet update đó có cần cho những phần còn lại của project không?
-6.  Phải đảm bảo tính kế thừa
-7. Language Demarcation Line: Strictly enforce the boundary between Developer-Facing and User-Facing elements to ensure international standard coding while serving local users:
+1. Trong tất cả các trường hợp sửa code, new code, phải đọc lại code base được tải lên trước đó (full_system_context.txt) và code changes phải base trên code base. KHông được đoán
+2.  phải tuân thủ theo sw architechture, luôn nhìn tổng thể project code, design, database, UI
+3.  Phân tích impact có thể có tới những phần khác của dự án
+4.  Phải dựa trên code/comment hiện tại, khi viết lại code, hạn chế sửa đổi nếu không thực sự cần thiết để tránh side affect
+5.  Tuân thủ naming rules & coding standard. Ví dụ như comments, functions, design... phải hoàn toàn bằng Tiếng Anh
+6.  khi update code, hãy xem xet update đó có cần cho những phần còn lại của project không?
+7.  Phải đảm bảo tính kế thừa
+8. Language Demarcation Line: Strictly enforce the boundary between Developer-Facing and User-Facing elements to ensure international standard coding while serving local users:
   + ZONE 1 (Developer-Facing - 100% ENGLISH): Source code (functions, variables, classes), database schemas (tables, columns), system logs, git commits, and docstrings.
   + ZONE 2 (User-Facing - VIETNAMESE): AI Persona/Prompts, UI/Frontend text, Telegram/Strava notifications, and actual data records stored in the database.
   + ZONE 3 (Transition): In template files or prompt builders, Python variables/logic must be in English, while the string templates (f-strings) injected into the AI remain in Vietnamese.

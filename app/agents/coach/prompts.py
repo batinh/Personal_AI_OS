@@ -8,6 +8,7 @@ def build_system_instruction(custom_instruction: str, user_profile: str, max_hr:
     return f"""
 Bạn là Coach Dyno, một huấn luyện viên chạy bộ chuyên nghiệp, am hiểu sinh lý học thể thao và phân tích dữ liệu.
 Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng vào vấn đề.
+
 {custom_instruction}
 
 [HỒ SƠ VẬN ĐỘNG VIÊN]
@@ -327,38 +328,43 @@ Dựa trên dữ liệu thời tiết trên, bạn phải đưa ra lời khuyên
 3. LÝ TƯỞNG (15-22°C): Khuyến khích VĐV tận dụng thời tiết để hoàn thành tốt bài Key.
 """
 # ==========================================
-# 🧠 LAYER 8: AUTONOMOUS MEMORY EXTRACTION
-# ==========================================
-
-# ==========================================
-# 🧠 LAYER 8: AUTONOMOUS MEMORY EXTRACTION (ULTIMATE FILTER)
+# 🧠 LAYER 8: AUTONOMOUS MEMORY EXTRACTION (STATE MACHINE)
 # ==========================================
 
 MEMORY_EXTRACTION_PROMPT = """
 [SYSTEM ROLE]
 You are the "Background Memory Manager" for a High-Performance Sports AI OS.
-... (giữ nguyên phần trên) ...
+Your task is to proactively extract and manage the Athlete's Core Memory state from the [CHAT HISTORY].
 
-[JSON OUTPUT FORMAT STRICTLY]
-You MUST return ONLY a valid JSON list of objects. Do NOT include markdown formatting, backticks, or any explanation.
-If no new important facts are found, return an empty list: []
+[EXISTING KNOWLEDGE]
+Here is what the system ALREADY knows:
+{existing_memories}
 
-Example of expected output:
-[
-  {{ "domain": "sports", "category": "goal_change", "fact": "Athlete is likely skipping the upcoming Nha Trang race" }},
-  {{ "domain": "health", "category": "injury", "fact": "Experiencing acute pain in the right knee after long runs" }},
-  {{ "domain": "health", "category": "nutrition", "fact": "Stomach reacts badly to Maurten gels, prefers GU" }},
-  {{ "domain": "sports", "category": "lifestyle", "fact": "Working night shifts next week, needs flexible training schedule" }}
-]
+[EXTRACTION & MUTATION RULES - STRICT ENUMERATION]
+1. DOMAIN IS FIXED: You MUST strictly use one of these domains: 'sports', 'health', 'physiological', 'lifestyle', 'nutrition', 'psychology', 'general'.
+2. CATEGORY IS STRICTLY RESTRICTED: You are FORBIDDEN from inventing new categories. You MUST classify the fact into one of the following exact snake_case strings:
+   - 'main_goal' (For race targets, HM Sub 1:45, etc.)
+   - 'injury_status' (For any pain, Achilles overload, recovery status)
+   - 'physiological_metrics' (For LTHR, Max HR, Cardiac Drift, rFTP)
+   - 'gear_preference' (For shoes like Bmai Carbon, Novablast, equipment)
+   - 'race_strategy' (For pacing, power targets, heat acclimatization)
+   - 'training_preference' (For cadence > 175, running time preferences)
+   - 'general_lifestyle' (For sleep, work stress, diet)
+   - 'other' (If it absolutely does not fit above, but is important)
+3. ADD/UPDATE (Active): If you find ANY user preference, condition, or goal in the [CHAT HISTORY], extract it and set "status": "active". Even if it was mentioned before but provides more context, update it.
+4. ARCHIVE (Inactive): If the chat implies an existing fact is no longer true, resolved, or obsolete (e.g., "my Achilles is fine now"), extract it and set "status": "inactive".
+5. EXTRACT PROACTIVELY: Do not over-filter. If the user mentions a shoe, a race, or a pain, extract it. Only return [] if the chat is purely small talk (e.g., "hello", "thanks").
 
 [CHAT HISTORY]
 {chat_history}
 """
 
-def build_memory_extraction_prompt(chat_history: str) -> str:
+def build_memory_extraction_prompt(chat_history: str, existing_memories: str) -> str:
     """
-    [PROMPT] Use replace instead of format to bypass Python's f-string/format curly brace logic.
-    This ensures that JSON structures in the prompt don't trigger KeyErrors.
+    [PROMPT] Builds state-aware memory extraction prompt.
+    Uses .replace() to safely inject data without breaking JSON brackets.
     """
-    # Simply swap the placeholder with the actual data
-    return MEMORY_EXTRACTION_PROMPT.replace("{chat_history}", chat_history)
+    # Không dùng f-string ở đây để tránh lỗi KeyError do ngoặc nhọn của JSON
+    prompt = MEMORY_EXTRACTION_PROMPT.replace("{chat_history}", chat_history)
+    prompt = prompt.replace("{existing_memories}", existing_memories)
+    return prompt
