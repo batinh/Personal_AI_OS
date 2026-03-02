@@ -69,18 +69,7 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (user_id)
         )
     ''')
-    # [NEW] Add Long-term Memory table
-    logger.info(f"[DATABASE] Checking 'long_term_memory' table...")
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS long_term_memory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            domain TEXT NOT NULL,
-            category TEXT NOT NULL,
-            fact TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+
     # 4. Table: training_plans (Single Source of Truth)
     # [REFACTOR MULTI-TENANT] Check if legacy table exists and lacks user_id to Migrate
     cursor = c.execute("PRAGMA table_info(training_plans)")
@@ -353,7 +342,7 @@ def get_training_loads(user_id: str) -> dict:
         logger.error(f"[DB_ERROR] get_training_loads Error: {e}")
         return {"acute_load_7d": 0, "chronic_load_28d": 0, "avg_weekly_mileage": 0}
 
-def get_recent_runs_log(user_id: str, limit: int = 5) -> str:
+def get_recent_runs_log(user_id: str, limit: int = 10) -> str:
     """Get a formatted string of recent runs for the AI prompt."""
     try:
         conn = get_db_connection()
@@ -549,23 +538,23 @@ def get_weekly_volume(user_id: str, target_date: datetime = None) -> float:
     
     if target_date is None:
         target_date = datetime.now(tz)
-    elif target_date.tzinfo is None: # Ensure timezone is attached
+    elif target_date.tzinfo is None:
         target_date = tz.localize(target_date)
         
-    # Determine Monday (Start) and Sunday (End) of the week containing target_date
     monday = target_date - timedelta(days=target_date.weekday())
     sunday = monday + timedelta(days=6)
     
-    # Cast to string for SQLite query (from 00:00:00 Monday to 23:59:59 Sunday)
-    start_str = monday.strftime('%Y-%m-%d 00:00:00')
-    end_str = sunday.strftime('%Y-%m-%d 23:59:59')
+    # [FIX] Chỉ lấy chuỗi ngày (YYYY-MM-DD), bỏ qua giờ phút giây
+    start_str = monday.strftime('%Y-%m-%d')
+    end_str = sunday.strftime('%Y-%m-%d')
     
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
+        # [FIX] Dùng date(start_date) để SQLite tự chuẩn hóa chữ 'T' của Strava
         cursor.execute('''
             SELECT SUM(distance_km) FROM run_activities 
-            WHERE user_id = ? AND start_date >= ? AND start_date <= ?
+            WHERE user_id = ? AND date(start_date) >= ? AND date(start_date) <= ?
         ''', (str(user_id), start_str, end_str))
         
         result = cursor.fetchone()[0]

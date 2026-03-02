@@ -35,10 +35,10 @@ def check_training_status(user_id: str) -> str:
 
 def get_recent_workouts(user_id: str) -> str:
     """
-    [TOOL] Retrieve the list of the athlete's 5 most recent running workouts.
+    [TOOL] Retrieve the list of the athlete's 10 most recent running workouts.
     """
-    logger.info(f"[TOOL-USE] 🤖 AI fetching 5 recent workouts for {user_id}")
-    return get_recent_runs_log(user_id, limit=5)
+    logger.info(f"[TOOL-USE] 🤖 AI fetching 10 recent workouts for {user_id}")
+    return get_recent_runs_log(user_id, limit=10)
 
 def search_long_term_memory(query: str) -> str:
     """

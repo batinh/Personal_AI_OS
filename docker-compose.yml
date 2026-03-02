@@ -29,6 +29,7 @@ services:
     volumes:
       - .:/app # Mount thư mục hiện tại vào container
       - ./data/chroma_cache:/root/.cache/chroma
+      - ./logs/:/app/logs
 
   # --- 3. DUCKDNS ---
   duckdns:

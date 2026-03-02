@@ -142,23 +142,31 @@ async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = Non
             except Exception as e:
                 logger.error(f"[SYNC] Error analyzing Streams for {act_id}: {e}")
 
+# [ZONE 3] Standardized template header to match webhooks.py
         memory_content = (
-            f"[HỒ SƠ BÀI CHẠY LỊCH SỬ]\n"
+            f"[PHÂN TÍCH BÀI CHẠY LỊCH SỬ]\n"
             f"- Cơ bản: Ngày {activity_data['start_date'][:10]}, '{act_name}'. Quãng đường {dist_km:.2f}km, thời gian {moving_min:.1f} phút.\n"
             f"- Tải trọng (Load): Tim TB {int(avg_hr)} bpm (Max {int(activity_data['max_hr'])}). TRIMP: {activity_data['trimp_score']} ({trimp_data.get('intensity_level')}).\n"
             f"- Hiệu suất (Performance): Pace TB {pace_str} min/km. Chỉ số hiệu quả (EF): {ef_val}. Độ trôi nhịp tim (Decoupling): {decoupling_val}%.\n"
             f"- Kỹ thuật (Form): Cadence {cadence_avg} spm, Sải chân {stride_avg} mét."
         )
 
-        rag_db.memorize(
-            doc_id=act_id,
-            content=memory_content,
-            domain="coach",
-            extra_meta={"user_id": str(chat_id), "type": "historical_run"}
-        )
+        try:
+            rag_db.memorize(
+                doc_id=act_id,
+                content=memory_content,
+                domain="coach",
+                extra_meta={
+                    "user_id": str(chat_id), 
+                    "type": "run_analysis",   # [FIX] Changed from 'historical_run' to unify RAG filters
+                    "source": "sync_job"      # [NEW] Tag source for debugging
+                }
+            )
+        except Exception as e:
+            logger.error(f"[SYNC] Failed to memorize activity {act_id}: {e}")
+            
         analyzed_count += 1
         await asyncio.sleep(1)
-
     send_telegram_msg(chat_id, f"🎉 **Hoàn tất Đồng bộ Lịch sử!**\nĐã bổ sung {loaded_count} bài chạy vào Cơ sở dữ liệu và cấy {analyzed_count} Gói Ký ức (EF, Decoupling, TRIMP) vào não bộ AI. Số liệu ACWR đã được cân bằng.")
 
 if __name__ == "__main__":

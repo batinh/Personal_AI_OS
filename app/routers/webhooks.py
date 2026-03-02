@@ -84,8 +84,31 @@ def run_strava_workflow(activity_id: str):
     # 2. Handover to AI for semantic analysis and GCS scoring
     logger.info("[*] Sending Data to Gemini...")
     analysis_text = analyze_run_with_gemini(activity_id, act_name, csv_data, meta_data, config)
-    
-    # 3. Trigger Notifications
+# =========================================================================
+    # [NEW ARCHITECTURE] 2.5: Inject immediately into RAG Memory (Tier 3)
+    # =========================================================================
+    if analysis_text and chat_id:
+        logger.info(f"[*] Memorizing analysis for activity {activity_id} into RAG...")
+        
+        # [ZONE 3] String template in Vietnamese, variables in English
+        memory_content = (
+            f"[PHÂN TÍCH BÀI CHẠY]\n"
+            f"- Tên bài: {act_name}\n"
+            f"- Chi tiết:\n{analysis_text}"
+        )
+        
+        try:
+            rag_db.memorize(
+                doc_id=str(activity_id),
+                content=memory_content,
+                domain="coach",
+                extra_meta={"user_id": str(chat_id), "type": "run_analysis"}
+            )
+            logger.info(f"[RAG] Successfully embedded run analysis {activity_id}")
+        except Exception as e:
+            logger.error(f"[RAG] Failed to memorize activity {activity_id}: {e}")
+    # =========================================================================
+    #     # 3. Trigger Notifications
     if analysis_text:
         client.update_activity_description(activity_id, analysis_text)
         

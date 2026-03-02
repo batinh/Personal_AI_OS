@@ -225,12 +225,19 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     debug_log_prompt("DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
 
     # 3. Execution (Resilience Pattern)
+    # 3. Execution (Resilience Pattern)
     try:
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
-                tools=[update_todays_plan, set_actual_weekly_target]
+                # [FIX BUG] Cung cấp đầy đủ các Tool mà System Prompt yêu cầu để tránh KeyError
+                tools=[
+                    update_todays_plan, 
+                    set_actual_weekly_target, 
+                    search_long_term_memory, 
+                    set_workout_plan
+                ]
             )
         )
         response = send_message_with_retry(chat_session, prompt)
@@ -398,14 +405,30 @@ def generate_weekly_reflection(config: dict):
         response = send_message_with_retry(chat_session, prompt)
         reflection_text = response.text or "⚠️ Coach Dyno encountered an error generating the reflection."
 
-        # 4. Inject Memory into RAG (Long-term autonomous memory)
-        memory_doc_id = f"reflection_{now.strftime('%Y%m%d')}"
-        rag_db.memorize(
-            doc_id=memory_doc_id,
-            content=f"Weekly Reflection for week ending {now.strftime('%Y-%m-%d')}:\n{reflection_text}",
-            domain="coach",
-            extra_meta={"user_id": user_id_str, "type": "weekly_reflection"}
+    # 4. Inject Memory into RAG (Long-term autonomous memory)
+        week_str = now.strftime('%Y-%m-%d')
+        # [MULTI-TENANT] Make doc_id globally unique
+        memory_doc_id = f"reflection_{user_id_str}_{week_str}" 
+        
+        # [ZONE 3] String template for Weekly Reflection
+        memory_content = (
+            f"[TỔNG KẾT TUẦN {week_str}]\n"
+            f"{reflection_text}"
         )
+        
+        try:
+            logger.info(f"[COACH AGENT] Memorizing reflection for week {week_str}...")
+            rag_db.memorize(
+                doc_id=memory_doc_id,
+                content=memory_content,
+                domain="coach",
+                extra_meta={
+                    "user_id": str(user_id_str), 
+                    "type": "weekly_reflection"
+                }
+            )
+        except Exception as e:
+            logger.error(f"[COACH AGENT] Failed to save reflection to RAG: {e}")
 
         # 5. Save and Notify
         save_message(user_id_str, "model", f"[WEEKLY REFLECTION]\n{reflection_text}")
