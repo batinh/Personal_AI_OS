@@ -173,3 +173,24 @@ flowchart TB
 - [ ] **SQLite Migration:** Thêm cột `user_id` vào các bảng `core_memory`, `runs`, `plans`.
 - [ ] **Vector DB Migration:** Thêm metadata `{"user_id": "..."}` cho toàn bộ Document trong ChromaDB.
 - [ ] **Code Refactor:** Xóa bỏ việc gọi `os.getenv("TELEGRAM_CHAT_ID")` rải rác trong các Agent, thay bằng Context User ID.
+
+---
+
+## 🧪 Testing
+
+Unit tests cover stream storage, run activity raw (DB), and tools. Run from project root (cần cài dependencies: `pip install -r requirements.txt` hoặc dùng venv/Docker):
+
+```bash
+# Standard library unittest (all tests)
+python -m unittest discover -s tests -v
+
+# Chỉ test stream storage (ít dependency)
+python -m unittest tests.test_stream_storage -v
+
+# Hoặc dùng pytest (pip install -r requirements-dev.txt)
+pytest tests/ -v
+```
+
+- **tests/test_stream_storage.py**: save/load stream files, `get_stream_file_path`, `get_stream_arrays`.
+- **tests/test_database_run_activity_raw.py**: `save_run_activity_raw` / `get_run_activity_raw` với `stream_file_path`.
+- **tests/test_tools_get_run_full_details.py**: tool `get_run_full_details` có chứa stream file path khi có.

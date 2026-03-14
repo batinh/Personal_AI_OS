@@ -12,8 +12,9 @@ from app.agents.coach.harvest import harvest_data, execute_manual_sync
 from app.core.state import state
 from app.services.scheduler import task_morning_briefing
 from app.agents.coach.utils import calculate_trimp
-from app.core.database import save_run_activity, delete_run_activity
+from app.core.database import save_run_activity, save_run_activity_raw, delete_run_activity
 from app.services.rag_memory import rag_db
+from app.services.stream_storage import save_activity_stream_to_file
 
 router = APIRouter()
 logger = logging.getLogger("AI_COACH")
@@ -69,17 +70,23 @@ def run_strava_workflow(activity_id: str):
     
     logger.info(f"[*] Fetching data for Activity {activity_id}...")
     try:
-        act_name, csv_data, meta_data = client.get_activity_data(activity_id)
-    except ValueError:
+        act_name, csv_data, meta_data, stream_raw = client.get_activity_data(activity_id)
+    except (ValueError, TypeError):
         return
-    
-    if not csv_data: return
+
+    if not csv_data:
+        return
 
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    
+
     # 1. Ensure Data Integrity before invoking LLM
     if chat_id:
         _ingest_realtime_run(activity_id, act_name, meta_data, chat_id, config)
+        # Persist metadata in DB; save full raw streams to file and store path
+        stream_file_path = None
+        if stream_raw:
+            stream_file_path = save_activity_stream_to_file(chat_id, activity_id, stream_raw)
+        save_run_activity_raw(chat_id, activity_id, act_name, meta_data, stream_csv="", stream_file_path=stream_file_path)
 
     # 2. Handover to AI for semantic analysis and GCS scoring
     logger.info("[*] Sending Data to Gemini...")

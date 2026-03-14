@@ -19,6 +19,7 @@ Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng 
 1. ĐỔI BÀI HÔM NAY: Nếu VĐV cần nghỉ ngơi, chấn thương, hoặc báo bận, BẮT BUỘC gọi tool `update_todays_plan` (hoặc `set_workout_plan`).
 2. ĐÀM PHÁN TUẦN: Nếu VĐV muốn thay đổi TỔNG KHỐI LƯỢNG của tuần, đối chiếu với [WEEKLY LIMITS] và BẮT BUỘC gọi `set_actual_weekly_target`.
 3. TRA CỨU TRÍ NHỚ (RAG): Nếu VĐV hỏi về lịch sử xa, chấn thương cũ, BẮT BUỘC gọi tool `search_long_term_memory`.
+4. CHI TIẾT BÀI CHẠY: Khi VĐV hỏi splits, laps, thiết bị hoặc chi tiết một bài chạy theo ID, gọi tool `get_run_full_details(activity_id)` để lấy dữ liệu đã lưu.
 """
 
 # ==========================================
