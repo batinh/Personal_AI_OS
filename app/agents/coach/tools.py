@@ -6,7 +6,8 @@ import pytz
 import json
 from datetime import datetime
 from app.core.database import (
-    get_training_loads, get_recent_runs_log, 
+    get_training_loads, get_recent_runs_log,
+    get_run_activity_raw,
     update_daily_plan
 )
 from app.services.rag_memory import rag_db
@@ -39,6 +40,48 @@ def get_recent_workouts(user_id: str) -> str:
     """
     logger.info(f"[TOOL-USE] 🤖 AI fetching 10 recent workouts for {user_id}")
     return get_recent_runs_log(user_id, limit=10)
+
+
+def get_run_full_details(activity_id: str) -> str:
+    """
+    [TOOL] Get full stored data for a run (splits, laps, device, stream summary).
+    Use when the athlete asks for details of a specific run by ID or when you need
+    splits/laps/device info that was saved at sync or webhook time.
+    """
+    logger.info(f"[TOOL-USE] 🤖 AI fetching full run details for activity {activity_id}")
+    raw = get_run_activity_raw(str(activity_id))
+    if not raw:
+        return f"Không tìm thấy dữ liệu đầy đủ cho bài chạy {activity_id}. Chỉ có thể có bản tóm tắt trong danh sách bài chạy gần đây."
+    meta = raw.get("full_meta") or {}
+    lines = [f"Bài chạy: {raw.get('activity_name', 'N/A')}", f"Lấy lúc: {raw.get('fetched_at', 'N/A')}"]
+    if meta.get("start_date_local"):
+        lines.append(f"Thời gian: {meta['start_date_local']}")
+    if meta.get("distance"):
+        lines.append(f"Quãng đường: {meta['distance']/1000:.2f} km")
+    if meta.get("moving_time"):
+        lines.append(f"Thời gian chạy: {meta['moving_time']//60} phút")
+    if meta.get("average_heartrate"):
+        lines.append(f"HR TB: {meta['average_heartrate']} bpm")
+    if meta.get("device_name"):
+        lines.append(f"Thiết bị: {meta['device_name']}")
+    if meta.get("splits"):
+        parts = []
+        for s in (meta["splits"] or [])[:10]:
+            pace = s.get("pace")
+            pace_str = f"{1000/(pace*60):.1f} min/km" if pace and pace > 0 else "N/A"
+            parts.append(f"{s.get('km', '?')}km @ {pace_str}")
+        lines.append("Splits: " + "; ".join(parts))
+    if meta.get("laps"):
+        parts = []
+        for lap in (meta["laps"] or [])[:5]:
+            dist_m = lap.get("distance") or 0
+            parts.append(f"{lap.get('lap_name', 'Lap')} {dist_m/1000:.2f}km")
+        if parts:
+            lines.append("Laps: " + "; ".join(parts))
+    stream_path = raw.get("stream_file_path") or ""
+    if stream_path:
+        lines.append(f"(Đã lưu stream raw: data/{stream_path} — có thể load lại để phân tích chi tiết hoặc re-analyze theo đoạn.)")
+    return "\n".join(lines)
 
 def search_long_term_memory(query: str) -> str:
     """

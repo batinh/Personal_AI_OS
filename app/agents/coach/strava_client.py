@@ -1,5 +1,7 @@
 import os
 import logging
+from typing import Optional
+
 import requests
 import pandas as pd
 import numpy as np
@@ -8,6 +10,10 @@ from dotenv import load_dotenv
 # Initialize logging
 logger = logging.getLogger(__name__)
 load_dotenv()
+
+# All 11 stream types from Strava API (time, latlng, distance, altitude, velocity_smooth, heartrate, cadence, watts, temp, moving, grade_smooth)
+STRAVA_STREAM_KEYS = "time,latlng,distance,altitude,velocity_smooth,heartrate,cadence,watts,temp,moving,grade_smooth"
+
 
 class StravaClient:
     def __init__(self):
@@ -33,117 +39,120 @@ class StravaClient:
             logger.error(f"[STRAVA] Failed to refresh token: {e}")
             return None
 
-    def get_activity_data(self, activity_id: str):
+    def get_activity_streams_raw(self, activity_id: str) -> Optional[dict]:
         """
-        Fetch Full Data: Streams (CSV), Metadata (Splits, Laps, PRs).
-        Returns: (activity_name, csv_data, extended_meta)
+        Fetch full raw streams from Strava (all 11 keys). Returns key_by_type dict or None.
+        Caller should save to file via stream_storage.save_activity_stream_to_file().
         """
         token = self.get_access_token()
-        if not token: return None, None, None
+        if not token:
+            return None
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{self.base_url}/activities/{activity_id}/streams?keys={STRAVA_STREAM_KEYS}&key_by_type=true"
+        try:
+            r = requests.get(url, headers=headers)
+            if r.status_code != 200:
+                logger.warning(f"[STRAVA] Streams response {r.status_code} for {activity_id}")
+                return None
+            return r.json()
+        except Exception as e:
+            logger.error(f"[STRAVA] Error fetching streams for {activity_id}: {e}")
+            return None
 
-        headers = {'Authorization': f'Bearer {token}'}
-        
+    def get_activity_data(self, activity_id: str):
+        """
+        Fetch Full Data: Streams (CSV for LLM), Metadata (Splits, Laps, PRs), and raw streams.
+        Returns: (activity_name, csv_data, extended_meta, stream_raw).
+        stream_raw is key_by_type dict for saving to file; csv_data is downsampled for Gemini.
+        """
+        token = self.get_access_token()
+        if not token:
+            return None, None, None, None
+
+        headers = {"Authorization": f"Bearer {token}"}
+
         try:
             # 1. Fetch Activity Detail (Contains Laps, Splits, Best Efforts)
             act_url = f"{self.base_url}/activities/{activity_id}"
             act_res = requests.get(act_url, headers=headers)
             if act_res.status_code != 200:
                 logger.error(f"[STRAVA] Error fetching activity: {act_res.text}")
-                return None, None, None
-            
+                return None, None, None, None
+
             act_data = act_res.json()
-            activity_name = act_data.get('name', 'Unknown Run')
-            
+            activity_name = act_data.get("name", "Unknown Run")
+
             # Check type (Run, VirtualRun, etc.)
-            if act_data.get('type') not in ['Run', 'VirtualRun', 'TrailRun', 'Treadmill']:
+            if act_data.get("type") not in ["Run", "VirtualRun", "TrailRun", "Treadmill"]:
                 logger.info(f"[STRAVA] Activity {activity_id} is not a run. Skipping.")
-                return None, None, None
+                return None, None, None, None
 
-            # 2. Extract Splits & Laps & Metadata information
-            # Splits (Every 1km)
-            splits = act_data.get('splits_metric', [])
-            splits_summary = []
-            for s in splits:
-                splits_summary.append({
-                    "km": s.get('split'),
-                    "pace": s.get('average_speed'), # m/s
-                    "hr": s.get('average_heartrate', 0)
-                })
-
-            # Laps (If manually marked)
-            laps = act_data.get('laps', [])
-            laps_summary = []
-            for l in laps:
-                laps_summary.append({
-                    "lap_name": l.get('name'),
-                    "distance": l.get('distance'),
-                    "pace": l.get('average_speed'),
-                    "hr": l.get('average_heartrate', 0)
-                })
-
-            # Package additional Metadata
+            # 2. Extract Splits & Laps & Metadata
+            splits = act_data.get("splits_metric", [])
+            splits_summary = [
+                {"km": s.get("split"), "pace": s.get("average_speed"), "hr": s.get("average_heartrate", 0)}
+                for s in splits
+            ]
+            laps = act_data.get("laps", [])
+            laps_summary = [
+                {
+                    "lap_name": l.get("name"),
+                    "distance": l.get("distance"),
+                    "pace": l.get("average_speed"),
+                    "hr": l.get("average_heartrate", 0),
+                }
+                for l in laps
+            ]
             extended_meta = {
-                "start_date_local": act_data.get('start_date_local'),
-                "moving_time": act_data.get('moving_time', 0),
-                "average_heartrate": act_data.get('average_heartrate', 0),
-                "max_heartrate": act_data.get('max_heartrate', 0), # [UPDATED] Added this field
-                "distance": act_data.get('distance', 0),           # [UPDATED] Added this field
-                "suffer_score": act_data.get('suffer_score'),
-                "device_name": act_data.get('device_name'),
+                "start_date_local": act_data.get("start_date_local"),
+                "moving_time": act_data.get("moving_time", 0),
+                "average_heartrate": act_data.get("average_heartrate", 0),
+                "max_heartrate": act_data.get("max_heartrate", 0),
+                "distance": act_data.get("distance", 0),
+                "suffer_score": act_data.get("suffer_score"),
+                "device_name": act_data.get("device_name"),
                 "splits": splits_summary,
-                "best_efforts": act_data.get('best_efforts', [])
+                "best_efforts": act_data.get("best_efforts", []),
             }
-            # 3. Fetch Streams (Second-by-second data)
-            streams_url = f"{act_url}/streams?keys=time,heartrate,velocity_smooth,cadence,grade_smooth,watts&key_by_type=true"
-            streams_res = requests.get(streams_url, headers=headers).json()
 
-            # 4. Pandas DataFrame Processing (CRITICAL SECTION PREVIOUSLY MISSING)
+            # 3. Fetch full raw streams (all keys) for file storage + build CSV from same response
+            streams_res = self.get_activity_streams_raw(activity_id)
+            if not streams_res:
+                logger.warning(f"[STRAVA] No streams for {activity_id}; returning meta only.")
+                return activity_name, None, extended_meta, None
+
+            # 4. Build DataFrame from streams for downsampled CSV (Gemini)
             data = {
-                'Time_sec': streams_res.get('time', {}).get('data', []),
-                'HR_bpm': streams_res.get('heartrate', {}).get('data', []),
-                'Velocity_m_s': streams_res.get('velocity_smooth', {}).get('data', []),
-                'Cadence_spm': streams_res.get('cadence', {}).get('data', []),
-                'Grade_pct': streams_res.get('grade_smooth', {}).get('data', []),
-                'Power_watts': streams_res.get('watts', {}).get('data', []) # New: Power
+                "Time_sec": streams_res.get("time", {}).get("data", []),
+                "HR_bpm": streams_res.get("heartrate", {}).get("data", []),
+                "Velocity_m_s": streams_res.get("velocity_smooth", {}).get("data", []),
+                "Cadence_spm": streams_res.get("cadence", {}).get("data", []),
+                "Grade_pct": streams_res.get("grade_smooth", {}).get("data", []),
+                "Power_watts": streams_res.get("watts", {}).get("data", []),
             }
-            
-            # Create DataFrame safely
-            df = pd.DataFrame({'Time_sec': data['Time_sec']})
-            
+            df = pd.DataFrame({"Time_sec": data["Time_sec"]})
             for col, values in data.items():
-                if col != 'Time_sec':
+                if col != "Time_sec":
                     s = pd.Series(values)
                     df[col] = s.reindex(df.index)
 
-            # Clean data
-            df.dropna(subset=['HR_bpm', 'Velocity_m_s'], inplace=True)
-            
-            # Feature Engineering: Calculate Stride Length
-            # Formula: Stride (m) = Speed (m/s) * 60 / Cadence (spm)
-            df['Stride_m'] = df.apply(
-                lambda row: (row['Velocity_m_s'] * 60 / row['Cadence_spm']) if row['Cadence_spm'] > 0 else 0, 
-                axis=1
+            df.dropna(subset=["HR_bpm", "Velocity_m_s"], inplace=True)
+            df["Stride_m"] = df.apply(
+                lambda row: (row["Velocity_m_s"] * 60 / row["Cadence_spm"]) if row["Cadence_spm"] > 0 else 0,
+                axis=1,
             )
-
-            # Fill missing Power with 0
-            if 'Power_watts' in df.columns:
-                df['Power_watts'] = df['Power_watts'].fillna(0)
-            
-            # Round for cleaner CSV token usage
-            df = df.round({'Velocity_m_s': 2, 'Stride_m': 2, 'Grade_pct': 1})
-
-            # [NEW] DOWNSAMPLING: Sample every 5 seconds to reduce junk tokens by 80%.
-            # Extremely important to protect Quota for Long Runs.
+            if "Power_watts" in df.columns:
+                df["Power_watts"] = df["Power_watts"].fillna(0)
+            df = df.round({"Velocity_m_s": 2, "Stride_m": 2, "Grade_pct": 1})
             df = df.iloc[::5, :]
-            # Convert to CSV string for Gemini
             csv_data = df.to_csv(index=False)
-            logger.info(f"[STRAVA] Successfully processed CSV data with Dynamics for {activity_id}")
-            
-            return activity_name, csv_data, extended_meta
+            logger.info(f"[STRAVA] Processed CSV + raw streams for {activity_id}")
+
+            return activity_name, csv_data, extended_meta, streams_res
 
         except Exception as e:
             logger.error(f"[STRAVA] Error processing activity data: {e}")
-            return None, None, None
+            return None, None, None, None
 
     def update_activity_description(self, activity_id: str, description: str):
         """Update the description of a Strava activity."""

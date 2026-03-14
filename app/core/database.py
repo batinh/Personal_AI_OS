@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import os
 import uuid
@@ -56,7 +57,25 @@ def init_db():
     try:
         c.execute("ALTER TABLE run_activities ADD COLUMN gcs_score INTEGER DEFAULT NULL")
     except sqlite3.OperationalError:
-        pass # Ignore if column already exists
+        pass  # Ignore if column already exists
+
+    # 2b. Table: run_activity_raw (full Strava payload per run for analysis, recall, tools)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS run_activity_raw (
+            activity_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            activity_name TEXT,
+            full_meta TEXT,
+            stream_csv TEXT,
+            stream_file_path TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (activity_id) REFERENCES run_activities (activity_id)
+        )
+    ''')
+    try:
+        c.execute("ALTER TABLE run_activity_raw ADD COLUMN stream_file_path TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # 3. Table: chat_history (Upgraded)
     c.execute('''
@@ -236,16 +255,101 @@ def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
         logger.error(f"[DB_ERROR] Failed to update GCS: {e}")
 
 def delete_run_activity(activity_id: str):
-    """Delete a run activity from the database when receiving a Delete signal from Strava."""
+    """Delete a run activity from the database when receiving a Delete signal from Strava.
+    Also removes the stream file if it exists (path stored in run_activity_raw).
+    """
     try:
         conn = get_db_connection()
         c = conn.cursor()
+        c.execute("SELECT stream_file_path FROM run_activity_raw WHERE activity_id = ?", (str(activity_id),))
+        row = c.fetchone()
+        stream_path = row["stream_file_path"] if row and row.get("stream_file_path") else None
+        c.execute("DELETE FROM run_activity_raw WHERE activity_id = ?", (str(activity_id),))
         c.execute("DELETE FROM run_activities WHERE activity_id = ?", (str(activity_id),))
         conn.commit()
         conn.close()
+        if stream_path:
+            try:
+                from pathlib import Path
+                from app.services.stream_storage import DATA_DIR
+                full = Path(DATA_DIR) / stream_path.lstrip("/").replace("data/", "")
+                if full.is_file():
+                    full.unlink()
+                    logger.info(f"[DB] Deleted stream file {full}")
+            except Exception as e:
+                logger.warning(f"[DB] Could not delete stream file for {activity_id}: {e}")
         logger.info(f"[DB] Successfully deleted run activity {activity_id} from SQLite.")
     except Exception as e:
         logger.error(f"[DB_ERROR] Error deleting run activity {activity_id}: {e}")
+
+
+def save_run_activity_raw(
+    user_id: str,
+    activity_id: str,
+    activity_name: str,
+    full_meta: dict,
+    stream_csv: Optional[str] = None,
+    stream_file_path: Optional[str] = None,
+):
+    """
+    Persist full run data: metadata in DB; stream content in file (path stored here).
+    full_meta: extended_meta from Strava (splits, laps, best_efforts, device_name, etc.).
+    stream_file_path: relative path from data/ to JSON file (e.g. streams/user_id/activity_id.json).
+    """
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        meta_json = json.dumps(full_meta, ensure_ascii=False, default=str)
+        c.execute('''
+            INSERT INTO run_activity_raw (activity_id, user_id, activity_name, full_meta, stream_csv, stream_file_path, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(activity_id) DO UPDATE SET
+                user_id=excluded.user_id,
+                activity_name=excluded.activity_name,
+                full_meta=excluded.full_meta,
+                stream_csv=excluded.stream_csv,
+                stream_file_path=excluded.stream_file_path,
+                fetched_at=CURRENT_TIMESTAMP
+        ''', (str(activity_id), str(user_id), activity_name or "", meta_json, stream_csv or "", stream_file_path or ""))
+        conn.commit()
+        conn.close()
+        logger.info(f"[DB] Saved full run data for activity {activity_id}.")
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to save run_activity_raw {activity_id}: {e}")
+
+
+def get_run_activity_raw(activity_id: str) -> Optional[Dict]:
+    """
+    Load full run data (metadata + stream file path) for analysis, recall, or tools.
+    Returns dict with keys: activity_name, full_meta (dict), stream_file_path (str), fetched_at; or None.
+    Stream content: load from file via stream_storage.load_activity_stream_from_file(stream_file_path).
+    """
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute(
+            "SELECT activity_name, full_meta, stream_csv, stream_file_path, fetched_at FROM run_activity_raw WHERE activity_id = ?",
+            (str(activity_id),),
+        )
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            return None
+        meta = json.loads(row["full_meta"]) if row["full_meta"] else {}
+        out = {
+            "activity_name": row["activity_name"],
+            "full_meta": meta,
+            "fetched_at": row["fetched_at"],
+        }
+        if "stream_file_path" in row.keys():
+            out["stream_file_path"] = row["stream_file_path"] or ""
+        else:
+            out["stream_file_path"] = ""
+        out["stream_csv"] = row.get("stream_csv") or ""  # legacy; prefer loading from file
+        return out
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_run_activity_raw {activity_id}: {e}")
+        return None
 
 # ==========================================
 # CHAT HISTORY CRUD

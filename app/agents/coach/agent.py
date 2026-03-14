@@ -32,7 +32,8 @@ from app.agents.coach.prompts import (
 )
 from app.agents.coach.tools import (
     update_todays_plan, check_training_status, get_recent_workouts,
-    search_long_term_memory, get_total_run_stats, set_workout_plan, set_actual_weekly_target
+    search_long_term_memory, get_total_run_stats, set_workout_plan, set_actual_weekly_target,
+    get_run_full_details
 )
 
 # [ARCHITECTURE UPDATE] Import Strict Data Contracts
@@ -320,7 +321,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             history=formatted_history[:-1], # Pass previous history
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
-                tools=[check_training_status, get_recent_workouts, search_long_term_memory, set_workout_plan, set_actual_weekly_target, update_todays_plan]
+                tools=[check_training_status, get_recent_workouts, get_run_full_details, search_long_term_memory, set_workout_plan, set_actual_weekly_target, update_todays_plan]
             )
         )
         response = send_message_with_retry(chat_session, formatted_history[-1]["parts"][0]["text"])

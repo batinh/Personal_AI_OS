@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from app.agents.coach.strava_client import StravaClient
 from app.agents.coach.utils import calculate_trimp, calculate_efficiency_factor, analyze_decoupling
 from app.core.config import load_config
-from app.core.database import init_db, upsert_user, save_run_activity, save_message, get_db_connection
+from app.core.database import init_db, upsert_user, save_run_activity, save_run_activity_raw, save_message, get_db_connection
+from app.services.stream_storage import save_activity_stream_to_file
 from app.core.notification import send_telegram_msg
 from app.services.rag_memory import rag_db
 
@@ -121,7 +122,10 @@ async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = Non
             
         # 3. Inject Python Memory for missing runs (e.g., previous 429 error runs)
         logger.info(f"[SYNC] Patching memory gaps for activity {act_id}...")
-        act_name, csv_data, meta_data = strava_client.get_activity_data(act_id)
+        act_name, csv_data, meta_data, stream_raw = strava_client.get_activity_data(act_id)
+        if act_name and meta_data:
+            stream_file_path = save_activity_stream_to_file(chat_id, act_id, stream_raw) if stream_raw else None
+            save_run_activity_raw(chat_id, act_id, act_name, meta_data, stream_csv="", stream_file_path=stream_file_path)
         ef_val, decoupling_val, cadence_avg, stride_avg = 0.0, 0.0, 0, 0.0
         pace_str = f"{int(moving_min/dist_km)}:{int(((moving_min/dist_km)%1)*60):02d}" if dist_km > 0 else "0:00"
 
