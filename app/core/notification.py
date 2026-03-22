@@ -69,6 +69,24 @@ def send_telegram_msg(chat_id, text):
     except Exception as e:
         logger.error(f"[TELEGRAM] Connection error: {e}")
 
+def send_typing_action(chat_id):
+    """
+    Send 'typing...' indicator to Telegram immediately.
+    Call this at the start of any slow operation so user gets instant feedback.
+    The indicator auto-expires after 5 seconds on Telegram's side.
+    """
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendChatAction",
+            json={"chat_id": chat_id, "action": "typing"},
+            timeout=3
+        )
+    except Exception:
+        pass  # Non-critical: silently ignore if this fails
+
 def send_html_email(subject, html_content, config):
     """Sends an HTML email report using SMTP configuration."""
     email_cfg = config.get("email_config", {})

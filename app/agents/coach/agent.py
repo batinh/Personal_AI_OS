@@ -11,7 +11,7 @@ from google import genai
 from google.genai import types
 # [REFACTOR] Removed Pydantic models from here to comply with Single Responsibility Principle
 
-from app.core.notification import send_telegram_msg
+from app.core.notification import send_telegram_msg, send_typing_action
 from app.core.database import (
     save_message, load_history_for_gemini, clear_history,
     get_training_loads, get_recent_runs_log, update_run_gcs_score, 
@@ -67,6 +67,41 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             else:
                 # If it is a different error (e.g., invalid API Key), raise immediately without retrying
                 raise e
+
+# ==========================================
+# 🚀 PERFORMANCE: TOOL ROUTING BY INTENT
+# ==========================================
+# Read-only tools: used for informational queries (no state changes)
+_TOOLS_READ_ONLY = [
+    check_training_status,
+    get_recent_workouts,
+    get_run_full_details,
+    search_long_term_memory,
+]
+
+# Write tools: required when user wants to change schedule or weekly targets
+_TOOLS_WRITE = [
+    set_workout_plan,
+    set_actual_weekly_target,
+    update_todays_plan,
+]
+
+# Keywords indicating the user wants to modify state (schedule/target changes)
+_WRITE_INTENT_KEYWORDS = [
+    "đổi", "thay", "hủy", "nghỉ", "bận", "giảm", "tăng", "chốt", "lên lịch",
+    "set", "update", "change", "cancel", "reschedule", "target"
+]
+
+def _select_tools_for_message(text: str) -> list:
+    """
+    Route to the minimal tool set needed for this message.
+    Read-only queries get fewer tools → smaller context → faster Gemini response.
+    """
+    text_lower = text.lower()
+    needs_write = any(kw in text_lower for kw in _WRITE_INTENT_KEYWORDS)
+    if needs_write:
+        return _TOOLS_READ_ONLY + _TOOLS_WRITE
+    return _TOOLS_READ_ONLY
 
 # --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str, meta_data: dict, config: dict):
@@ -252,7 +287,10 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
 
 def handle_telegram_chat(chat_id: str, text: str, config: dict):
     chat_id = str(chat_id)
-    
+
+    # [UX - INSTANT FEEDBACK] Send typing indicator immediately before any processing
+    send_typing_action(chat_id)
+
     # [1] Handle Memory Reset
     if text.strip().lower() in ["/clear", "/reset"]:
         clear_history(chat_id)
@@ -306,7 +344,9 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     debug_log_prompt("DEBUG CHAT INPUT", f"[SYSTEM]:\n{system_inst}\n[TASK_CONTEXT]:\n{task_prompt}\n[USER TEXT]: {text}")
     
     try:
-        raw_history = load_history_for_gemini(chat_id, limit=20)
+        # [PERF] Use limit=10 for regular chat (was 20). Reduces prompt token size and Gemini latency.
+        # Deep history queries are handled via search_long_term_memory tool instead.
+        raw_history = load_history_for_gemini(chat_id, limit=10)
         formatted_history = [{"role": m["role"], "parts": [{"text": m["parts"][0]}]} for m in raw_history]
         
         # Inject implicit Context at the end of History to enforce current rules
@@ -316,12 +356,16 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         else:
             formatted_history = [{"role": "user", "parts": [{"text": current_turn_text}]}]
 
+        # [PERF] Route to minimal tool set based on message intent
+        selected_tools = _select_tools_for_message(text)
+        logger.info(f"[CHAT] Tool routing: {'WRITE' if len(selected_tools) > len(_TOOLS_READ_ONLY) else 'READ-ONLY'} ({len(selected_tools)} tools) for message: '{text[:50]}'")
+
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),
             history=formatted_history[:-1], # Pass previous history
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
-                tools=[check_training_status, get_recent_workouts, get_run_full_details, search_long_term_memory, set_workout_plan, set_actual_weekly_target, update_todays_plan]
+                tools=selected_tools
             )
         )
         response = send_message_with_retry(chat_session, formatted_history[-1]["parts"][0]["text"])
