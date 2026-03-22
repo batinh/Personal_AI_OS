@@ -8,9 +8,12 @@ __pycache__/
 *$py.class
 venv/
 env/
+.venv/
 
 # --- Environment & Secrets ---
 .env
+.env.*
+!.env.example
 .env.local
 
 # --- Logs ---
@@ -27,11 +30,25 @@ data/database.sqlite
 *.sqlite3
 data/coach_memory.db
 
-# Local Database
+# --- Local Database & Vector Store ---
 data/chroma_db/
+data/chroma_cache/
+chroma_db/
+chroma_cache/
+
+# --- Data (user-generated / runtime) ---
 data/*.json
 data/*.sqlite
-data/chroma_cache/
+data/streams/
 backups/
 
+# --- Snapshot / generated files ---
 full_system_context.txt
+available_models_*.json
+
+# --- Local utility scripts ---
+get_full_context.py
+
+# --- IDE ---
+.cursorrules
+.idea/
