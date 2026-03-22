@@ -56,8 +56,8 @@ class TestCalculateTrimp(unittest.TestCase):
         self.assertEqual(result["intensity_level"], "High (Severe Load)")
 
     def test_medium_run_is_tempo(self):
-        # 60 min @ 158 bpm
-        result = calculate_trimp(60, 158, max_hr=185, rest_hr=55)
+        # 50 min @ 155 bpm → Medium (Tempo/Threshold)
+        result = calculate_trimp(50, 155, max_hr=185, rest_hr=55)
         self.assertGreater(result["trimp"], 70)
         self.assertLessEqual(result["trimp"], 120)
         self.assertEqual(result["intensity_level"], "Medium (Tempo/Threshold)")

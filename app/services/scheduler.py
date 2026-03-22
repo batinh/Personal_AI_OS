@@ -7,9 +7,6 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 
-from google import genai
-from google.genai import types
-
 from app.core.config import load_config
 from app.core.notification import send_telegram_msg
 from app.core.database import (
@@ -34,13 +31,12 @@ from app.agents.coach.tools import update_todays_plan, set_actual_weekly_target
 
 # [REFACTOR] Import builder
 from app.agents.coach.prompts import build_system_instruction, get_shared_context_block, build_standup_prompt
-from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, generate_weekly_reflection, extract_implicit_memory
+from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, extract_implicit_memory
 from app.services.weather import get_today_weather
 
 logger = logging.getLogger("AI_COACH")
 TZ_VN = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
 scheduler = AsyncIOScheduler()
-client = genai.Client()
 
 # ==========================================
 # ☀️ THE MORNING STANDUP FLOW

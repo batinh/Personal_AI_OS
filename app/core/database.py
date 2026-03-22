@@ -4,12 +4,18 @@ import os
 import uuid
 import logging
 from contextlib import contextmanager
+from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import pytz
 
 logger = logging.getLogger("AI_COACH")
-DB_PATH = "data/os_core.db"  # Renamed file to mark the new Multi-Tenant era
+
+# --- Absolute path anchored to this file's location ---
+# database.py is at: <project_root>/app/core/database.py
+# So parent.parent.parent = <project_root>
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DB_PATH = str(_BASE_DIR / "data" / "os_core.db")
 
 def get_db_connection():
     """

@@ -11,8 +11,11 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger("AI_COACH")
 
-# Base directory relative to project root (same as data/config.json, data/os_core.db)
-DATA_DIR = Path("data")
+# Absolute path anchored to this file's location.
+# stream_storage.py is at: <project_root>/app/services/stream_storage.py
+# So parent.parent.parent = <project_root>
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DATA_DIR = _BASE_DIR / "data"
 STREAMS_SUBDIR = "streams"
 
 
