@@ -8,10 +8,9 @@ from app.agents.coach.agent import analyze_run_with_gemini, handle_telegram_chat
 from app.agents.coach.strava_client import StravaClient
 
 # Include execute_manual_sync in imports
-from app.agents.coach.harvest import harvest_data, execute_manual_sync
+from app.agents.coach.harvest import harvest_data, execute_manual_sync, build_activity_record
 from app.core.state import state
 from app.services.scheduler import task_morning_briefing
-from app.agents.coach.utils import calculate_trimp
 from app.core.database import save_run_activity, save_run_activity_raw, delete_run_activity
 from app.services.rag_memory import rag_db
 from app.services.stream_storage import save_activity_stream_to_file
@@ -24,28 +23,20 @@ def _ingest_realtime_run(activity_id: str, act_name: str, meta_data: dict, chat_
     """
     Service function isolating the responsibility of calculating and saving to DB.
     Ensures Data Integrity before calling the LLM.
+    Uses shared build_activity_record() to avoid DRY violation.
     """
     max_hr = int(config.get("max_hr", 185))
     rest_hr = int(config.get("rest_hr", 55))
-    dist_km = meta_data.get('distance', 0) / 1000
-    moving_min = meta_data.get('moving_time', 0) / 60
-    avg_hr = meta_data.get('average_heartrate', 0)
-    
-    trimp_data = calculate_trimp(moving_min, avg_hr, max_hr, rest_hr)
-    
-    activity_data = {
-        'activity_id': activity_id,
-        'name': act_name,
-        'start_date': meta_data.get('start_date_local'),
-        'distance_km': round(dist_km, 2),
-        'moving_time_min': round(moving_min, 2),
-        'avg_hr': int(avg_hr),
-        'max_hr': int(meta_data.get('max_heartrate', 0)),
-        'suffer_score': int(meta_data.get('suffer_score', 0) or 0),
-        'trimp_score': trimp_data.get('trimp', 0.0)
-    }
+
+    # Reuse shared helper — Single Source of Truth for activity calculation
+    activity_data = build_activity_record(meta_data, max_hr, rest_hr)
+    # Override activity_id and name from webhook context (more reliable than meta_data keys)
+    activity_data['activity_id'] = activity_id
+    activity_data['name'] = act_name
+    activity_data.pop('_trimp_data', None)
+
     save_run_activity(user_id=chat_id, activity_data=activity_data)
-    logger.info(f"[*] Successfully saved Full Data (TRIMP: {trimp_data.get('trimp')}) to SQLite for Activity {activity_id}")
+    logger.info(f"[*] Successfully saved Full Data (TRIMP: {activity_data['trimp_score']}) to SQLite for Activity {activity_id}")
 
 def handle_deleted_activity(activity_id: str):
     """Service to clean up the system when Strava reports an activity deletion."""
@@ -56,7 +47,7 @@ def handle_deleted_activity(activity_id: str):
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if chat_id:
         # [ZONE 3] User-facing notification remains in Vietnamese
-        send_telegram_msg(chat_id, f"🗑️ **Strava Sync:** Đã tự động xóa bài chạy trùng lặp (ID: {activity_id}) khỏi hệ thống!")
+        send_telegram_msg(chat_id, f"🗑️ <b>Strava Sync:</b> Đã tự động xóa bài chạy trùng lặp (ID: {activity_id}) khỏi hệ thống!")
 
 # --- STRAVA WORKFLOW ---
 # --- ORCHESTRATION LAYER ---
@@ -91,9 +82,8 @@ def run_strava_workflow(activity_id: str):
     # 2. Handover to AI for semantic analysis and GCS scoring
     logger.info("[*] Sending Data to Gemini...")
     analysis_text = analyze_run_with_gemini(activity_id, act_name, csv_data, meta_data, config)
-# =========================================================================
+
     # [NEW ARCHITECTURE] 2.5: Inject immediately into RAG Memory (Tier 3)
-    # =========================================================================
     if analysis_text and chat_id:
         logger.info(f"[*] Memorizing analysis for activity {activity_id} into RAG...")
         
@@ -114,8 +104,8 @@ def run_strava_workflow(activity_id: str):
             logger.info(f"[RAG] Successfully embedded run analysis {activity_id}")
         except Exception as e:
             logger.error(f"[RAG] Failed to memorize activity {activity_id}: {e}")
-    # =========================================================================
-    #     # 3. Trigger Notifications
+
+    # 3. Trigger Notifications
     if analysis_text:
         client.update_activity_description(activity_id, analysis_text)
         
@@ -130,9 +120,9 @@ def run_strava_workflow(activity_id: str):
         if chat_id:
             # [ZONE 3] Telegram text structure remains in Vietnamese
             telegram_msg = (
-                f"🏃‍♂️ **Phân tích bài chạy mới:** {act_name}\n\n"
+                f"🏃‍♂️ <b>Phân tích bài chạy mới:</b> {act_name}\n\n"
                 f"{analysis_text}\n\n"
-                f"🔗 [Xem trên Strava](https://www.strava.com/activities/{activity_id})"
+                f"🔗 Xem trên Strava: https://www.strava.com/activities/{activity_id}"
             )
             send_telegram_msg(chat_id, telegram_msg)
             logger.info(f"[*] Sent Telegram notification for Activity {activity_id}")     

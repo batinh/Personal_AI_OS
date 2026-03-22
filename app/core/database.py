@@ -3,6 +3,7 @@ import sqlite3
 import os
 import uuid
 import logging
+from contextlib import contextmanager
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import pytz
@@ -11,10 +12,33 @@ logger = logging.getLogger("AI_COACH")
 DB_PATH = "data/os_core.db"  # Renamed file to mark the new Multi-Tenant era
 
 def get_db_connection():
-    """Helper function to get a database connection."""
-    conn = sqlite3.connect(DB_PATH)
+    """
+    Helper function to get a database connection.
+    Uses WAL journal mode for safe concurrent access (multiple threads/BackgroundTasks).
+    busy_timeout prevents 'database is locked' errors under write contention.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row  # Return results as dict instead of tuple
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
+
+@contextmanager
+def get_db():
+    """
+    Context manager for safe database access.
+    Guarantees connection is always closed and transaction is rolled back on error.
+    Use for new code: `with get_db() as conn:`
+    """
+    conn = get_db_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def init_db():
     """Initialize the relational database schema."""
@@ -679,7 +703,7 @@ def get_weekly_target(user_id: str, week_start_date: str) -> dict:
     week_start_date MUST be in YYYY-MM-DD format representing a Monday.
     """
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT standard_target_km, actual_target_km, ai_reasoning 
@@ -691,9 +715,9 @@ def get_weekly_target(user_id: str, week_start_date: str) -> dict:
         
         if row:
             return {
-                "standard_target_km": row[0],
-                "actual_target_km": row[1],
-                "ai_reasoning": row[2]
+                "standard_target_km": row["standard_target_km"],
+                "actual_target_km": row["actual_target_km"],
+                "ai_reasoning": row["ai_reasoning"]
             }
         return None
     except Exception as e:
@@ -706,7 +730,7 @@ def upsert_weekly_target(user_id: str, week_start_date: str, standard_target_km:
     Allows the AI to autonomously document its adjustment reasoning.
     """
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO user_weekly_targets (user_id, week_start_date, standard_target_km, actual_target_km, ai_reasoning, updated_at)

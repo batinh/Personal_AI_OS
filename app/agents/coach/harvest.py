@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-import asyncio
+import time
 import io
 import pandas as pd
 from datetime import datetime, timedelta
@@ -15,6 +15,35 @@ from app.core.notification import send_telegram_msg
 from app.services.rag_memory import rag_db
 
 logger = logging.getLogger("AI_COACH")
+
+
+# ==========================================
+# 🧱 SHARED HELPER: Build activity record from Strava API response
+# ==========================================
+def build_activity_record(activity: dict, max_hr: int = 185, rest_hr: int = 55) -> dict:
+    """
+    Build a normalized activity_data dict from a raw Strava activity response.
+    Single Source of Truth for distance/time/TRIMP calculation across all pipelines
+    (Webhook ingest, Cron harvest, Manual sync).
+    """
+    dist_km = activity.get('distance', 0) / 1000
+    moving_min = activity.get('moving_time', 0) / 60
+    avg_hr = activity.get('average_heartrate', 0)
+    trimp_data = calculate_trimp(moving_min, avg_hr, max_hr, rest_hr)
+
+    return {
+        'activity_id': str(activity.get('id', activity.get('activity_id', ''))),
+        'name': activity.get('name', 'Unknown Run'),
+        'start_date': activity.get('start_date_local', activity.get('start_date', '')),
+        'distance_km': round(dist_km, 2),
+        'moving_time_min': round(moving_min, 2),
+        'avg_hr': int(avg_hr),
+        'max_hr': int(activity.get('max_heartrate', 0)),
+        'suffer_score': int(activity.get('suffer_score', 0) or 0),
+        'trimp_score': trimp_data.get('trimp', 0.0),
+        '_trimp_data': trimp_data,  # Internal: carry full trimp result for downstream use
+    }
+
 
 def harvest_data():
     """Auto-harvest background process triggered by Cron"""
@@ -41,27 +70,17 @@ def harvest_data():
     recent_activities = strava_client.get_recent_activities(limit=10)
     for activity in reversed(recent_activities):
         if activity.get('type') in ['Run', 'TrailRun', 'VirtualRun']:
-            dist_km = activity.get('distance', 0) / 1000
-            moving_min = activity.get('moving_time', 0) / 60
-            avg_hr = activity.get('average_heartrate', 0)
-            trimp_data = calculate_trimp(moving_min, avg_hr, max_hr, rest_hr)
-            
-            activity_data = {
-                'activity_id': str(activity.get('id')),
-                'name': activity.get('name', 'Unknown Run'),
-                'start_date': activity.get('start_date_local'),
-                'distance_km': round(dist_km, 2),
-                'moving_time_min': round(moving_min, 2),
-                'avg_hr': int(avg_hr),
-                'max_hr': int(activity.get('max_heartrate', 0)),
-                'suffer_score': int(activity.get('suffer_score', 0) or 0),
-                'trimp_score': trimp_data.get('trimp', 0.0)
-            }
+            activity_data = build_activity_record(activity, max_hr, rest_hr)
             save_run_activity(user_id=chat_id, activity_data=activity_data)
     logger.info("[HARVEST] Cron Auto-Harvest complete.")
 
-async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
-    """Manual sync flow: Protects Quota and directly injects Python Memory."""
+def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
+    """
+    Manual sync flow: Protects Quota and directly injects Python Memory.
+    NOTE: This is a regular def (NOT async) because FastAPI BackgroundTasks
+    runs functions in a threadpool — async functions would not be awaited properly.
+    Uses time.sleep() for Strava API rate limiting between requests.
+    """
     logger.info(f"[SYNC] Starting manual sync. Limit: {limit}, Days back: {days_back}")
     send_telegram_msg(chat_id, f"⏳ Đang thu hoạch dữ liệu Strava ({'30 ngày qua' if days_back else f'{limit} bài gần nhất'})...")
     
@@ -95,24 +114,14 @@ async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = Non
         if activity.get('type') not in ['Run', 'TrailRun', 'VirtualRun']: continue
 
         # 1. Always calculate and update SQLite (REPLACE command ensures safe overwrite/healing)
-        dist_km = activity.get('distance', 0) / 1000
-        moving_min = activity.get('moving_time', 0) / 60
-        avg_hr = activity.get('average_heartrate', 0)
-        trimp_data = calculate_trimp(moving_min, avg_hr, max_hr, rest_hr)
-        
-        activity_data = {
-            'activity_id': act_id,
-            'name': activity.get('name', 'Unknown Run'),
-            'start_date': activity.get('start_date_local'),
-            'distance_km': round(dist_km, 2),
-            'moving_time_min': round(moving_min, 2),
-            'avg_hr': int(avg_hr),
-            'max_hr': int(activity.get('max_heartrate', 0)),
-            'suffer_score': int(activity.get('suffer_score', 0) or 0),
-            'trimp_score': trimp_data.get('trimp', 0.0)
-        }
+        activity_data = build_activity_record(activity, max_hr, rest_hr)
+        trimp_data = activity_data.pop('_trimp_data')
         save_run_activity(user_id=chat_id, activity_data=activity_data)
         loaded_count += 1
+
+        dist_km = activity_data['distance_km']
+        moving_min = activity_data['moving_time_min']
+        avg_hr = activity_data['avg_hr']
         
         # 2. NEW GATEWAY: Check ChromaDB directly to see if memory already exists
         existing_memory = rag_db.collection.get(ids=[act_id])
@@ -146,7 +155,7 @@ async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = Non
             except Exception as e:
                 logger.error(f"[SYNC] Error analyzing Streams for {act_id}: {e}")
 
-# [ZONE 3] Standardized template header to match webhooks.py
+        # [ZONE 3] Standardized template header to match webhooks.py
         memory_content = (
             f"[PHÂN TÍCH BÀI CHẠY LỊCH SỬ]\n"
             f"- Cơ bản: Ngày {activity_data['start_date'][:10]}, '{act_name}'. Quãng đường {dist_km:.2f}km, thời gian {moving_min:.1f} phút.\n"
@@ -170,8 +179,9 @@ async def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = Non
             logger.error(f"[SYNC] Failed to memorize activity {act_id}: {e}")
             
         analyzed_count += 1
-        await asyncio.sleep(1)
-    send_telegram_msg(chat_id, f"🎉 **Hoàn tất Đồng bộ Lịch sử!**\nĐã bổ sung {loaded_count} bài chạy vào Cơ sở dữ liệu và cấy {analyzed_count} Gói Ký ức (EF, Decoupling, TRIMP) vào não bộ AI. Số liệu ACWR đã được cân bằng.")
+        # [FIX P0] Use time.sleep (NOT asyncio.sleep) — this runs in a threadpool via BackgroundTasks
+        time.sleep(1)
+    send_telegram_msg(chat_id, f"🎉 <b>Hoàn tất Đồng bộ Lịch sử!</b>\nĐã bổ sung {loaded_count} bài chạy vào Cơ sở dữ liệu và cấy {analyzed_count} Gói Ký ức (EF, Decoupling, TRIMP) vào não bộ AI. Số liệu ACWR đã được cân bằng.")
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
