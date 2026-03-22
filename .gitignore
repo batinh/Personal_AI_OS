@@ -52,3 +52,7 @@ get_full_context.py
 # --- IDE ---
 .cursorrules
 .idea/
+
+# SQLite WAL mode temp files
+*.db-shm
+*.db-wal
