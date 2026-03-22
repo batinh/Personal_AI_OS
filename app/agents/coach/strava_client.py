@@ -22,9 +22,21 @@ class StravaClient:
         self.refresh_token = os.getenv("STRAVA_REFRESH_TOKEN")
         self.auth_url = "https://www.strava.com/oauth/token"
         self.base_url = "https://www.strava.com/api/v3"
+        # Token cache: avoids redundant refresh calls within the same activity pipeline
+        self._cached_token: Optional[str] = None
+        self._token_expires_at: float = 0.0
 
     def get_access_token(self):
-        """Refresh and retrieve a valid access token."""
+        """
+        Refresh and retrieve a valid access token.
+        Caches the token in memory until expiry to avoid redundant refresh calls
+        (e.g., get_activity_data() calls both activity detail AND streams endpoints).
+        """
+        import time
+        # Return cached token if still valid (60-second buffer before actual expiry)
+        if self._cached_token and time.time() < (self._token_expires_at - 60):
+            return self._cached_token
+
         payload = {
             'client_id': self.client_id,
             'client_secret': self.client_secret,
@@ -34,7 +46,11 @@ class StravaClient:
         try:
             response = requests.post(self.auth_url, data=payload)
             response.raise_for_status()
-            return response.json().get('access_token')
+            data = response.json()
+            self._cached_token = data.get('access_token')
+            # Strava returns expires_at (unix timestamp); fall back to 1 hour if missing
+            self._token_expires_at = data.get('expires_at', time.time() + 3600)
+            return self._cached_token
         except Exception as e:
             logger.error(f"[STRAVA] Failed to refresh token: {e}")
             return None

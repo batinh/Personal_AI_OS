@@ -1,5 +1,7 @@
 import numpy as np
 import logging
+import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import pytz
 import math
@@ -213,3 +215,88 @@ def get_formatted_weekly_context(user_id: str) -> str:
     - Standard Plan (Mục tiêu gốc): {decision_inputs.get('4_standard_plan_goal') or 'Chưa có'} km
     - Target thực tế đang chốt: {decision_inputs.get('5_actual_target_km') or 'Chưa chốt'} km
     """
+
+# =====================================================================
+# RESILIENCE: EXPONENTIAL BACKOFF FOR GEMINI API
+# =====================================================================
+
+def send_message_with_retry(chat_session, message, max_retries=3):
+    """
+    Wrapper to call Gemini API with an exponential backoff retry mechanism
+    when the Google Server is overloaded.
+    Gracefully handles 503 (Unavailable) and 429 (Too Many Requests) errors.
+    """
+    for attempt in range(max_retries):
+        try:
+            return chat_session.send_message(message)
+        except Exception as e:
+            error_msg = str(e)
+            if "503" in error_msg or "429" in error_msg or "Unavailable" in error_msg:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Wait 1s, 2s, 4s...
+                    logger.warning(f"[API RESILIENCE] Google Server overloaded (503/429). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.error("[API RESILIENCE] Max retries reached. Google Server is completely down.")
+                    raise e
+            else:
+                raise e
+
+# =====================================================================
+# AGENT CONTEXT: SINGLE SOURCE OF TRUTH FOR ALL FLOWS
+# =====================================================================
+
+@dataclass
+class AgentContext:
+    """Encapsulates all computed context needed by every agent flow."""
+    user_id: str
+    now: datetime
+    phase_text: str
+    countdown_text: str
+    acwr_text: str
+    actual_volume: float
+    weekly_decision_context: str
+    system_inst: str
+    shared_context: str
+
+
+def build_agent_context(user_id: str, config: dict, now: datetime = None) -> AgentContext:
+    """Single Source of Truth for gathering and formatting agent context for all flows."""
+    from app.core.database import get_training_loads, get_weekly_volume
+    from app.agents.coach.prompts import build_system_instruction, get_shared_context_block
+
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    if now is None:
+        now = datetime.now(tz)
+
+    race_date_str = config.get("race_date", "")
+    phase_info = calculate_training_phase(race_date_str)
+    phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
+    countdown_text = f"Còn {phase_info['weeks_left']} tuần đến ngày đua." if race_date_str else "Duy trì thể lực."
+
+    loads = get_training_loads(user_id)
+    acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
+    acwr_text = f"{acwr_data['acwr']} ({acwr_data['status']})"
+    actual_volume = get_weekly_volume(user_id, now)
+    weekly_decision_context = get_formatted_weekly_context(user_id)
+
+    system_inst = build_system_instruction(
+        config.get("system_instruction", ""), config.get("user_profile", ""),
+        int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+    )
+    shared_context = get_shared_context_block(
+        now.strftime('%A, %d/%m/%Y'), user_id, phase_text, countdown_text,
+        acwr_text, actual_volume, weekly_decision_context
+    )
+
+    return AgentContext(
+        user_id=user_id,
+        now=now,
+        phase_text=phase_text,
+        countdown_text=countdown_text,
+        acwr_text=acwr_text,
+        actual_volume=actual_volume,
+        weekly_decision_context=weekly_decision_context,
+        system_inst=system_inst,
+        shared_context=shared_context,
+    )
