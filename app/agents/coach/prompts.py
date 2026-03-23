@@ -138,8 +138,9 @@ BẮT BUỘC TRÌNH BÀY THEO CẤU TRÚC HTML SAU (Chỉ trả về nội dung 
 """
 
 UNIVERSAL_FORMAT_RULES = """
-[QUY TẮC ĐỊNH DẠNG DÙNG CHUNG (STRAVA/EMAIL/TELEGRAM)]
-1. TUYỆT ĐỐI KHÔNG DÙNG KÝ TỰ MARKDOWN (*, **, #, ```) VÀ HTML. Nền tảng đích chỉ hỗ trợ Plain-text.
+[QUY TẮC ĐỊNH DẠNG DÙNG CHUNG (STRAVA & EMAIL PLAIN-TEXT MODE)]
+Áp dụng KHI KHÔNG có platform-specific format rules:
+1. TUYỆT ĐỐI KHÔNG DÙNG KÝ TỰ MARKDOWN (*, **, #, ```) VÀ THẺ HTML. Nền tảng đích chỉ hỗ trợ Plain-text.
 2. TẠO ĐIỂM NHẤN BẰNG CHỮ IN HOA (Ví dụ: ZONE 4, VƯỢT CHỈ TIÊU) thay vì in đậm.
 3. Giữ nguyên các dải ký tự `-----------------------------` và `════════════════════════` như trong Cấu trúc yêu cầu.
 4. Mỗi ý chỉ dài 1-2 dòng, xuống dòng liên tục để dễ đọc trên thiết bị di động.
@@ -355,6 +356,27 @@ Here is what the system ALREADY knows:
 3. ADD/UPDATE (Active): If you find ANY user preference, condition, or goal in the [CHAT HISTORY], extract it and set "status": "active". Even if it was mentioned before but provides more context, update it.
 4. ARCHIVE (Inactive): If the chat implies an existing fact is no longer true, resolved, or obsolete (e.g., "my Achilles is fine now"), extract it and set "status": "inactive".
 5. EXTRACT PROACTIVELY: Do not over-filter. If the user mentions a shoe, a race, or a pain, extract it. Only return [] if the chat is purely small talk (e.g., "hello", "thanks").
+
+[FEW-SHOT EXAMPLES]
+Example 1 — New injury found:
+  Input: "User: Gối phải đau sau bài chạy dài hôm qua."
+  Output: {{"items": [{{"domain": "health", "category": "injury_status", "fact": "Right knee pain after long run", "status": "active"}}]}}
+
+Example 2 — Injury resolved:
+  Input: "User: Gối đã khỏi rồi, chạy bình thường được."
+  Output: {{"items": [{{"domain": "health", "category": "injury_status", "fact": "Right knee pain resolved", "status": "inactive"}}]}}
+
+Example 3 — Goal update:
+  Input: "User: Mục tiêu của tôi là chạy HM Sub 1:45 vào tháng 6."
+  Output: {{"items": [{{"domain": "sports", "category": "main_goal", "fact": "HM Sub 1:45 in June", "status": "active"}}]}}
+
+Example 4 — Gear preference:
+  Input: "User: Tôi đang dùng Bmai Carbon X3 cho bài tốc độ."
+  Output: {{"items": [{{"domain": "sports", "category": "gear_preference", "fact": "Uses Bmai Carbon X3 for speed sessions", "status": "active"}}]}}
+
+Example 5 — Small talk, no memory to extract:
+  Input: "User: Cảm ơn bạn! AI: Không có chi."
+  Output: {{"items": []}}
 
 [CHAT HISTORY]
 {chat_history}

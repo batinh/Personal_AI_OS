@@ -228,24 +228,26 @@ class TestHandleTelegramChat(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 class TestGenerateMorningBriefing(unittest.TestCase):
 
-    @patch("app.agents.coach.agent.send_telegram_msg")
-    @patch("app.agents.coach.agent.save_message")
-    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[])
-    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
-    @patch("app.agents.coach.agent.get_runs_in_last_days", return_value="- 2026-03-20: 10km")
-    @patch("app.agents.coach.agent.get_plan_for_date", return_value=None)
-    @patch("app.agents.coach.agent.get_weekly_volume", return_value=30.0)
-    @patch("app.agents.coach.agent.get_training_loads",
+    # NOTE: After refactor, generate_morning_briefing lives in flows/morning_briefing.py
+    # Patch targets must reference that module's namespace, not agent.py
+    @patch("app.agents.coach.flows.morning_briefing.send_telegram_msg")
+    @patch("app.agents.coach.flows.morning_briefing.save_message")
+    @patch("app.agents.coach.flows.morning_briefing.load_history_for_gemini", return_value=[])
+    @patch("app.agents.coach.flows.morning_briefing.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.flows.morning_briefing.get_runs_in_last_days", return_value="- 2026-03-20: 10km")
+    @patch("app.agents.coach.flows.morning_briefing.get_plan_for_date", return_value=None)
+    @patch("app.agents.coach.flows.morning_briefing.get_weekly_volume", return_value=30.0)
+    @patch("app.agents.coach.flows.morning_briefing.get_training_loads",
            return_value={"acute_load_7d": 80, "chronic_load_28d": 320})
-    @patch("app.agents.coach.agent.get_weekly_target", return_value=None)
-    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
-    @patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "12345"})
+    @patch("app.agents.coach.flows.morning_briefing.get_formatted_weekly_context", return_value="Target: 50km")
+    @patch("app.agents.coach.flows.morning_briefing.client", _FAKE_GEMINI_CLIENT)
+    @patch("app.agents.coach.flows.morning_briefing.get_primary_user_id", return_value="12345")
     def test_sends_briefing_to_telegram(self, *mocks):
         fake_session = MagicMock()
         fake_session.send_message.return_value = _make_response("Good morning! ACWR is great.")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
 
-        from app.agents.coach.agent import generate_morning_briefing
+        from app.agents.coach.flows.morning_briefing import generate_morning_briefing
         generate_morning_briefing(_make_config(), weather_data="28°C, Sunny")
 
         # The last mock in *mocks is send_telegram_msg (reversed order)
@@ -254,24 +256,24 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         sent = send_tg.call_args[0][1]
         self.assertIn("Good morning", sent)
 
-    @patch("app.agents.coach.agent.send_telegram_msg")
-    @patch("app.agents.coach.agent.save_message")
-    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[])
-    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
-    @patch("app.agents.coach.agent.get_runs_in_last_days", return_value="")
-    @patch("app.agents.coach.agent.get_plan_for_date", return_value=None)
-    @patch("app.agents.coach.agent.get_weekly_volume", return_value=0.0)
-    @patch("app.agents.coach.agent.get_training_loads",
+    @patch("app.agents.coach.flows.morning_briefing.send_telegram_msg")
+    @patch("app.agents.coach.flows.morning_briefing.save_message")
+    @patch("app.agents.coach.flows.morning_briefing.load_history_for_gemini", return_value=[])
+    @patch("app.agents.coach.flows.morning_briefing.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.flows.morning_briefing.get_runs_in_last_days", return_value="")
+    @patch("app.agents.coach.flows.morning_briefing.get_plan_for_date", return_value=None)
+    @patch("app.agents.coach.flows.morning_briefing.get_weekly_volume", return_value=0.0)
+    @patch("app.agents.coach.flows.morning_briefing.get_training_loads",
            return_value={"acute_load_7d": 0, "chronic_load_28d": 0})
-    @patch("app.agents.coach.agent.get_weekly_target", return_value=None)
-    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
-    @patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "12345"})
+    @patch("app.agents.coach.flows.morning_briefing.get_formatted_weekly_context", return_value="")
+    @patch("app.agents.coach.flows.morning_briefing.client", _FAKE_GEMINI_CLIENT)
+    @patch("app.agents.coach.flows.morning_briefing.get_primary_user_id", return_value="12345")
     def test_api_error_does_not_crash(self, *mocks):
         fake_session = MagicMock()
         fake_session.send_message.side_effect = Exception("API down")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
 
-        from app.agents.coach.agent import generate_morning_briefing
+        from app.agents.coach.flows.morning_briefing import generate_morning_briefing
         try:
             generate_morning_briefing(_make_config())
         except Exception:
@@ -283,21 +285,22 @@ class TestGenerateMorningBriefing(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 class TestExtractImplicitMemory(unittest.TestCase):
 
-    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[])
+    # NOTE: After refactor, extract_implicit_memory lives in flows/memory_extraction.py
+    @patch("app.agents.coach.flows.memory_extraction.load_history_for_gemini", return_value=[])
     def test_empty_history_returns_early(self, mock_history):
         """No chat history → should not call Gemini at all."""
-        with patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT):
+        with patch("app.agents.coach.flows.memory_extraction.client", _FAKE_GEMINI_CLIENT):
             _FAKE_GEMINI_CLIENT.chats.create.reset_mock()
-            from app.agents.coach.agent import extract_implicit_memory
+            from app.agents.coach.flows.memory_extraction import extract_implicit_memory
             extract_implicit_memory("u1")
             _FAKE_GEMINI_CLIENT.chats.create.assert_not_called()
 
-    @patch("app.agents.coach.agent.insert_memory")
-    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
-    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[
+    @patch("app.agents.coach.flows.memory_extraction.insert_memory")
+    @patch("app.agents.coach.flows.memory_extraction.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.flows.memory_extraction.load_history_for_gemini", return_value=[
         {"role": "user", "parts": ["My right knee hurts after yesterday's run"]}
     ])
-    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
+    @patch("app.agents.coach.flows.memory_extraction.client", _FAKE_GEMINI_CLIENT)
     def test_valid_json_response_inserts_memory(self, mock_history, mock_memories, mock_insert):
         fake_payload = json.dumps({
             "items": [{
@@ -311,20 +314,20 @@ class TestExtractImplicitMemory(unittest.TestCase):
         fake_session.send_message.return_value = _make_response(fake_payload)
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
 
-        with patch("app.agents.coach.agent.load_config", return_value=_make_config()):
-            from app.agents.coach.agent import extract_implicit_memory
+        with patch("app.core.config.load_config", return_value=_make_config()):
+            from app.agents.coach.flows.memory_extraction import extract_implicit_memory
             extract_implicit_memory("u1")
 
         mock_insert.assert_called_once_with(
             "u1", "health", "injury_status", "Right knee pain after long run", "active"
         )
 
-    @patch("app.agents.coach.agent.insert_memory")
-    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
-    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[
+    @patch("app.agents.coach.flows.memory_extraction.insert_memory")
+    @patch("app.agents.coach.flows.memory_extraction.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.flows.memory_extraction.load_history_for_gemini", return_value=[
         {"role": "user", "parts": ["My knee is fine now"]}
     ])
-    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
+    @patch("app.agents.coach.flows.memory_extraction.client", _FAKE_GEMINI_CLIENT)
     def test_inactive_status_is_passed_to_db(self, mock_history, mock_memories, mock_insert):
         fake_payload = json.dumps({
             "items": [{
@@ -338,39 +341,39 @@ class TestExtractImplicitMemory(unittest.TestCase):
         fake_session.send_message.return_value = _make_response(fake_payload)
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
 
-        with patch("app.agents.coach.agent.load_config", return_value=_make_config()):
-            from app.agents.coach.agent import extract_implicit_memory
+        with patch("app.core.config.load_config", return_value=_make_config()):
+            from app.agents.coach.flows.memory_extraction import extract_implicit_memory
             extract_implicit_memory("u1")
 
         mock_insert.assert_called_once()
         _, _, _, _, status = mock_insert.call_args[0]
         self.assertEqual(status, "inactive")
 
-    @patch("app.agents.coach.agent.insert_memory")
-    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
-    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[
+    @patch("app.agents.coach.flows.memory_extraction.insert_memory")
+    @patch("app.agents.coach.flows.memory_extraction.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.flows.memory_extraction.load_history_for_gemini", return_value=[
         {"role": "user", "parts": ["Random message"]}
     ])
-    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
+    @patch("app.agents.coach.flows.memory_extraction.client", _FAKE_GEMINI_CLIENT)
     def test_invalid_json_does_not_crash(self, mock_history, mock_memories, mock_insert):
         fake_session = MagicMock()
         fake_session.send_message.return_value = _make_response("NOT VALID JSON {{{{")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
 
-        with patch("app.agents.coach.agent.load_config", return_value=_make_config()):
-            from app.agents.coach.agent import extract_implicit_memory
+        with patch("app.core.config.load_config", return_value=_make_config()):
+            from app.agents.coach.flows.memory_extraction import extract_implicit_memory
             try:
                 extract_implicit_memory("u1")
             except Exception:
                 self.fail("extract_implicit_memory must not raise on bad JSON")
         mock_insert.assert_not_called()
 
-    @patch("app.agents.coach.agent.insert_memory")
-    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
-    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[
+    @patch("app.agents.coach.flows.memory_extraction.insert_memory")
+    @patch("app.agents.coach.flows.memory_extraction.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.flows.memory_extraction.load_history_for_gemini", return_value=[
         {"role": "user", "parts": ["I ran 10km"]}
     ])
-    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
+    @patch("app.agents.coach.flows.memory_extraction.client", _FAKE_GEMINI_CLIENT)
     def test_multiple_items_all_inserted(self, mock_history, mock_memories, mock_insert):
         fake_payload = json.dumps({
             "items": [
@@ -382,8 +385,8 @@ class TestExtractImplicitMemory(unittest.TestCase):
         fake_session.send_message.return_value = _make_response(fake_payload)
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
 
-        with patch("app.agents.coach.agent.load_config", return_value=_make_config()):
-            from app.agents.coach.agent import extract_implicit_memory
+        with patch("app.core.config.load_config", return_value=_make_config()):
+            from app.agents.coach.flows.memory_extraction import extract_implicit_memory
             extract_implicit_memory("u1")
 
         self.assertEqual(mock_insert.call_count, 2)
@@ -394,24 +397,25 @@ class TestExtractImplicitMemory(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 class TestGenerateWeeklyReflection(unittest.TestCase):
 
-    @patch("app.agents.coach.agent.send_telegram_msg")
-    @patch("app.agents.coach.agent.save_message")
-    @patch("app.agents.coach.agent.rag_db", _FAKE_RAG_DB)
-    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
-    @patch("app.agents.coach.agent.get_recent_runs_log", return_value="- 2026-03-20: 10km")
-    @patch("app.agents.coach.agent.get_weekly_volume", return_value=42.0)
-    @patch("app.agents.coach.agent.get_training_loads",
+    # NOTE: After refactor, generate_weekly_reflection lives in flows/weekly_reflection.py
+    @patch("app.agents.coach.flows.weekly_reflection.send_telegram_msg")
+    @patch("app.agents.coach.flows.weekly_reflection.save_message")
+    @patch("app.agents.coach.flows.weekly_reflection.rag_db", _FAKE_RAG_DB)
+    @patch("app.agents.coach.flows.weekly_reflection.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.flows.weekly_reflection.get_recent_runs_log", return_value="- 2026-03-20: 10km")
+    @patch("app.agents.coach.flows.weekly_reflection.get_weekly_volume", return_value=42.0)
+    @patch("app.agents.coach.flows.weekly_reflection.get_training_loads",
            return_value={"acute_load_7d": 90, "chronic_load_28d": 360})
-    @patch("app.agents.coach.agent.get_weekly_target", return_value=None)
-    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
-    @patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "12345"})
+    @patch("app.agents.coach.flows.weekly_reflection.get_formatted_weekly_context", return_value="Target: 45km")
+    @patch("app.agents.coach.flows.weekly_reflection.client", _FAKE_GEMINI_CLIENT)
+    @patch("app.agents.coach.flows.weekly_reflection.get_primary_user_id", return_value="12345")
     def test_sends_reflection_to_telegram_and_memorizes(self, *mocks):
         fake_session = MagicMock()
         fake_session.send_message.return_value = _make_response("Week summary: good progress!")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
         _FAKE_RAG_DB.memorize.reset_mock()
 
-        from app.agents.coach.agent import generate_weekly_reflection
+        from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
         generate_weekly_reflection(_make_config())
 
         send_tg = mocks[-1]
@@ -425,23 +429,23 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
         self.assertIn("reflection", mem_call.get("doc_id", ""))
         self.assertEqual(mem_call.get("domain"), "coach")
 
-    @patch("app.agents.coach.agent.send_telegram_msg")
-    @patch("app.agents.coach.agent.save_message")
-    @patch("app.agents.coach.agent.rag_db", _FAKE_RAG_DB)
-    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
-    @patch("app.agents.coach.agent.get_recent_runs_log", return_value="")
-    @patch("app.agents.coach.agent.get_weekly_volume", return_value=0.0)
-    @patch("app.agents.coach.agent.get_training_loads",
+    @patch("app.agents.coach.flows.weekly_reflection.send_telegram_msg")
+    @patch("app.agents.coach.flows.weekly_reflection.save_message")
+    @patch("app.agents.coach.flows.weekly_reflection.rag_db", _FAKE_RAG_DB)
+    @patch("app.agents.coach.flows.weekly_reflection.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.flows.weekly_reflection.get_recent_runs_log", return_value="")
+    @patch("app.agents.coach.flows.weekly_reflection.get_weekly_volume", return_value=0.0)
+    @patch("app.agents.coach.flows.weekly_reflection.get_training_loads",
            return_value={"acute_load_7d": 0, "chronic_load_28d": 0})
-    @patch("app.agents.coach.agent.get_weekly_target", return_value=None)
-    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
-    @patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "12345"})
+    @patch("app.agents.coach.flows.weekly_reflection.get_formatted_weekly_context", return_value="")
+    @patch("app.agents.coach.flows.weekly_reflection.client", _FAKE_GEMINI_CLIENT)
+    @patch("app.agents.coach.flows.weekly_reflection.get_primary_user_id", return_value="12345")
     def test_api_error_does_not_crash(self, *mocks):
         fake_session = MagicMock()
         fake_session.send_message.side_effect = Exception("Gemini down")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
 
-        from app.agents.coach.agent import generate_weekly_reflection
+        from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
         try:
             generate_weekly_reflection(_make_config())
         except Exception:

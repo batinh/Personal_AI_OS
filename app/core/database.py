@@ -375,7 +375,7 @@ def get_run_activity_raw(activity_id: str) -> Optional[Dict]:
             out["stream_file_path"] = row["stream_file_path"] or ""
         else:
             out["stream_file_path"] = ""
-        out["stream_csv"] = row.get("stream_csv") or ""  # legacy; prefer loading from file
+        out["stream_csv"] = row["stream_csv"] if row["stream_csv"] else ""  # legacy; prefer loading from file
         return out
     except Exception as e:
         logger.error(f"[DB_ERROR] get_run_activity_raw {activity_id}: {e}")
@@ -401,7 +401,7 @@ def load_history_for_gemini(user_id: str, limit: int = 20) -> List[Dict]:
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?", 
+        c.execute("SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY timestamp DESC, rowid DESC LIMIT ?", 
                   (str(user_id), limit))
         rows = c.fetchall()
         conn.close()
@@ -492,7 +492,7 @@ def get_recent_runs_log(user_id: str, limit: int = 10) -> str:
         if not rows: return "No recent runs found in database."
         log_lines = []
         for r in rows:
-            date_str = r['start_date'][:10]
+            date_str = r['start_date'][:10] if r['start_date'] else "N/A"
             gcs_text = f" | GCS: {r['gcs_score']}%" if r['gcs_score'] is not None else ""
             log_lines.append(f"- {date_str}: {r['name']} | {r['distance_km']}km | TRIMP Load: {r['trimp_score']}{gcs_text}")
         return "\n".join(log_lines)
@@ -824,9 +824,10 @@ def get_all_active_memories(user_id: str) -> list:
             INNER JOIN (
                 SELECT category, MAX(rowid) as max_rowid
                 FROM core_memory
-                WHERE user_id = ? AND status = 'active'
+                WHERE user_id = ?
                 GROUP BY category
             ) m2 ON m1.rowid = m2.max_rowid
+            WHERE m1.status = 'active'
         ''', (str(user_id),))
         
         rows = cursor.fetchall()
