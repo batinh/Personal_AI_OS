@@ -122,8 +122,8 @@ class TestSetWorkoutPlan(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 class TestSetActualWeeklyTarget(unittest.TestCase):
 
-    @patch("app.core.database.get_weekly_target")
-    @patch("app.core.database.upsert_weekly_target")
+    @patch("app.agents.coach.tools.get_weekly_target")
+    @patch("app.agents.coach.tools.upsert_weekly_target")
     def test_success_returns_confirmation(self, mock_upsert, mock_get):
         mock_get.return_value = {"standard_target_km": 50.0, "actual_target_km": 45.0}
         mock_upsert.return_value = True
@@ -131,16 +131,16 @@ class TestSetActualWeeklyTarget(unittest.TestCase):
         self.assertIn("Thành công", result)
         self.assertIn("45.0km", result)
 
-    @patch("app.core.database.get_weekly_target")
-    @patch("app.core.database.upsert_weekly_target")
+    @patch("app.agents.coach.tools.get_weekly_target")
+    @patch("app.agents.coach.tools.upsert_weekly_target")
     def test_failure_returns_error_message(self, mock_upsert, mock_get):
         mock_get.return_value = None
         mock_upsert.return_value = False
         result = set_actual_weekly_target("u1", "2026-03-16", 45.0, "reason")
         self.assertIn("Thất bại", result)
 
-    @patch("app.core.database.get_weekly_target")
-    @patch("app.core.database.upsert_weekly_target")
+    @patch("app.agents.coach.tools.get_weekly_target")
+    @patch("app.agents.coach.tools.upsert_weekly_target")
     def test_preserves_standard_target_from_db(self, mock_upsert, mock_get):
         """AI should NOT overwrite standard_target with 0 when no existing record."""
         mock_get.return_value = None  # No existing record
@@ -151,8 +151,8 @@ class TestSetActualWeeklyTarget(unittest.TestCase):
         self.assertEqual(call_args[2], 42.0)  # standard = actual as fallback
         self.assertEqual(call_args[3], 42.0)  # actual_target_km
 
-    @patch("app.core.database.get_weekly_target")
-    @patch("app.core.database.upsert_weekly_target")
+    @patch("app.agents.coach.tools.get_weekly_target")
+    @patch("app.agents.coach.tools.upsert_weekly_target")
     def test_does_not_overwrite_existing_standard_target(self, mock_upsert, mock_get):
         """Standard target from DB should be preserved even when AI sets new actual."""
         mock_get.return_value = {"standard_target_km": 55.0, "actual_target_km": 50.0}

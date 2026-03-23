@@ -8,9 +8,11 @@ from datetime import datetime
 from app.core.database import (
     get_training_loads, get_recent_runs_log,
     get_run_activity_raw,
-    update_daily_plan
+    update_daily_plan,
+    get_weekly_target, upsert_weekly_target,
 )
 from app.services.rag_memory import rag_db
+from app.agents.coach.utils import calculate_acwr
 
 logger = logging.getLogger("AI_COACH")
 
@@ -28,7 +30,6 @@ def check_training_status(user_id: str) -> str:
     """
     [TOOL] Check the current injury risk index (ACWR) and training load (TRIMP).
     """
-    from app.agents.coach.utils import calculate_acwr # Import locally to avoid circular import
     logger.info(f"[TOOL-USE] 🤖 AI checking fitness status for User {user_id}")
     loads = get_training_loads(user_id)
     acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
@@ -122,7 +123,6 @@ def set_actual_weekly_target(user_id: str, week_start_date: str, actual_target_k
     Use this tool after analyzing 4 metrics (History, Safe Volume, Safe TRIMP, Standard Plan) to protect athlete from injury.
     - week_start_date: YYYY-MM-DD format (Must be Monday of the target week).
     """
-    from app.core.database import get_weekly_target, upsert_weekly_target
     logger.info(f"[TOOL-USE] 🤖 AI setting weekly target {week_start_date} for {user_id}: {actual_target_km}km. Reason: {reasoning}")
     
     # Retrieve existing standard_target (if any) to prevent overwriting with 0
