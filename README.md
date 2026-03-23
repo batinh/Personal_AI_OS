@@ -1,196 +1,508 @@
-# 🏃‍♂️ Personal AI OS
-### Autonomous Agentic System v2.9.0 (The Omni-channel Coach)
+# Personal AI OS — Coach Dyno
 
-![Status](https://img.shields.io/badge/Status-Live-success?style=for-the-badge)
-![Architecture](https://img.shields.io/badge/Architecture-Modular%20Monolith-orange?style=for-the-badge)
-![AI Model](https://img.shields.io/badge/AI-Gemini%202.0%20Flash-blue?style=for-the-badge)
-![Output](https://img.shields.io/badge/Output-Omni--Channel-9cf?style=for-the-badge)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge)
+> An autonomous AI coaching agent that ingests your Strava data, applies sports science, and delivers personalized training guidance across Telegram, Strava, and Email — running 24/7 on a home lab.
 
-*A proactive, context-aware AI Agent operating on a lightweight Home Lab (Lenovo T440), evolving from a reactive chatbot to a fully autonomous orchestrator with Omni-channel output capabilities.*
-
-</div>
+[![Tests](https://img.shields.io/badge/tests-216%20passed-brightgreen?style=flat-square)](./docs/testing/TEST_EXECUTION_REPORT.md)
+[![Python](https://img.shields.io/badge/python-3.11-blue?style=flat-square)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-latest-009688?style=flat-square)](https://fastapi.tiangolo.com/)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%202.0%20Flash-4285F4?style=flat-square)](https://ai.google.dev/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square)](./docker-compose.yml)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)](#license)
 
 ---
 
-## 📖 1. Project Introduction
+## Table of Contents
 
-[cite_start]**Personal AI OS** is a specialized, multi-tenant capable AI Agent system[cite: 23]. [cite_start]Currently incarnated as **Coach Dyno**, its primary mission is to autonomously guide the user towards a specific running goal (e.g., Sub 1:45 Half Marathon)[cite: 23].
-
-**The Agentic Core (v2.9.0 Update):**
-Unlike traditional chatbots that rely on "prompt stuffing", this system is built on a **4-Pillar Modular Prompt Architecture**:
-1. [cite_start]**Perception:** Real-time ingestion of Strava webhooks, Telegram chats, and Cron-based temporal awareness[cite: 24].
-2. [cite_start]**Memory (Dual-System):** Combining structured sports science data (SQLite) with semantic long-term memory (ChromaDB RAG)[cite: 25].
-3. [cite_start]**Reasoning (Decoupled Logic):** Utilizing the 4-Pillar Prompt system (Task, Analysis Requirements, Report Structure, Format Rules) to separate Domain Logic from Presentation[cite: 101, 103, 105, 107].
-4. **Action (Omni-channel Adapter):** The Agent thinks once but outputs dynamically across platforms: HTML for Telegram, Plain-text/Emoji for Strava, and Rich-HTML for Email, guarded by a Regex Middleware Sanitizer.
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [Configuration](#configuration)
+- [API Reference](#api-reference)
+- [Scheduled Tasks](#scheduled-tasks)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
 
 ---
 
-## 🏗️ 2. System Architecture
+## Overview
 
-[cite_start]The system utilizes a decoupled Modular Monolith infrastructure[cite: 29].
+**Personal AI OS** is a self-hosted, agentic AI system built on FastAPI. Its first incarnation — **Coach Dyno** — acts as a personal running coach. It automatically ingests training data from Strava, computes sports science metrics (TRIMP, ACWR, Efficiency Factor, Cardiac Drift), reasons over them with Google Gemini, and delivers coaching output via Telegram, Strava activity descriptions, and email.
 
-```mermaid
-flowchart TB
-    %% --- TẦNG 1: GIAO TIẾP NGOẠI VI & KÍCH HOẠT ---
-    subgraph Layer1 [Layer 1: Edge & Triggers]
-        direction LR
-        StravaWH[Strava Webhook]
-        TeleWH[Telegram Webhook]
-        Cron[Cronjobs / Scheduler]
-    end
+The system is designed as a **Modular Monolith** with a clear 5-layer architecture, making it extensible to other agent domains (work assistant, finance tracker) without architectural rewrites.
 
-    %% --- TẦNG 2: LÕI NHẬN THỨC ĐA TÁC TỬ ---
-    subgraph Layer2 [Layer 2: Cognitive Multi-Agent Core]
-        Router{Router / Orchestrator}
-        CoachAgent[🏃 Coach Dyno Agent]
-        MemoryAgent[🧠 Memory Manager Agent]
-        PromptEngine[[Lego Prompt Engine]]
-        
-        Router --> CoachAgent
-        Router --> MemoryAgent
-        CoachAgent --> PromptEngine
-        MemoryAgent --> PromptEngine
-    end
+**Key design principles:**
+- **Proactive, not reactive** — the system acts on schedules and events, not just user commands
+- **Data-first reasoning** — AI reads from the database as the Single Source of Truth, eliminating hallucination
+- **Lego Prompt Engine** — 8-layer modular prompt system where Task, Analysis, Structure, and Format are independently configurable via the Admin UI
+- **Production-resilient** — exponential backoff on LLM errors, SQLite WAL mode, token caching, idempotent writes
 
-    %% --- TẦNG 3: HỆ THỐNG BỘ NHỚ 4 TẦNG ---
-    subgraph Layer3 [Layer 3: 4-Tier Universal Memory]
-        WM(Tầng 1: Working Memory)
-        ActiveDB[(Tầng 2: Active Facts - SQLite)]
-        ArchiveDB[(Tầng 3: Archived Facts - SQLite)]
-        VectorDB[(Tầng 4: Episodic - ChromaDB)]
-    end
+---
 
-    %% --- TẦNG 4: DỊCH VỤ CHUYÊN BIỆT ---
-    subgraph Layer4 [Layer 4: Domain Services]
-        SportSci[🔬 Sports Science Module\nPure Python]
-        WeatherApi[⛅ Weather Service]
-        LoadCalc[📊 TRIMP & ACWR Calculator]
-    end
+## Key Features
 
-    %% --- LIÊN KẾT GIỮA CÁC TẦNG ---
-    Layer1 --> Router
-    
-    PromptEngine --> WM
-    PromptEngine --> ActiveDB
-    MemoryAgent --> ArchiveDB
-    CoachAgent -. Tool Use .-> ArchiveDB
-    CoachAgent -. RAG .-> VectorDB
-    
-    CoachAgent --> SportSci
-    CoachAgent --> WeatherApi
-    CoachAgent --> LoadCalc
-    
-    %% --- TẦNG 5: HẠ TẦNG LƯU TRỮ ---
-    subgraph Layer5 [Layer 5: Infrastructure & Data Lake]
-        JSONLake[📁 Local JSON Streams\nRaw Strava Data]
-        MainSQL[(Main SQLite DB)]
-    end
-    
-    SportSci --> JSONLake
-    LoadCalc --> MainSQL
-    ActiveDB -. Sync .-> MainSQL
-    ArchiveDB -. Sync .-> MainSQL
+| Feature | Description |
+|---|---|
+| **Strava Webhook Ingest** | Real-time activity ingestion. Parses splits, laps, HR streams and saves to SQLite + JSON data lake |
+| **AI Run Analysis** | Gemini analyzes pace strategy, biomechanics, cardiac drift, and GCS (Goal Confidence Score 0–100%) |
+| **Omni-channel Output** | Single analysis → HTML for Telegram, plain-text for Strava description, rich HTML for email |
+| **Morning Briefing** | Daily standup: ACWR safety check, today's plan, weather advisory, injury memory injection |
+| **Weekly Reflection** | Sunday cron: reviews the week's compliance, GCS trend, and sets next week's target volume |
+| **Autonomous Memory** | Extracts implicit facts from chat history (injuries, goals, gear) into a persistent Core Memory |
+| **RAG Long-term Memory** | ChromaDB semantic search over all historical run analyses and reflections |
+| **Sports Science Engine** | Pure Python TRIMP, ACWR, Efficiency Factor, Aerobic Decoupling, Training Phase calculator |
+| **Admin Dashboard** | Web UI to configure AI persona, sports parameters, scheduler times, and email settings |
+| **Manual Sync** | `/sync` command to backfill historical activities with RAG gap detection |
+
+---
+
+## Architecture
+
+### System Layers
 
 ```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 1: Edge & Triggers                                   │
+│  Strava Webhook │ Telegram Webhook │ APScheduler Cron       │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 2: Cognitive Core (FastAPI + BackgroundTasks)        │
+│  ┌─────────────┐  ┌──────────────────────────────────────┐  │
+│  │ Coach Agent │  │ Memory Manager (extract_implicit_    │  │
+│  │ - chat      │  │ memory, insert_memory, RAG recall)   │  │
+│  │ - analyze   │  └──────────────────────────────────────┘  │
+│  │ - briefing  │  ┌──────────────────────────────────────┐  │
+│  │ - reflect   │  │ Lego Prompt Engine (8 layers)        │  │
+│  └─────────────┘  │ System │ Context │ Task │ Analysis   │  │
+│                   │ Structure │ Format │ Weather │ Memory │  │
+│                   └──────────────────────────────────────┘  │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 3: Memory                                            │
+│  Working Memory (chat session) │ Core Memory (SQLite)      │
+│  Episodic Memory (ChromaDB RAG) │ Stream Data Lake (JSON)  │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 4: Domain Services                                   │
+│  Sports Science │ Weather API │ Notification │ Scheduler   │
+├─────────────────────────────────────────────────────────────┤
+│  Layer 5: Infrastructure                                    │
+│  SQLite (WAL mode) │ ChromaDB 0.4.24 │ JSON Files          │
+│  Nginx Proxy Manager │ DuckDNS │ Docker Compose            │
+└─────────────────────────────────────────────────────────────┘
+```
 
-# 🗺️ THE MASTER ROADMAP: PERSONAL AI OS (COACH DYNO)
+### Data Flow: Activity Ingestion
 
-## 🟢 PHẦN 1: KỶ NGUYÊN NỀN TẢNG & NHẬN THỨC (v1.0 - v2.5)
+```
+Strava completes run
+      │
+      ▼
+POST /webhook (Strava)
+      │
+      ▼
+BackgroundTask: run_strava_workflow()
+      │
+      ├─ 1. Fetch activity detail + streams (StravaClient)
+      ├─ 2. Save to SQLite (save_run_activity) ← data integrity first
+      ├─ 3. Save raw streams to JSON file (stream_storage)
+      ├─ 4. Gemini analysis (analyze_run_with_gemini)
+      ├─ 5. Embed analysis into ChromaDB RAG (rag_db.memorize)
+      └─ 6. Fan-out notifications:
+             ├─ Telegram (HTML format)
+             ├─ Strava description update (plain-text)
+             └─ Email (rich HTML)
+```
 
-*Trạng thái: Đã hoàn thành (Completed)*
-*Mục tiêu: Xây dựng bộ khung kỹ thuật, kết nối API và tạo ra một Chatbot hiểu dữ liệu thể thao.*
+### Prompt Architecture (8-Layer Lego Engine)
 
-* **Phase 1: The Sensing Foundation (Giác quan)**
-* Tích hợp Webhook Strava (Auto-Harvest với 5s Downsampling).
-* Tích hợp Telegram Bot API (Nhận lệnh và gửi tin nhắn).
-
-
-* **Phase 2: The Dual-Memory (Trí nhớ kép)**
-* Xây dựng cơ sở dữ liệu có cấu trúc (SQLite) lưu trữ Kế hoạch và Mục tiêu tuần.
-* Tích hợp ChromaDB làm nền tảng RAG sơ khởi.
-
-
-* **Phase 3: The Tool-Using Expert (Biết dùng công cụ)**
-* Kích hoạt Automatic Function Calling (AFC) của Gemini.
-* AI bắt đầu biết gọi các hàm như `update_todays_plan` và `set_actual_weekly_target`.
-
-
-
-## 🔵 PHẦN 2: KỶ NGUYÊN ĐA KÊNH & TỰ TRỊ CƠ BẢN (v2.6 - v2.9.0)
-
-*Trạng thái: HIỆN TẠI (Current Baseline)*
-*Mục tiêu: Đưa AI từ thế "Thụ động chờ lệnh" sang "Chủ động kiểm soát", xuất bản nội dung đa nền tảng.*
-
-* **Phase 4: Proactive Autonomy & Omni-channel**
-* **Luồng Tự trị (Proactive):** Cronjob Standup buổi sáng, tự động tính toán ACWR, TRIMP bảo vệ sinh lý VĐV.
-* **Kiến trúc Prompt:** Áp dụng mô hình **4 Trụ cột** (Task, Analysis, Structure, Format), cấu hình động qua Admin Dashboard.
-* **Middleware:** Xây dựng Regex Sanitizer chống lỗi Markdown crash Telegram.
-* **SSOT (Nguồn sự thật duy nhất):** Ép AI ưu tiên đọc Database thay vì chat history, giải quyết triệt để lỗi Hallucination (Ảo giác).
-
-
-
----
-
-## *(Vạch xuất phát cho chặng đường mới)*
-
-## 🚀 PHẦN 3: KỶ NGUYÊN ĐẠI DIỆN TỰ TRỊ BẬC CAO (v3.0 - v3.x)
-
-*Trạng thái: Đang triển khai (In Progress)*
-*Mục tiêu: Trang bị tư duy Tự phản tỉnh (Self-Reflection), nền tảng Khoa học thể thao tự trị, và năng lực nhận thức môi trường.*
-
-* **Phase 5: The Resilient Thinker (Tư duy Bền bỉ - Đã hoàn thành v3.0)**
-  * **Task 5.1 - ReAct Error Handling:** [DONE] Nâng cấp Agent với cơ chế Exponential Backoff tự xử lý lỗi 429/503 từ Google API.
-  * **Task 5.2 - Demarcation Line Refactor:** [DONE] Áp dụng chuẩn quốc tế Zone 1 (100% English Source/DB) và Zone 2/3 (Vietnamese Logic/UI).
-  * **Task 5.3 - Weekly Self-Reflection:** [DONE] Cronjob tối Chủ Nhật tự động review giáo án tuần cũ và chốt Target Volume cho tuần mới.
-
-* **Phase 6: The Autonomous Sports Scientist (Chuyên gia Thể thao - Dự kiến v3.1)**
-  * **Task 6.1 - Local Data Lake:** Lưu trữ Raw Data Streams (Time-series) từ Strava dưới dạng JSON local, giảm tải DB và bảo vệ Quota LLM.
-  * **Task 6.2 - Pure Python Engine:** Tự xây dựng module phân tích cơ sinh học (Aerobic Decoupling, Time in Zones) bằng Python thuần (No Pandas) để thay thế việc ép LLM tính toán.
-  * **Task 6.3 - Post-Run Weather Perception:** Bóc tách `average_temp` từ thiết bị Garmin/Coros trên Strava để AI nhận diện tác động của Cardiac Drift khi chạy dưới trời nóng.
-  * **Task 6.4 - Proactive RAG:** Hệ thống tự động truy xuất tiền sử chấn thương từ ChromaDB nhúng thẳng vào Prompt trước khi Standup sáng.
-
-* **Phase 7: The Omniscient Coach (Coach Toàn năng - Dự kiến v3.2)**
-  * **Task 7.1 - Environment Perception (Standup & Race Day):** * [DONE] Tích hợp thời tiết hiện tại vào Morning Briefing.
-    * [TODO] Gọi Forecast API 5 ngày vào Tuần Taper để lên chiến thuật Race Day (Nước/Muối/Pace) dựa trên nhiệt độ giải chạy.
-  * **Task 7.2 - Event-Driven Autonomy:** Lắng nghe tín hiệu HRV/Resting HR trực tiếp từ Garmin/Apple Health giữa đêm để tự động điều chỉnh bài tập sáng sớm
-  * **Phase 7: The Omniscient Coach (Coach Toàn năng - Dự kiến v3.2)**
-  * **Task 7.1 - Environment Perception (Standup & Race Day):** * [DONE] Tích hợp thời tiết hiện tại vào Morning Briefing.
-    * [TODO] Gọi Forecast API 5 ngày vào Tuần Taper để lên chiến thuật Race Day (Nước/Muối/Pace) dựa trên nhiệt độ giải chạy.
-  * **Task 7.2 - Event-Driven Autonomy:** Lắng nghe tín hiệu HRV/Resting HR trực tiếp từ Garmin/Apple Health giữa đêm để tự động điều chỉnh bài tập sáng sớm.
-
-* **Phase 8: The Multi-Agent Core & Universal Memory (Hệ điều hành Đa tác tử - Dự kiến v4.0)**
-  * *Mục tiêu: Chuyển đổi từ mô hình AI đơn lẻ sang Hệ sinh thái AI chia sẻ ngữ cảnh (Coach, Work, Finance Agents) với bộ nhớ 4 tầng (4-Tier Memory System) không bao giờ quên.*
-  * **Task 8.1 - The Memory Foundation:** Nâng cấp `database.py` để tạo Core Memory (SQLite). Cấu trúc lại dữ liệu theo chuẩn JSON (Fact, Category, Domain) để quản lý kiến thức vĩnh cửu.
-  * **Task 8.2 - Autonomous Memory Manager:** Xây dựng luồng "Trích xuất ngầm" (Implicit Extraction). AI tự động phân tích lịch sử chat mỗi tuần để đúc kết chấn thương, thói quen và cập nhật trạng thái (`active`, `archived`) nhằm chống nhiễu (Hallucination).
-  * **Task 8.3 - Cross-Agent Shared Context:** Cô lập bối cảnh theo từng Agent (Ví dụ: Coach Agent chỉ thấy data thể thao). Xây dựng Tool Search Historical Memory để AI chủ động bới móc "kho lạnh" khi bị hỏi về quá khứ xa.
-  * **Task 8.4 - Agentic Expansion:** Ra mắt Work Agent (Trợ lý công việc) và Finance Agent (Trợ lý tài chính), dùng chung một bộ não với Coach Dyno nhưng hành xử độc lập.
-
-### 🚀 Future Roadmap: SaaS & Multi-Tenant Architecture (Tech Debt)
-*Hiện tại hệ thống đang chạy dạng Single-Tenant (Personal AI OS), dùng `TELEGRAM_CHAT_ID` trong file `.env` làm định danh duy nhất.*
-*Khi scale up cho nhiều users, cần thực hiện gói Migration sau:*
-- [ ] **Identity Router:** Tạo bảng `users` quản lý Telegram ID và Strava ID.
-- [ ] **SQLite Migration:** Thêm cột `user_id` vào các bảng `core_memory`, `runs`, `plans`.
-- [ ] **Vector DB Migration:** Thêm metadata `{"user_id": "..."}` cho toàn bộ Document trong ChromaDB.
-- [ ] **Code Refactor:** Xóa bỏ việc gọi `os.getenv("TELEGRAM_CHAT_ID")` rải rác trong các Agent, thay bằng Context User ID.
+| Layer | Module | Purpose | Configurable |
+|---|---|---|---|
+| 1 | `build_system_instruction` | AI persona, tool discipline | ✅ Admin UI |
+| 2 | `get_shared_context_block` | ACWR, phase, weekly limits | Dynamic |
+| 3 | `DEFAULT_ANALYSIS_TASK` | Analysis objectives | ✅ Admin UI |
+| 4 | `DEFAULT_ANALYSIS_REQUIREMENTS` | Evaluation criteria | ✅ Admin UI |
+| 5 | `DEFAULT_REPORT_STRUCTURE` | Output schema template | ✅ Admin UI |
+| 6 | `CHAT_FORMAT_RULES` | Telegram HTML rules | Fixed |
+| 7 | `WEATHER_INSTRUCTION` | Weather safety advisory | Dynamic |
+| 8 | `MEMORY_EXTRACTION_PROMPT` | Implicit memory extraction | Fixed |
 
 ---
 
-## 🧪 Testing
+## Project Structure
 
-Unit tests cover stream storage, run activity raw (DB), and tools. Run from project root (cần cài dependencies: `pip install -r requirements.txt` hoặc dùng venv/Docker):
+```
+Personal_AI_OS/
+├── app/
+│   ├── main.py                    # FastAPI app, startup/shutdown lifecycle
+│   ├── core/
+│   │   ├── config.py              # Config load/save with TTL cache + auto-init
+│   │   ├── database.py            # All SQLite CRUD (WAL mode, context manager)
+│   │   ├── notification.py        # Telegram, Email, typing indicator
+│   │   ├── user_context.py        # Primary user ID resolution
+│   │   └── state.py               # Service pause/resume state
+│   ├── agents/coach/
+│   │   ├── agent.py               # Thin orchestrator, handle_telegram_chat
+│   │   ├── prompts.py             # 8-layer Lego Prompt Engine
+│   │   ├── tools.py               # Gemini AFC tools (set_plan, search_memory…)
+│   │   ├── utils.py               # TRIMP, ACWR, AgentContext, send_with_retry
+│   │   ├── strava_client.py       # Strava API client (token caching)
+│   │   ├── harvest.py             # Cron harvest + manual sync flow
+│   │   └── flows/
+│   │       ├── run_analysis.py    # analyze_run_with_gemini()
+│   │       ├── morning_briefing.py # generate_morning_briefing()
+│   │       ├── weekly_reflection.py # generate_weekly_reflection()
+│   │       └── memory_extraction.py # extract_implicit_memory()
+│   ├── routers/
+│   │   ├── webhooks.py            # POST/GET /webhook, POST /telegram-webhook
+│   │   ├── admin.py               # Admin UI + HTTP Basic auth
+│   │   └── dashboard.py           # Public training metrics dashboard
+│   └── services/
+│       ├── scheduler.py           # APScheduler cron jobs
+│       ├── rag_memory.py          # ChromaDB wrapper (memorize/recall/forget)
+│       ├── stream_storage.py      # JSON stream file I/O
+│       ├── weather.py             # OpenWeatherMap integration
+│       └── backup.py              # Daily DB + config backup
+├── tests/                         # 216 tests, 100% pass rate
+│   ├── conftest.py                # Session-level stubs (google.genai, chromadb)
+│   ├── test_webhooks.py           # HTTP endpoint tests (18)
+│   ├── test_strava_client.py      # StravaClient unit tests (20)
+│   ├── test_config.py             # Config management tests (8)
+│   ├── test_harvest.py            # Harvest + sync flow tests (13)
+│   ├── test_agent.py              # Agent flow integration tests (20)
+│   ├── test_database.py           # DB CRUD tests (38)
+│   ├── test_utils.py              # Sports science math tests (37)
+│   └── test_notification.py       # Notification tests (20)
+├── docs/
+│   ├── testing/                   # Full test documentation suite
+│   └── architecture.md
+├── templates/                     # Jinja2 HTML templates (admin, dashboard)
+├── data/                          # Runtime data (gitignored)
+│   ├── os_core.db                 # SQLite database
+│   ├── config.json                # Active configuration
+│   └── streams/                   # Raw Strava JSON stream files
+├── infra/                         # Nginx + DuckDNS config
+├── config.example.json            # Config template (copy to data/config.json)
+├── docker-compose.yml
+├── Dockerfile
+└── requirements.txt
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- Docker & Docker Compose (recommended for production)
+- A Strava account with API access
+- A Telegram Bot (via [@BotFather](https://t.me/botfather))
+- Google Gemini API key ([Google AI Studio](https://aistudio.google.com/))
+- OpenWeatherMap API key (free tier)
+
+### Local Development
 
 ```bash
-# Standard library unittest (all tests)
-python -m unittest discover -s tests -v
+# 1. Clone the repository
+git clone https://github.com/batinh/Personal_AI_OS.git
+cd Personal_AI_OS
 
-# Chỉ test stream storage (ít dependency)
-python -m unittest tests.test_stream_storage -v
+# 2. Install dependencies
+pip install -r requirements.txt
+pip install -r requirements-dev.txt  # for testing
 
-# Hoặc dùng pytest (pip install -r requirements-dev.txt)
-pytest tests/ -v
+# 3. Set up environment variables
+cp .env.example .env  # then fill in your keys (see Configuration section)
+
+# 4. Set up configuration
+cp config.example.json data/config.json
+# Edit data/config.json with your AI persona and sports parameters
+
+# 5. Run the application
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- **tests/test_stream_storage.py**: save/load stream files, `get_stream_file_path`, `get_stream_arrays`.
-- **tests/test_database_run_activity_raw.py**: `save_run_activity_raw` / `get_run_activity_raw` với `stream_file_path`.
-- **tests/test_tools_get_run_full_details.py**: tool `get_run_full_details` có chứa stream file path khi có.
+The app auto-initializes the SQLite database and scheduler on startup. Check the logs for:
+```
+[STARTUP] DB path     : /path/to/data/os_core.db (exists: True)
+[STARTUP] Config loaded. Model: models/gemini-2.0-flash
+✅ System Ready. Scheduler Active.
+```
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+# Google Gemini AI
+GOOGLE_API_KEY=your_gemini_api_key
+
+# Strava API (OAuth)
+STRAVA_CLIENT_ID=your_client_id
+STRAVA_CLIENT_SECRET=your_client_secret
+STRAVA_REFRESH_TOKEN=your_refresh_token
+STRAVA_ATHLETE_ID=your_athlete_id
+
+# Telegram Bot
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_personal_chat_id
+
+# Strava Webhook Verification
+VERIFY_TOKEN=your_chosen_secret_string
+
+# Admin Dashboard
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your_secure_password
+
+# Weather Service
+OPENWEATHER_API_KEY=your_openweather_key
+OPENWEATHER_CITY=Ho Chi Minh City
+OPENWEATHER_COUNTRY_CODE=VN
+
+# Dynamic DNS (optional, for home lab)
+DUCKDNS_TOKEN=your_duckdns_token
+DUCKDNS_SUB_DOMAIN=your_subdomain
+
+# Timezone
+TZ=Asia/Ho_Chi_Minh
+
+# ChromaDB (Docker path)
+CHROMADB_CACHE_DIR=/app/data/chroma_cache
+```
+
+---
+
+## Configuration
+
+Runtime configuration is managed via `data/config.json` and the Admin Dashboard at `/admin`.
+
+**If `data/config.json` is missing**, the system auto-copies `config.example.json` on startup and logs a warning — the system will run with example defaults until you update via the Admin UI.
+
+Key configuration fields:
+
+| Field | Description |
+|---|---|
+| `system_instruction` | AI persona and coaching style |
+| `user_profile` | Athlete profile injected into every prompt |
+| `task_description` | Analysis task template |
+| `analysis_requirements` | What the AI should evaluate |
+| `report_structure` | Output format template |
+| `max_hr` / `rest_hr` | HR parameters for TRIMP calculation |
+| `race_date` | Target race date (drives Training Phase logic) |
+| `model_name` | Gemini model (default: `models/gemini-2.0-flash`) |
+| `scheduler.briefing_time` | Daily briefing cron time (default: `06:00`) |
+| `scheduler.harvest_hours` | Hours to auto-harvest Strava (default: `0,6,12,18`) |
+| `email_config` | SMTP settings for email notifications |
+
+---
+
+## API Reference
+
+### Strava Webhook
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/webhook` | Strava subscription verification handshake |
+| `POST` | `/webhook` | Receive Strava events (activity create/delete) |
+
+**Strava Webhook Payload (create):**
+```json
+{
+  "object_type": "activity",
+  "aspect_type": "create",
+  "object_id": 12345678
+}
+```
+
+### Telegram Webhook
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/telegram-webhook` | Receive Telegram messages and commands |
+
+**Supported Commands:**
+
+| Command | Description |
+|---|---|
+| `/sync` | Sync 3 most recent Strava activities |
+| `/sync 10` | Sync last 10 activities |
+| `/sync month` | Sync last 30 days (up to 50 activities) |
+| `/standup` | Trigger morning briefing immediately |
+| `/clear` or `/reset` | Clear conversation history |
+| Any text | AI coaching chat |
+
+### Admin & Dashboard
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/admin` | HTTP Basic | Admin configuration UI |
+| `POST` | `/admin/save` | HTTP Basic | Save configuration + reload scheduler |
+| `GET` | `/admin/test-email` | HTTP Basic | Send test email |
+| `POST` | `/admin/toggle` | HTTP Basic | Pause/resume AI service |
+| `GET` | `/dashboard` | Public | Training metrics dashboard |
+
+---
+
+## Scheduled Tasks
+
+All cron times are configured via the Admin UI (stored in `data/config.json`).
+
+| Job | Default Schedule | Description |
+|---|---|---|
+| **Morning Briefing** | Daily at `06:00` | Fetches weather, checks ACWR, delivers today's plan via Telegram |
+| **Auto Harvest** | `00:15`, `06:15`, `12:15`, `18:15` | Syncs last 10 Strava activities to SQLite |
+| **Weekly Reflection** | Sundays at `20:00` | Reviews the week, sets next week's target volume, saves to RAG |
+| **Daily Backup** | Daily at `02:00` | Archives `os_core.db` + `config.json` to `backups/` |
+
+---
+
+## Testing
+
+```bash
+# Run full test suite
+python -m pytest tests/ -v
+
+# Run with coverage report
+python -m pytest tests/ --cov=app --cov-report=html
+
+# Run specific module
+python -m pytest tests/test_webhooks.py -v
+
+# Quick pass/fail check
+python -m pytest tests/ -q
+```
+
+**Current status: 216 passed / 0 failed**
+
+| Module | Tests | Coverage |
+|---|---|---|
+| `test_webhooks.py` | 18 | HTTP endpoints, Strava/Telegram routing, workflow orchestration |
+| `test_strava_client.py` | 20 | Token caching, API error handling, all methods |
+| `test_config.py` | 8 | Load/save, TTL cache, auto-init, corrupted file resilience |
+| `test_harvest.py` | 13 | Cron harvest, manual sync, RAG gap detection, rate limiting |
+| `test_agent.py` | 20 | Telegram chat, morning briefing, weekly reflection, memory extraction |
+| `test_database.py` | 38 | All CRUD operations, user isolation, ACWR calculations |
+| `test_utils.py` | 37 | TRIMP, ACWR, Efficiency Factor, Decoupling, Training Phase |
+| `test_notification.py` | 20 | Telegram HTML sanitization, SMTP, retry logic |
+| `test_stream_storage.py` | 12 | File I/O, path resolution, error handling |
+| `test_tools.py` | 24 | All AI tool functions |
+
+See [`docs/testing/`](./docs/testing/) for full test strategy, specs, and delivery checklist.
+
+---
+
+## Deployment
+
+### Docker Compose (Recommended)
+
+```bash
+# 1. Ensure .env and data/config.json are in place
+# 2. Start all services
+docker compose up -d
+
+# 3. Verify startup logs
+docker logs airunningcoach --tail 20
+
+# 4. Register Strava webhook subscription (one-time)
+curl -X POST https://www.strava.com/api/v3/push_subscriptions \
+  -d "client_id=YOUR_CLIENT_ID" \
+  -d "client_secret=YOUR_CLIENT_SECRET" \
+  -d "callback_url=https://your-domain.com/webhook" \
+  -d "verify_token=YOUR_VERIFY_TOKEN"
+
+# 5. Register Telegram webhook (one-time)
+curl "https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook?url=https://your-domain.com/telegram-webhook"
+```
+
+The `docker-compose.yml` includes:
+- **`ai-coach`** — the FastAPI application on port 8000
+- **`nginx-proxy`** — Nginx Proxy Manager for HTTPS termination
+- **`duckdns`** — Dynamic DNS updater for home lab public access
+
+### Volume Mounts
+
+The container mounts the entire project root (`.:/app`), so `data/config.json`, `data/os_core.db`, and stream files persist across container restarts automatically.
+
+```yaml
+volumes:
+  - .:/app                          # Source code + data + config
+  - ./data/chroma_cache:/root/.cache/chroma  # ChromaDB ONNX model cache
+  - ./logs/:/app/logs               # Application logs
+```
+
+### Post-Deployment Smoke Test
+
+```bash
+# 1. Verify Strava webhook endpoint
+curl "https://your-domain.com/webhook?hub.verify_token=YOUR_TOKEN&hub.challenge=test"
+# Expected: {"hub.challenge": "test"}
+
+# 2. Trigger manual briefing via Telegram
+# Send: /standup
+# Expected: AI response within 30 seconds
+
+# 3. Check Admin UI
+# Open: https://your-domain.com/admin
+```
+
+---
+
+## Roadmap
+
+### ✅ Completed
+
+- [x] Strava webhook ingestion with stream parsing
+- [x] Gemini AI run analysis with GCS scoring
+- [x] Omni-channel output (Telegram, Strava, Email)
+- [x] Morning briefing with weather awareness
+- [x] Weekly reflection with RAG memory injection
+- [x] Autonomous implicit memory extraction
+- [x] SQLite WAL mode + connection context manager
+- [x] 4-layer memory system (working, active facts, archive, episodic RAG)
+- [x] Modular agent refactor (flows/ architecture)
+- [x] 216-test production test suite
+- [x] Admin dashboard with dynamic scheduler configuration
+
+### 🚧 In Progress / Planned
+
+- [ ] **Race Day Forecast** — 5-day weather forecast injection during Taper week for race strategy planning
+- [ ] **HRV/Resting HR Integration** — event-driven training adjustment from Garmin/Apple Health overnight signals
+- [ ] **FastAPI Lifespan Migration** — replace deprecated `@app.on_event` with `lifespan` context manager
+- [ ] **Health Endpoint** — `/health` for Docker health check and uptime monitoring
+- [ ] **Multi-Agent Expansion** — Work Agent and Finance Agent sharing the same memory infrastructure
+
+### 🔮 Future: SaaS Multi-Tenant
+
+The current architecture is single-tenant (one `TELEGRAM_CHAT_ID` per deployment). Multi-tenant migration path:
+
+- [ ] Identity router: manage multiple Telegram + Strava ID pairs
+- [ ] All DB tables already have `user_id` column — schema is ready
+- [ ] ChromaDB metadata filtering by `user_id` already implemented
+- [ ] Replace `get_primary_user_id()` with request-scoped user resolution
+
+---
+
+## Contributing
+
+This is a personal project but contributions are welcome.
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Follow the [zone conventions](./Rules.txt):
+   - **ZONE 1**: Source code in English (functions, variables, docstrings)
+   - **ZONE 2**: User-facing AI output in Vietnamese
+   - **ZONE 3**: Transition layer — Python logic in English, f-string templates in Vietnamese
+4. Add tests for new functionality (see [`docs/testing/DELIVERY_CHECKLIST.md`](./docs/testing/DELIVERY_CHECKLIST.md))
+5. Run `python -m pytest tests/ -q` — ensure 216 pass, 0 new failures
+6. Submit a pull request
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+*Built on a Lenovo T440 home lab. Powered by Google Gemini 2.0 Flash.*
