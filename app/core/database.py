@@ -763,18 +763,42 @@ def insert_memory(user_id: str, domain: str, category: str, fact: str, status: s
     """
     [DATABASE] Inserts or mutates a state in 'core_memory'.
     Allows AI to archive obsolete facts by setting status='inactive'.
+    Idempotent behavior: if the exact same state already exists, refresh last_accessed
+    instead of inserting a duplicate row.
     """
     try:
         conn = get_db_connection()
         c = conn.cursor()
+        c.execute(
+            '''
+            SELECT id FROM core_memory
+            WHERE user_id = ? AND domain = ? AND category = ? AND fact = ? AND status = ?
+            ORDER BY rowid DESC
+            LIMIT 1
+            ''',
+            (str(user_id), domain, category, fact, status),
+        )
+        existing = c.fetchone()
+
+        if existing:
+            c.execute(
+                '''
+                UPDATE core_memory
+                SET last_accessed = CURRENT_TIMESTAMP
+                WHERE id = ? AND user_id = ?
+                ''',
+                (existing["id"], str(user_id)),
+            )
+            conn.commit()
+            conn.close()
+            logger.info(f"[DATABASE] Memory deduplicated: [{category}] {fact[:30]}... (Status: {status})")
+            return
+
         mem_id = str(uuid.uuid4())
-        
-        # [ZONE 1] Dynamic status insertion
         c.execute('''
             INSERT INTO core_memory (id, user_id, domain, category, fact, status)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (mem_id, str(user_id), domain, category, fact, status))
-        
         conn.commit()
         conn.close()
         logger.info(f"[DATABASE] Memory committed: [{category}] {fact[:30]}... (Status: {status})")

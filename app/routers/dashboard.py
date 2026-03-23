@@ -3,6 +3,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 import logging
 import os
+from app.core.user_context import get_primary_user_id
 
 from app.core.database import get_db_connection, get_training_loads, get_historical_training_loads
 from app.agents.coach.utils import calculate_acwr
@@ -17,7 +18,7 @@ async def user_dashboard(request: Request):
     # 1. Fetch configuration and Athlete info
     config = load_config()
     # Get Chat ID from environment (representing the Primary Tenant)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     
     # 2. Fetch training loads and calculate ACWR
     loads = get_training_loads(chat_id)

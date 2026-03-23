@@ -2,6 +2,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 import os
+from app.core.user_context import get_primary_user_id
 import json
 import logging
 import uuid
@@ -46,7 +47,7 @@ async def task_morning_briefing():
     [ORCHESTRATOR] Cron trigger for the morning briefing.
     Fetches external data (Weather) and delegates reasoning to the Coach Agent.
     """
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     if not chat_id: 
         logger.warning("[SCHEDULER] TELEGRAM_CHAT_ID not found for briefing.")
         return
@@ -102,7 +103,7 @@ async def task_weekly_reflection():
     """
     logger.info("[SCHEDULER] Triggering Weekly Reflection...")
     cfg = load_config()
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     
     if chat_id:
         user_id_str = str(chat_id)

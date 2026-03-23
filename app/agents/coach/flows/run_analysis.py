@@ -1,4 +1,5 @@
 import os
+from app.core.user_context import get_primary_user_id
 import json
 import logging
 import pytz
@@ -33,7 +34,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     user_id_str = str(chat_id)
 
     # 1. Prepare Context data

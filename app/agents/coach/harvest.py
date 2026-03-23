@@ -1,4 +1,5 @@
 import os
+from app.core.user_context import get_primary_user_id
 import json
 import logging
 import time
@@ -52,7 +53,7 @@ def harvest_data():
     strava_client = StravaClient()
     config = load_config()
     
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     athlete_id = os.getenv("STRAVA_ATHLETE_ID")
 
     if not chat_id or not athlete_id: return

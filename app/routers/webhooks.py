@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request, BackgroundTasks
 import os
+from app.core.user_context import get_primary_user_id
 import logging
 
 from app.core.config import load_config
@@ -44,7 +45,7 @@ def handle_deleted_activity(activity_id: str):
     delete_run_activity(activity_id)
     rag_db.forget(doc_id=activity_id)
     
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     if chat_id:
         # [ZONE 3] User-facing notification remains in Vietnamese
         send_telegram_msg(chat_id, f"🗑️ <b>Strava Sync:</b> Đã tự động xóa bài chạy trùng lặp (ID: {activity_id}) khỏi hệ thống!")
@@ -68,7 +69,7 @@ def run_strava_workflow(activity_id: str):
     if not csv_data:
         return
 
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
 
     # 1. Ensure Data Integrity before invoking LLM
     if chat_id:

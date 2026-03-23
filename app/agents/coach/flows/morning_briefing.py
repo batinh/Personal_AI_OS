@@ -1,4 +1,5 @@
 import os
+from app.core.user_context import get_primary_user_id
 import logging
 import pytz
 from datetime import datetime
@@ -37,7 +38,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     logger.info("[COACH AGENT] Starting Morning Briefing reasoning flow...")
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     user_id_str = str(chat_id)
 
     # 1. Gather Data (Data Injection Pattern)
