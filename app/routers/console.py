@@ -1,0 +1,207 @@
+# app/routers/console.py
+# TinhN AI OS — Unified Control Console
+# Merges: admin (settings, system control) + dashboard (metrics, charts, training log) + memory view
+
+import os
+import secrets
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, Request, Form, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.templating import Jinja2Templates
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+from app.core.config import load_config, save_config
+from app.core.notification import send_html_email
+from app.core.logging_conf import log_capture_string
+from app.core.state import state
+from app.core.user_context import get_primary_user_id
+from app.core.database import (
+    get_db_connection,
+    get_training_loads,
+    get_historical_training_loads,
+    get_all_active_memories,
+)
+from app.agents.coach.utils import calculate_acwr
+from app.services.scheduler import reload_scheduler
+
+router = APIRouter()
+templates = Jinja2Templates(directory="templates")
+logger = logging.getLogger("AI_COACH")
+
+# ==========================================
+# 🔐 AUTHENTICATION
+# ==========================================
+security = HTTPBasic()
+
+
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) -> str:
+    env_user = os.getenv("ADMIN_USERNAME", "admin")
+    env_pass = os.getenv("ADMIN_PASSWORD", "123456")
+    is_user_ok = secrets.compare_digest(credentials.username, env_user)
+    is_pass_ok = secrets.compare_digest(credentials.password, env_pass)
+    if not (is_user_ok and is_pass_ok):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sai tài khoản hoặc mật khẩu!",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
+
+# ==========================================
+# 🖥️ UNIFIED CONSOLE — GET
+# ==========================================
+@router.get("/console", response_class=HTMLResponse)
+async def console_page(request: Request, tab: str = "overview", username: str = Depends(verify_credentials)):
+    """Render the TinhN AI OS unified control console."""
+    config = load_config()
+    chat_id = get_primary_user_id()
+
+    # --- Overview: training metrics ---
+    loads = get_training_loads(chat_id)
+    acwr_results = calculate_acwr(loads["acute_load_7d"], loads["chronic_load_28d"])
+    load_history = get_historical_training_loads(chat_id, days=30)
+
+    # --- Training Log: last 20 runs ---
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute(
+        """SELECT start_date, name, distance_km, trimp_score, gcs_score, avg_hr
+           FROM run_activities WHERE user_id = ?
+           ORDER BY start_date DESC LIMIT 20""",
+        (str(chat_id),),
+    )
+    activities = [dict(row) for row in c.fetchall()]
+    conn.close()
+
+    # --- Memory tab ---
+    memories = get_all_active_memories(chat_id)
+
+    # --- System tab ---
+    logs_text = "\n".join(list(log_capture_string))
+
+    return templates.TemplateResponse(
+        "console.html",
+        {
+            "request": request,
+            "active_tab": tab,
+            # Overview
+            "acwr": acwr_results,
+            "loads": loads,
+            "load_history": load_history,
+            "activities": activities[::-1],  # oldest first for charts
+            "activities_desc": activities,   # newest first for table
+            # Memory
+            "memories": memories,
+            # Settings / System
+            "config": config,
+            "logs": logs_text,
+            "service_active": state.service_active,
+        },
+    )
+
+
+# ==========================================
+# 💾 SAVE SETTINGS — POST
+# ==========================================
+@router.post("/console/save")
+async def console_save(
+    request: Request,
+    system_instruction: str = Form(...),
+    user_profile: str = Form(...),
+    task_description: str = Form(""),
+    analysis_requirements: str = Form(""),
+    report_structure: str = Form(""),
+    output_format: str = Form(""),
+    max_hr: int = Form(185),
+    rest_hr: int = Form(55),
+    race_date: Optional[str] = Form(None),
+    race_distance_km: float = Form(21.1),
+    threshold_pace_per_km: int = Form(0),
+    gender: str = Form("male"),
+    current_goal: str = Form(""),
+    briefing_time: str = Form("06:00"),
+    backup_time: str = Form("02:00"),
+    harvest_hours: str = Form("0,6,12,18"),
+    harvest_minute: str = Form("15"),
+    email_enabled: Optional[str] = Form(None),
+    debug_mode: Optional[str] = Form(None),
+    model_name: str = Form("models/gemini-2.0-flash"),
+    username: str = Depends(verify_credentials),
+):
+    config = load_config()
+    config["system_instruction"] = system_instruction
+    config["user_profile"] = user_profile
+    config["task_description"] = task_description
+    config["analysis_requirements"] = analysis_requirements
+    config["report_structure"] = report_structure
+    config["output_format"] = output_format
+    config["max_hr"] = max_hr
+    config["rest_hr"] = rest_hr
+    config["race_date"] = race_date
+    config["race_distance_km"] = race_distance_km
+    config["threshold_pace_per_km"] = threshold_pace_per_km
+    config["gender"] = gender
+    config["current_goal"] = current_goal
+    config["scheduler"] = {
+        "briefing_time": briefing_time,
+        "backup_time": backup_time,
+        "harvest_hours": harvest_hours,
+        "harvest_minute": harvest_minute,
+    }
+    if "email_config" not in config:
+        config["email_config"] = {}
+    config["email_config"]["enabled"] = email_enabled == "on"
+    config["debug_mode"] = debug_mode == "on"
+    config["model_name"] = model_name
+    save_config(config)
+    reload_scheduler()
+    logger.info(f"[CONSOLE] User '{username}' saved configuration.")
+    return RedirectResponse(url="/console?tab=settings", status_code=303)
+
+
+@router.get("/console/save", include_in_schema=False)
+async def console_save_redirect(username: str = Depends(verify_credentials)):
+    return RedirectResponse(url="/console?tab=settings", status_code=303)
+
+
+# ==========================================
+# ⚙️ SYSTEM ACTIONS
+# ==========================================
+@router.post("/console/toggle")
+async def console_toggle(username: str = Depends(verify_credentials)):
+    state.service_active = not state.service_active
+    status_str = "RESUMED" if state.service_active else "PAUSED"
+    logger.info(f"[CONSOLE] User '{username}' triggered Service {status_str}")
+    return RedirectResponse(url="/console?tab=system", status_code=303)
+
+
+@router.get("/console/test-email")
+async def console_test_email(username: str = Depends(verify_credentials)):
+    try:
+        cfg = load_config()
+        send_html_email(
+            "Test Email from TinhN AI OS",
+            "<h1>✅ It Works!</h1><p>Hệ thống email của bạn đang hoạt động tốt.</p>",
+            cfg,
+        )
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"[CONSOLE] Test email failed: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ==========================================
+# 🔀 BACKWARD-COMPAT REDIRECTS
+# Keep old /admin and /dashboard URLs working
+# ==========================================
+@router.get("/admin", include_in_schema=False)
+async def legacy_admin_redirect(username: str = Depends(verify_credentials)):
+    return RedirectResponse(url="/console?tab=settings", status_code=301)
+
+
+@router.get("/dashboard", include_in_schema=False)
+async def legacy_dashboard_redirect():
+    return RedirectResponse(url="/console?tab=overview", status_code=301)

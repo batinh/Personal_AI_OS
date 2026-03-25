@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TinhN AI OS</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* ========== RESET & ROOT ========== */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; }
+
+    /* ========== LAYOUT ========== */
+    .os-shell {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ========== SIDEBAR ========== */
+    .sidebar {
+      width: 220px;
+      min-width: 220px;
+      background: #0f1117;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #1e2330;
+      z-index: 100;
+    }
+    .sidebar-brand {
+      padding: 20px 18px 16px;
+      border-bottom: 1px solid #1e2330;
+    }
+    .sidebar-brand .brand-name {
+      font-size: 1rem;
+      font-weight: 800;
+      color: #e2e8f0;
+      letter-spacing: 0.5px;
+    }
+    .sidebar-brand .brand-sub {
+      font-size: 0.68rem;
+      color: #4a5568;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 2px;
+    }
+    .sidebar-brand .brand-icon {
+      font-size: 1.5rem;
+      margin-bottom: 6px;
+    }
+    .sidebar-status {
+      padding: 8px 18px;
+      border-bottom: 1px solid #1e2330;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .status-dot.active { background: #48bb78; box-shadow: 0 0 6px #48bb78; }
+    .status-dot.paused { background: #f56565; }
+    .status-label { font-size: 0.72rem; color: #718096; }
+
+    .sidebar-nav { flex: 1; padding: 14px 0; overflow-y: auto; }
+    .nav-section-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #2d3748;
+      text-transform: uppercase;
+      padding: 10px 18px 4px;
+    }
+    .nav-item-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      color: #718096;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 500;
+      border-left: 3px solid transparent;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+    .nav-item-link:hover {
+      background: #1a202c;
+      color: #e2e8f0;
+      text-decoration: none;
+    }
+    .nav-item-link.active {
+      background: #1a202c;
+      color: #63b3ed;
+      border-left-color: #4299e1;
+      font-weight: 600;
+    }
+    .nav-item-link .nav-icon { width: 18px; text-align: center; font-size: 0.9rem; }
+    .sidebar-footer {
+      padding: 14px 18px;
+      border-top: 1px solid #1e2330;
+    }
+    .sidebar-footer .version-tag {
+      font-size: 0.65rem;
+      color: #2d3748;
+    }
+
+    /* ========== MAIN CONTENT ========== */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .topbar {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 56px;
+      flex-shrink: 0;
+    }
+    .topbar-title { font-size: 1rem; font-weight: 700; color: #1a202c; }
+    .topbar-meta { display: flex; gap: 10px; align-items: center; }
+    .badge-goal { background: #ebf8ff; color: #2b6cb0; font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
+    .badge-race { background: #fffbeb; color: #b7791f; font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
+
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 28px;
+    }
+
+    /* ========== CARDS ========== */
+    .stat-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      border: 1px solid #e8ecf0;
+    }
+    .stat-label { font-size: 0.72rem; color: #718096; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+    .stat-value { font-size: 2rem; font-weight: 800; line-height: 1.2; }
+
+    /* ========== GAUGE ========== */
+    .gauge-wrap { width: 100%; height: 10px; background: #e2e8f0; border-radius: 8px; position: relative; margin-top: 12px; }
+    .gauge-bg { width: 100%; height: 100%; border-radius: 8px; background: linear-gradient(to right, #4299e1 0%, #4299e1 40%, #48bb78 40%, #48bb78 65%, #ed8936 65%, #ed8936 75%, #f56565 75%, #f56565 100%); opacity: 0.85; }
+    .gauge-marker { position: absolute; top: -5px; height: 20px; width: 3px; background: #1a202c; border-radius: 2px; transition: left 1s ease-in-out; }
+    .gauge-labels { display: flex; justify-content: space-between; font-size: 0.65rem; color: #a0aec0; margin-top: 4px; font-weight: 600; }
+
+    /* ========== TABLE ========== */
+    .os-table thead th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; color: #718096; border-bottom: 2px solid #e2e8f0; }
+    .os-table tbody tr:hover { background: #f7fafc; }
+    .os-table tbody td { vertical-align: middle; font-size: 0.88rem; }
+
+    /* ========== LOG BOX ========== */
+    .log-box {
+      background: #0d1117;
+      color: #56d364;
+      height: 320px;
+      overflow-y: auto;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      font-size: 0.78rem;
+      padding: 14px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* ========== FORM SECTION ========== */
+    .form-section-header {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #4299e1;
+      padding: 10px 0 6px;
+      border-bottom: 2px solid #ebf8ff;
+      margin-bottom: 14px;
+    }
+    .form-control, .form-select {
+      font-size: 0.88rem;
+      border-color: #e2e8f0;
+    }
+    .form-control:focus, .form-select:focus {
+      border-color: #4299e1;
+      box-shadow: 0 0 0 3px rgba(66,153,225,0.12);
+    }
+    textarea.form-control { resize: vertical; }
+
+    /* ========== MEMORY PILLS ========== */
+    .memory-item {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .memory-icon { font-size: 1.2rem; flex-shrink: 0; margin-top: 2px; }
+    .memory-category { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #4299e1; }
+    .memory-fact { font-size: 0.88rem; color: #2d3748; margin-top: 2px; }
+
+    /* ========== RESPONSIVE ========== */
+    @media (max-width: 768px) {
+      .sidebar { width: 60px; min-width: 60px; }
+      .sidebar-brand .brand-name, .sidebar-brand .brand-sub,
+      .nav-item-link span, .nav-section-label,
+      .sidebar-footer .version-tag, .sidebar-status .status-label { display: none; }
+      .nav-item-link { justify-content: center; padding: 12px; }
+      .nav-item-link .nav-icon { width: auto; font-size: 1rem; }
+    }
+
+    /* ========== SECTION TITLE ========== */
+    .section-title { font-size: 1rem; font-weight: 700; color: #1a202c; margin-bottom: 4px; }
+    .section-sub { font-size: 0.8rem; color: #718096; margin-bottom: 18px; }
+
+    /* ========== TABS CONTENT ========== */
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+  </style>
+</head>
+<body>
+
+<div class="os-shell">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">⚡</div>
+      <div class="brand-name">TinhN AI OS</div>
+      <div class="brand-sub">Coach Dyno v2</div>
+    </div>
+    <div class="sidebar-status">
+      <span class="status-dot {{ 'active' if service_active else 'paused' }}"></span>
+      <span class="status-label">{{ 'Running' if service_active else 'Paused' }}</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Monitor</div>
+      <a class="nav-item-link {{ 'active' if active_tab == 'overview' else '' }}"
+         onclick="switchTab('overview')" href="/console?tab=overview">
+        <i class="nav-icon fas fa-chart-line"></i>
+        <span>Overview</span>
+      </a>
+      <a class="nav-item-link {{ 'active' if active_tab == 'training' else '' }}"
+         onclick="switchTab('training')" href="/console?tab=training">
+        <i class="nav-icon fas fa-running"></i>
+        <span>Training Log</span>
+      </a>
+      <a class="nav-item-link {{ 'active' if active_tab == 'memory' else '' }}"
+         onclick="switchTab('memory')" href="/console?tab=memory">
+        <i class="nav-icon fas fa-brain"></i>
+        <span>Memory</span>
+        {% if memories %}
+        <span style="margin-left:auto;background:#4299e1;color:#fff;border-radius:10px;font-size:0.65rem;padding:1px 7px;">{{ memories|length }}</span>
+        {% endif %}
+      </a>
+
+      <div class="nav-section-label" style="margin-top:8px;">Configure</div>
+      <a class="nav-item-link {{ 'active' if active_tab == 'settings' else '' }}"
+         onclick="switchTab('settings')" href="/console?tab=settings">
+        <i class="nav-icon fas fa-sliders-h"></i>
+        <span>Settings</span>
+      </a>
+      <a class="nav-item-link {{ 'active' if active_tab == 'system' else '' }}"
+         onclick="switchTab('system')" href="/console?tab=system">
+        <i class="nav-icon fas fa-terminal"></i>
+        <span>System</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="version-tag">Personal AI OS · v2.0</div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <div class="main-content">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="topbar-title" id="topbarTitle">
+        {% if active_tab == 'overview' %}📊 Overview
+        {% elif active_tab == 'training' %}🏃‍♂️ Training Log
+        {% elif active_tab == 'memory' %}🧠 AI Memory
+        {% elif active_tab == 'settings' %}⚙️ Settings
+        {% elif active_tab == 'system' %}🖥️ System
+        {% endif %}
+      </div>
+      <div class="topbar-meta">
+        <span class="badge-goal">🎯 {{ config.get('current_goal', 'Sub 1:45 HM') }}</span>
+        {% if config.get('race_date') %}
+        <span class="badge-race">📅 Race: {{ config.get('race_date') }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Content area -->
+    <div class="content-area">
+
+      <!-- ====== TAB: OVERVIEW ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'overview' else '' }}" id="tab-overview">
+        <div class="row g-3 mb-3">
+
+          <!-- ACWR Card -->
+          <div class="col-md-4">
+            <div class="stat-card h-100 text-center">
+              <div class="stat-label mb-2">Injury Risk (ACWR)</div>
+              <div class="stat-value
+                {% if acwr.acwr > 1.5 %}text-danger
+                {% elif acwr.acwr > 1.3 %}text-warning
+                {% elif acwr.acwr < 0.8 %}text-info
+                {% else %}text-success{% endif %}">
+                {{ acwr.acwr }}
+              </div>
+              <div class="small text-muted fw-bold mb-3">{{ acwr.status }}</div>
+              {% set acwr_val = acwr.acwr | float %}
+              {% set gauge_pct = [(acwr_val / 2.0 * 100), 100] | min %}
+              <div class="gauge-wrap">
+                <div class="gauge-bg"></div>
+                <div class="gauge-marker" style="left: {{ gauge_pct }}%;"></div>
+              </div>
+              <div class="gauge-labels"><span>Under</span><span>Sweet Spot</span><span>Over</span><span>⚠️</span></div>
+              <div class="mt-3 small">
+                <span class="me-3">🔵 Acute: <b>{{ loads.acute_load_7d }}</b></span>
+                <span>🟠 Chronic/wk: <b>{{ (loads.chronic_load_28d / 4) | round(1) }}</b></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Load Trend -->
+          <div class="col-md-8">
+            <div class="stat-card h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="section-title mb-0">📊 Training Load Trend (30 Days)</div>
+                <div class="small text-muted">
+                  <span style="color:#1a202c;">● Acute</span> &nbsp;
+                  <span style="color:#ed8936;">■ Chronic Avg</span>
+                </div>
+              </div>
+              <div style="position:relative; height:170px;">
+                <canvas id="loadHistoryChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TRIMP vs GCS + Latest GCS -->
+        <div class="row g-3">
+          <div class="col-md-8">
+            <div class="stat-card">
+              <div class="section-title">📈 TRIMP vs GCS Correlation</div>
+              <div class="section-sub">Training load (bars) vs goal confidence (line)</div>
+              <div style="position:relative; height:280px;">
+                <canvas id="performanceChart"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="stat-card h-100 d-flex flex-column justify-content-center align-items-center text-center">
+              <div class="section-title mb-1">🎯 Latest GCS</div>
+              <div class="section-sub">Goal Confidence Score</div>
+              <div class="stat-value text-success" id="latestGcs" style="font-size:3.5rem;">--</div>
+              <span class="badge bg-success rounded-pill px-3 py-2 mt-1">CONFIDENCE</span>
+              <div class="alert alert-light border small text-center w-100 mt-3 mb-0">
+                Keep GCS &gt; 80% inside ACWR sweet spot for peak race readiness.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== TAB: TRAINING LOG ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'training' else '' }}" id="tab-training">
+        <div class="section-title">🏃‍♂️ Recent Activities</div>
+        <div class="section-sub">Last 20 runs — sorted newest first</div>
+        <div class="stat-card p-0 overflow-hidden">
+          <div class="table-responsive">
+            <table class="table table-hover os-table mb-0">
+              <thead>
+                <tr>
+                  <th style="padding:14px 18px;">Date</th>
+                  <th>Name</th>
+                  <th>Distance</th>
+                  <th>Avg HR</th>
+                  <th>TRIMP</th>
+                  <th>GCS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for act in activities_desc %}
+                <tr>
+                  <td style="padding:12px 18px; white-space:nowrap;" class="text-muted">{{ act.start_date[:10] }}</td>
+                  <td class="fw-semibold text-dark">{{ act.name }}</td>
+                  <td><b>{{ act.distance_km }}</b> km</td>
+                  <td>{{ act.avg_hr }} bpm</td>
+                  <td>
+                    {% if act.trimp_score > 120 %}
+                      <span class="badge bg-danger rounded-pill px-3">{{ act.trimp_score }}</span>
+                    {% elif act.trimp_score > 70 %}
+                      <span class="badge bg-warning text-dark rounded-pill px-3">{{ act.trimp_score }}</span>
+                    {% else %}
+                      <span class="badge bg-success rounded-pill px-3">{{ act.trimp_score }}</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if act.gcs_score %}
+                      <span class="fw-bold text-success">{{ act.gcs_score }}%</span>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if not activities_desc %}
+                <tr>
+                  <td colspan="6" class="text-center text-muted py-5">
+                    <i class="fas fa-running fa-2x mb-2 d-block opacity-25"></i>
+                    No activities yet. Sync Strava to get started.
+                  </td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ====== TAB: MEMORY ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'memory' else '' }}" id="tab-memory">
+        <div class="section-title">🧠 AI Core Memory</div>
+        <div class="section-sub">Active facts extracted by Coach Dyno from your conversations</div>
+
+        {% if memories %}
+          {% set category_icons = {
+            'main_goal': '🏁',
+            'injury_status': '🩹',
+            'physiological_metrics': '❤️',
+            'gear_preference': '👟',
+            'race_strategy': '⚡',
+            'training_preference': '🎯',
+            'general_lifestyle': '🌙',
+            'other': '📌'
+          } %}
+          <div class="row g-2">
+            {% for mem in memories %}
+            <div class="col-md-6">
+              <div class="memory-item">
+                <span class="memory-icon">{{ category_icons.get(mem.category, '📌') }}</span>
+                <div>
+                  <div class="memory-category">{{ mem.category | replace('_', ' ') }}</div>
+                  <div class="memory-fact">{{ mem.fact }}</div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="stat-card text-center py-5 text-muted">
+            <i class="fas fa-brain fa-2x mb-3 d-block opacity-25"></i>
+            No memories yet. Chat with Coach Dyno to build up AI memory.
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- ====== TAB: SETTINGS ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'settings' else '' }}" id="tab-settings">
+        <form action="/console/save" method="post">
+
+          <!-- AI Persona -->
+          <div class="stat-card mb-3">
+            <div class="form-section-header"><i class="fas fa-robot me-2"></i>AI Persona</div>
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label fw-semibold small">System Instruction <span class="text-muted fw-normal">(Coach personality)</span></label>
+                <textarea class="form-control" name="system_instruction" rows="3">{{ config.get('system_instruction', '') }}</textarea>
+              </div>
+              <div class="col-12">
+                <label class="form-label fw-semibold small">User Profile</label>
+                <textarea class="form-control" name="user_profile" rows="3">{{ config.get('user_profile', '') }}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sports Science -->
+          <div class="stat-card mb-3">
+            <div class="form-section-header"><i class="fas fa-heartbeat me-2"></i>Sports Science & Goals</div>
+            <div class="row g-3">
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small">Max HR (bpm)</label>
+                <input type="number" class="form-control" name="max_hr" value="{{ config.get('max_hr', 185) }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small">Rest HR (bpm)</label>
+                <input type="number" class="form-control" name="rest_hr" value="{{ config.get('rest_hr', 55) }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small">Gender</label>
+                <select class="form-select" name="gender">
+                  <option value="male" {{ 'selected' if config.get('gender','male')=='male' else '' }}>Male</option>
+                  <option value="female" {{ 'selected' if config.get('gender')=='female' else '' }}>Female</option>
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small">Race Distance (km)</label>
+                <input type="number" step="0.1" class="form-control" name="race_distance_km" value="{{ config.get('race_distance_km', 21.1) }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small">Race Date</label>
+                <input type="date" class="form-control" name="race_date" value="{{ config.get('race_date', '') }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label fw-semibold small">Threshold Pace <span class="text-muted">(sec/km)</span></label>
+                <input type="number" class="form-control" name="threshold_pace_per_km"
+                       value="{{ config.get('threshold_pace_per_km', 0) }}"
+                       placeholder="e.g. 310">
+                <div class="form-text">310 = 5:10/km</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small">Current Goal</label>
+                <input type="text" class="form-control" name="current_goal" value="{{ config.get('current_goal', 'Sub 1:45 HM') }}">
+              </div>
+            </div>
+          </div>
+
+          <!-- Scheduler -->
+          <div class="stat-card mb-3">
+            <div class="form-section-header"><i class="fas fa-clock me-2"></i>Task Scheduler</div>
+            <div class="row g-3">
+              <div class="col-md-3">
+                <label class="form-label fw-semibold small">☀️ Morning Briefing</label>
+                <input type="time" class="form-control" name="briefing_time"
+                       value="{{ config.get('scheduler', {}).get('briefing_time', '06:00') }}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label fw-semibold small">💾 Backup Time</label>
+                <input type="time" class="form-control" name="backup_time"
+                       value="{{ config.get('scheduler', {}).get('backup_time', '02:00') }}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label fw-semibold small">🔄 Auto-Sync Hours</label>
+                <input type="text" class="form-control" name="harvest_hours"
+                       value="{{ config.get('scheduler', {}).get('harvest_hours', '0,6,12,18') }}"
+                       placeholder="0,6,12,18">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label fw-semibold small">⏱️ Sync Minute</label>
+                <input type="number" class="form-control" name="harvest_minute"
+                       value="{{ config.get('scheduler', {}).get('harvest_minute', '15') }}"
+                       min="0" max="59">
+              </div>
+            </div>
+          </div>
+
+          <!-- Strava Analysis Architecture -->
+          <div class="stat-card mb-3">
+            <div class="form-section-header"><i class="fas fa-magic me-2"></i>Strava Analysis Architecture</div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small">1. Task Description</label>
+                <textarea class="form-control" name="task_description" rows="5">{{ config.get('task_description', '') }}</textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small">2. Analysis Requirements</label>
+                <textarea class="form-control" name="analysis_requirements" rows="5">{{ config.get('analysis_requirements', '') }}</textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small">3. Report Structure</label>
+                <textarea class="form-control" name="report_structure" rows="5">{{ config.get('report_structure', '') }}</textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small">4. Output Format Rules</label>
+                <textarea class="form-control" name="output_format" rows="5">{{ config.get('output_format', '') }}</textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Notifications & System -->
+          <div class="stat-card mb-3">
+            <div class="form-section-header"><i class="fas fa-cog me-2"></i>System & Notifications</div>
+            <div class="row g-3 align-items-end">
+              <div class="col-md-5">
+                <label class="form-label fw-semibold small"><i class="fas fa-robot me-1"></i>AI Model</label>
+                <select class="form-select" name="model_name">
+                  <option value="models/gemini-2.0-flash"        {{ 'selected' if config.get('model_name')=='models/gemini-2.0-flash' else '' }}>Gemini 2.0 Flash (Recommended)</option>
+                  <option value="models/gemini-2.5-flash"        {{ 'selected' if config.get('model_name')=='models/gemini-2.5-flash' else '' }}>Gemini 2.5 Flash (Smarter)</option>
+                  <option value="models/gemini-flash-latest"     {{ 'selected' if config.get('model_name')=='models/gemini-flash-latest' else '' }}>Gemini Flash Latest</option>
+                  <option value="models/gemini-1.5-flash"        {{ 'selected' if config.get('model_name')=='models/gemini-1.5-flash' else '' }}>Gemini 1.5 Flash (Stable)</option>
+                  <option value="models/gemini-2.0-flash-lite"   {{ 'selected' if config.get('model_name')=='models/gemini-2.0-flash-lite' else '' }}>Gemini 2.0 Flash Lite (Fast)</option>
+                  <option value="models/gemini-2.0-pro-exp-02-05" {{ 'selected' if config.get('model_name')=='models/gemini-2.0-pro-exp-02-05' else '' }}>Gemini 2.0 Pro Exp</option>
+                </select>
+              </div>
+              <div class="col-md-3 d-flex flex-column gap-2 pt-2">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="email_enabled" id="emailEnabled"
+                         {{ 'checked' if config.get('email_config', {}).get('enabled') else '' }}>
+                  <label class="form-check-label small fw-semibold" for="emailEnabled">📧 Email Notifications</label>
+                </div>
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" name="debug_mode" id="debugMode"
+                         {{ 'checked' if config.get('debug_mode') else '' }}>
+                  <label class="form-check-label small fw-semibold text-warning" for="debugMode">🐞 Deep Debug Logging</label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-lg px-5 shadow-sm">
+            <i class="fas fa-save me-2"></i>Save Configuration
+          </button>
+        </form>
+      </div>
+
+      <!-- ====== TAB: SYSTEM ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'system' else '' }}" id="tab-system">
+        <div class="row g-3 mb-3">
+          <div class="col-md-5">
+            <div class="stat-card h-100">
+              <div class="form-section-header"><i class="fas fa-power-off me-2"></i>Service Control</div>
+              <form action="/console/toggle" method="post" class="mb-3">
+                {% if service_active %}
+                  <button type="submit" class="btn btn-danger w-100 fw-bold py-2">
+                    <i class="fas fa-pause-circle me-2"></i>PAUSE SERVICE
+                  </button>
+                {% else %}
+                  <button type="submit" class="btn btn-success w-100 fw-bold py-2">
+                    <i class="fas fa-play-circle me-2"></i>RESUME SERVICE
+                  </button>
+                {% endif %}
+              </form>
+              <button type="button" onclick="testEmail()" class="btn btn-outline-primary w-100 fw-bold py-2">
+                <i class="fas fa-envelope me-2"></i>Test Email Notification
+              </button>
+              <div id="emailResult" class="mt-2 small text-muted"></div>
+
+              <hr class="my-3">
+              <div class="small">
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Service Status</span>
+                  <span class="fw-bold {{ 'text-success' if service_active else 'text-danger' }}">
+                    {{ '● RUNNING' if service_active else '● PAUSED' }}
+                  </span>
+                </div>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">AI Model</span>
+                  <span class="fw-bold">{{ config.get('model_name', 'gemini-2.0-flash').split('/')[-1] }}</span>
+                </div>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Morning Briefing</span>
+                  <span class="fw-bold">{{ config.get('scheduler', {}).get('briefing_time', '06:00') }}</span>
+                </div>
+                <div class="d-flex justify-content-between py-1">
+                  <span class="text-muted">Auto-Sync</span>
+                  <span class="fw-bold">{{ config.get('scheduler', {}).get('harvest_hours', '0,6,12,18') }}h:{{ config.get('scheduler', {}).get('harvest_minute', '15') }}m</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-7">
+            <div class="stat-card h-100">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="form-section-header mb-0"><i class="fas fa-terminal me-2"></i>Live Logs</div>
+                <button class="btn btn-outline-secondary btn-sm" onclick="clearLogs()">Clear</button>
+              </div>
+              <div class="log-box" id="logBox">{{ logs }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content-area -->
+  </div><!-- /main-content -->
+</div><!-- /os-shell -->
+
+
+<!-- ============ SCRIPTS ============ -->
+<script>
+  // ---- Tab switching (client-side, no reload) ----
+  function switchTab(tabName) {
+    const titles = {
+      overview: '📊 Overview',
+      training: '🏃‍♂️ Training Log',
+      memory:   '🧠 AI Memory',
+      settings: '⚙️ Settings',
+      system:   '🖥️ System',
+    };
+    // Hide all panes
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item-link').forEach(l => l.classList.remove('active'));
+    // Show target
+    const pane = document.getElementById('tab-' + tabName);
+    if (pane) pane.classList.add('active');
+    // Activate sidebar link
+    document.querySelectorAll('.nav-item-link').forEach(l => {
+      if (l.getAttribute('href') && l.getAttribute('href').includes('tab=' + tabName)) {
+        l.classList.add('active');
+      }
+    });
+    document.getElementById('topbarTitle').innerHTML = titles[tabName] || tabName;
+    // Update URL without reload
+    history.replaceState(null, '', '/console?tab=' + tabName);
+  }
+
+  // Prevent sidebar links from reloading — intercept clicks
+  document.querySelectorAll('.nav-item-link').forEach(link => {
+    link.addEventListener('click', function(e) {
+      e.preventDefault();
+      const href = this.getAttribute('href') || '';
+      const match = href.match(/tab=(\w+)/);
+      if (match) switchTab(match[1]);
+    });
+  });
+
+  // ---- Scroll logs to bottom ----
+  const logBox = document.getElementById('logBox');
+  if (logBox) logBox.scrollTop = logBox.scrollHeight;
+
+  function clearLogs() {
+    if (logBox) logBox.innerHTML = '[Logs cleared — refresh page to reload]\n';
+  }
+
+  // ---- Test Email ----
+  async function testEmail() {
+    const result = document.getElementById('emailResult');
+    result.innerHTML = '⏳ Sending...';
+    try {
+      const res = await fetch('/console/test-email');
+      const data = await res.json();
+      result.innerHTML = data.status === 'success'
+        ? '✅ Email sent! Check inbox.'
+        : '❌ Failed: ' + data.message;
+    } catch(e) {
+      result.innerHTML = '❌ Network error: ' + e;
+    }
+  }
+
+  // ---- Charts (only render when overview tab is visible) ----
+  const rawData   = {{ activities | tojson }};
+  const labels    = rawData.map(d => d.start_date.substring(5, 10));
+  const trimpData = rawData.map(d => d.trimp_score);
+  const gcsData   = rawData.map(d => d.gcs_score || null);
+
+  // Latest GCS
+  const lastGcs = gcsData.filter(s => s !== null).pop();
+  const gcsEl = document.getElementById('latestGcs');
+  if (gcsEl && lastGcs) gcsEl.textContent = lastGcs + '%';
+
+  const trimpColors = trimpData.map(v =>
+    v > 120 ? 'rgba(245,101,101,0.85)' :
+    v > 70  ? 'rgba(237,137,54,0.85)'  :
+              'rgba(72,187,120,0.85)'
+  );
+
+  // TRIMP vs GCS chart
+  const perfCanvas = document.getElementById('performanceChart');
+  if (perfCanvas) {
+    new Chart(perfCanvas, {
+      data: {
+        labels,
+        datasets: [
+          { type:'line',  label:'GCS %',   data: gcsData,   borderColor:'#63b3ed', backgroundColor:'rgba(99,179,237,0.12)', borderWidth:2.5, pointRadius:3, yAxisID:'y1', fill:true, tension:0.4, spanGaps:true },
+          { type:'bar',   label:'TRIMP',   data: trimpData, backgroundColor: trimpColors, borderRadius:4, yAxisID:'y' }
+        ]
+      },
+      options: {
+        animation:false, responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{ legend:{ position:'top' } },
+        scales:{
+          y:  { type:'linear', position:'left',  title:{ display:true, text:'TRIMP' }, beginAtZero:true, grid:{ borderDash:[4,4] } },
+          y1: { type:'linear', position:'right', title:{ display:true, text:'GCS %' }, min:0, max:100, grid:{ display:false } }
+        }
+      }
+    });
+  }
+
+  // Load history chart
+  {% if load_history %}
+  const loadHist = {{ load_history | tojson }};
+  const lhCanvas = document.getElementById('loadHistoryChart');
+  if (lhCanvas) {
+    new Chart(lhCanvas, {
+      type:'line',
+      data:{
+        labels: loadHist.dates,
+        datasets:[
+          { label:'Acute',    data: loadHist.acute,       borderColor:'#1a202c', backgroundColor:'#1a202c', borderWidth:2, pointRadius:3, tension:0.3 },
+          { label:'Chronic',  data: loadHist.chronic,     borderColor:'#ed8936', backgroundColor:'#ed8936', borderWidth:2, pointRadius:3, borderDash:[5,5], tension:0.4 },
+          { label:'Opt Max',  data: loadHist.optimal_max, borderColor:'rgba(0,0,0,0)', backgroundColor:'rgba(180,180,180,0.2)', fill:'+1', pointRadius:0, tension:0.4 },
+          { label:'Opt Min',  data: loadHist.optimal_min, borderColor:'rgba(0,0,0,0)', backgroundColor:'rgba(0,0,0,0)',          fill:false, pointRadius:0, tension:0.4 }
+        ]
+      },
+      options:{
+        animation:false, responsive:true, maintainAspectRatio:false,
+        interaction:{ mode:'index', intersect:false },
+        plugins:{ legend:{ display:false }, tooltip:{ filter: i => i.datasetIndex < 2 } },
+        scales:{ x:{ grid:{ display:false } }, y:{ position:'right', grid:{ borderDash:[4,4] }, beginAtZero:true } }
+      }
+    });
+  }
+  {% endif %}
+</script>
+
+</body>
+</html>
