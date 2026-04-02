@@ -42,7 +42,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     run_date_str = start_date_raw[:10] if start_date_raw else now.strftime('%Y-%m-%d')
     race_date_str = config.get("race_date", "")
 
-    phase_info = calculate_training_phase(race_date_str)
+    phase_info = calculate_training_phase(race_date_str, float(config.get("race_distance_km", 21.1)))
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
     countdown_text = f"Còn {phase_info['weeks_left']} tuần đến ngày đua." if race_date_str else "Duy trì thể lực."
 
@@ -55,9 +55,13 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     plan_context = f"Tên bài: {today_plan['workout_title']}\nChi tiết: {today_plan['description']}" if today_plan else "Chạy tự do."
 
     # 2. BUILD PROMPT (Lego Architecture)
+    max_hr = int(config.get("max_hr", 185))
+    rest_hr = int(config.get("rest_hr", 55))
+    gender = config.get("gender", "male")
+    taper_factor = phase_info.get("taper_factor", 1.0)
     system_inst = build_system_instruction(
         config.get("system_instruction", ""), config.get("user_profile", ""),
-        int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+        max_hr, rest_hr, gender, "", "", taper_factor,
     )
 
     shared_context = get_shared_context_block(

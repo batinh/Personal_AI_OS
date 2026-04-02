@@ -21,7 +21,7 @@ logger = logging.getLogger("AI_COACH")
 # ==========================================
 # 🧱 SHARED HELPER: Build activity record from Strava API response
 # ==========================================
-def build_activity_record(activity: dict, max_hr: int = 185, rest_hr: int = 55) -> dict:
+def build_activity_record(activity: dict, max_hr: int = 185, rest_hr: int = 55, gender: str = "male") -> dict:
     """
     Build a normalized activity_data dict from a raw Strava activity response.
     Single Source of Truth for distance/time/TRIMP calculation across all pipelines
@@ -30,7 +30,7 @@ def build_activity_record(activity: dict, max_hr: int = 185, rest_hr: int = 55) 
     dist_km = activity.get('distance', 0) / 1000
     moving_min = activity.get('moving_time', 0) / 60
     avg_hr = activity.get('average_heartrate', 0)
-    trimp_data = calculate_trimp(moving_min, avg_hr, max_hr, rest_hr)
+    trimp_data = calculate_trimp(moving_min, avg_hr, max_hr, rest_hr, gender)
 
     return {
         'activity_id': str(activity.get('id', activity.get('activity_id', ''))),
@@ -60,6 +60,7 @@ def harvest_data():
 
     max_hr = int(config.get("max_hr", 185))
     rest_hr = int(config.get("rest_hr", 55))
+    gender = config.get("gender", "male")
     upsert_user(user_id=chat_id, name="Primary Runner", max_hr=max_hr, rest_hr=rest_hr)
 
     athlete_stats = strava_client.get_athlete_stats(athlete_id)
@@ -71,7 +72,7 @@ def harvest_data():
     recent_activities = strava_client.get_recent_activities(limit=10)
     for activity in reversed(recent_activities):
         if activity.get('type') in ['Run', 'TrailRun', 'VirtualRun']:
-            activity_data = build_activity_record(activity, max_hr, rest_hr)
+            activity_data = build_activity_record(activity, max_hr, rest_hr, gender)
             save_run_activity(user_id=chat_id, activity_data=activity_data)
     logger.info("[HARVEST] Cron Auto-Harvest complete.")
 
@@ -90,6 +91,7 @@ def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
     config = load_config()
     max_hr = int(config.get("max_hr", 185))
     rest_hr = int(config.get("rest_hr", 55))
+    gender = config.get("gender", "male")
     
     recent_activities = strava_client.get_recent_activities(limit=limit)
     target_activities = []
@@ -115,7 +117,7 @@ def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
         if activity.get('type') not in ['Run', 'TrailRun', 'VirtualRun']: continue
 
         # 1. Always calculate and update SQLite (REPLACE command ensures safe overwrite/healing)
-        activity_data = build_activity_record(activity, max_hr, rest_hr)
+        activity_data = build_activity_record(activity, max_hr, rest_hr, gender)
         trimp_data = activity_data.pop('_trimp_data')
         save_run_activity(user_id=chat_id, activity_data=activity_data)
         loaded_count += 1

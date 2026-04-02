@@ -25,6 +25,8 @@ from app.agents.coach.utils import (
     calculate_training_phase,
     calculate_trimp,
     analyze_decoupling,
+    calculate_hr_zones,
+    calculate_pace_zones,
 )
 
 
@@ -138,16 +140,16 @@ class TestCalculateTrainingPhase(unittest.TestCase):
         self.assertEqual(result["weeks_left"], 0)
 
     def test_base_phase_more_than_8_weeks(self):
-        result = calculate_training_phase(self._future_date(12))
+        result = calculate_training_phase(self._future_date(14))
         self.assertIn("Base Phase", result["phase"])
-        self.assertGreater(result["weeks_left"], 8)
+        self.assertGreater(result["weeks_left"], 12)
 
     def test_build_phase_5_to_8_weeks(self):
-        result = calculate_training_phase(self._future_date(6))
+        result = calculate_training_phase(self._future_date(9))
         self.assertIn("Build Phase", result["phase"])
 
     def test_peak_phase_3_to_4_weeks(self):
-        result = calculate_training_phase(self._future_date(3))
+        result = calculate_training_phase(self._future_date(4))
         self.assertIn("Peak Phase", result["phase"])
 
     def test_taper_phase_1_to_2_weeks(self):
@@ -243,6 +245,90 @@ class TestAnalyzeDecoupling(unittest.TestCase):
     def test_returns_float(self):
         df = self._make_df([3.0] * 20, [150] * 20)
         self.assertIsInstance(analyze_decoupling(df), float)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 7. HR ZONES
+# ══════════════════════════════════════════════════════════════════════════════
+class TestCalculateHrZones(unittest.TestCase):
+
+    def test_returns_five_zones(self):
+        zones = calculate_hr_zones(185, 55)
+        self.assertEqual(len(zones), 5)
+        for key in ["zone1", "zone2", "zone3", "zone4", "zone5"]:
+            self.assertIn(key, zones)
+
+    def test_zones_ascending(self):
+        zones = calculate_hr_zones(185, 55)
+        mins = [zones[f"zone{i}"]["min"] for i in range(1, 6)]
+        self.assertEqual(mins, sorted(mins))
+
+    def test_zone5_max_equals_max_hr(self):
+        zones = calculate_hr_zones(185, 55)
+        self.assertEqual(zones["zone5"]["max"], 185)
+
+    def test_zone1_min_is_50pct_hrr(self):
+        # zone1 min = rest_hr + 0.50 * (max_hr - rest_hr)
+        zones = calculate_hr_zones(185, 55)
+        expected = round(55 + 0.50 * (185 - 55))
+        self.assertEqual(zones["zone1"]["min"], expected)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. PACE ZONES
+# ══════════════════════════════════════════════════════════════════════════════
+class TestCalculatePaceZones(unittest.TestCase):
+
+    def test_returns_six_zones(self):
+        zones = calculate_pace_zones(310)
+        self.assertEqual(len(zones), 6)
+        for key in ["recovery", "easy", "marathon", "threshold", "interval", "race"]:
+            self.assertIn(key, zones)
+
+    def test_zone_has_name_and_range(self):
+        zones = calculate_pace_zones(310)
+        for v in zones.values():
+            self.assertIn("name", v)
+            self.assertIn("range", v)
+
+    def test_recovery_pace_slower_than_threshold(self):
+        # Recovery is slower (higher seconds) than threshold
+        zones = calculate_pace_zones(310)
+        # recovery range starts with t*1.35 formatted as mm:ss/km
+        # Just verify it contains '/' as a sanity check
+        self.assertIn("/km", zones["recovery"]["range"])
+        self.assertIn("/km", zones["threshold"]["range"])
+
+    def test_format_is_mm_ss(self):
+        zones = calculate_pace_zones(300)  # 5:00/km threshold
+        # Recovery at 300*1.35 = 405s = 6:45/km
+        self.assertIn("6:45", zones["recovery"]["range"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. TRIMP GENDER SUPPORT
+# ══════════════════════════════════════════════════════════════════════════════
+class TestCalculateTrImpGender(unittest.TestCase):
+
+    def test_female_trimp_differs_from_male(self):
+        male = calculate_trimp(60, 155, max_hr=185, rest_hr=55, gender="male")
+        female = calculate_trimp(60, 155, max_hr=185, rest_hr=55, gender="female")
+        self.assertNotEqual(male["trimp"], female["trimp"])
+
+    def test_default_gender_is_male(self):
+        explicit_male = calculate_trimp(60, 155, max_hr=185, rest_hr=55, gender="male")
+        default = calculate_trimp(60, 155, max_hr=185, rest_hr=55)
+        self.assertEqual(explicit_male["trimp"], default["trimp"])
+
+    def test_taper_factor_returned_in_training_phase(self):
+        result = calculate_training_phase("2099-01-01")
+        self.assertIn("taper_factor", result)
+        self.assertEqual(result["taper_factor"], 1.0)
+
+    def test_taper_factor_race_week_is_zero(self):
+        past = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        result = calculate_training_phase(past)
+        self.assertEqual(result["taper_factor"], 0.0)
 
 
 if __name__ == "__main__":

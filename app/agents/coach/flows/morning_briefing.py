@@ -47,7 +47,8 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     actual_volume = get_weekly_volume(user_id_str, now)
 
     race_date_str = config.get("race_date", "")
-    phase_info = calculate_training_phase(race_date_str)
+    race_distance_km = float(config.get("race_distance_km", 21.1))
+    phase_info = calculate_training_phase(race_date_str, race_distance_km)
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
     countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race." if race_date_str else "Duy trì thể lực."
 
@@ -67,9 +68,13 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         chat_context = "\n".join(chat_context_lines)
 
     # 2. Build Instruction & Prompt (Lego Architecture)
+    max_hr = int(config.get("max_hr", 185))
+    rest_hr = int(config.get("rest_hr", 55))
+    gender = config.get("gender", "male")
+    taper_factor = phase_info.get("taper_factor", 1.0)
     system_inst = build_system_instruction(
         config.get("system_instruction", ""), config.get("user_profile", ""),
-        int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+        max_hr, rest_hr, gender, "", "", taper_factor,
     )
 
     shared_context = get_shared_context_block(

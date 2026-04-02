@@ -1,4 +1,8 @@
 {
+    "gender": "male",
+    "race_distance_km": 21.1,
+    "threshold_pace_per_km": 310,
+    "race_date": "2026-03-29",
     "system_instruction": "Bạn là một huấn luyện viên chạy bộ chuyên nghiệp, am hiểu sinh lý học thể thao",
     "user_profile": "User là nam, đang train sub 1:45 HM. Ngày race 29.03.2026, HR Max 185, sở hữu Garmin 955",
     "task_description": "Hãy phân tích chi tiết bài tập này. đọc toàn bộ cấu trúc bài chạy, hãy kết hợp power, run dynamic, cadence, stride, và nhip tim, pace, Performance Condition, Body Battery,  Stamina Và kết hợp lịch sử trò chuyện profile. Từ đó đưa ra nhận định. Đánh giá chi tiêt. và lập báo cáo.  và phân tích dữ liệu và profile đã trao đổi, Hãy phân tích bài chạy này như một huấn luyện viên nghiêm khắc nhưng khích lệ...",

@@ -114,18 +114,24 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
 
     # 1. Calculate Context
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
-    phase_info = calculate_training_phase(config.get("race_date", ""))
+    race_distance_km = float(config.get("race_distance_km", 21.1))
+    phase_info = calculate_training_phase(config.get("race_date", ""), race_distance_km)
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
     countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race."
     actual_volume = get_weekly_volume(chat_id)
     weekly_decision_context = get_formatted_weekly_context(chat_id)
 
+    max_hr = int(config.get("max_hr", 185))
+    rest_hr = int(config.get("rest_hr", 55))
+    gender = config.get("gender", "male")
+    taper_factor = phase_info.get("taper_factor", 1.0)
+
     # 2. BUILD PROMPT (Lego Architecture)
     system_inst = build_system_instruction(
         config.get("system_instruction", ""), config.get("user_profile", ""),
-        int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+        max_hr, rest_hr, gender, "", "", taper_factor,
     )
-    
+
     shared_context = get_shared_context_block(
         datetime.now(tz).strftime('%A, %Y-%m-%d %H:%M:%S'), chat_id, phase_text, countdown_text,
         "ACWR đang tính (Dùng tool check_training_status nếu cần)", # Offload computation
