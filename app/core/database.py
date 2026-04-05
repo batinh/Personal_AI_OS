@@ -190,6 +190,21 @@ def init_db():
     except Exception as e:
         logger.error(f"[DATABASE] Migration error on core_memory: {e}")
 
+    # [NEWS AGENT] Table: news_sent_articles (dedup — prevents same article sent morning + afternoon)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS news_sent_articles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            article_link TEXT NOT NULL,
+            session TEXT NOT NULL,
+            sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_news_sent_user_link
+        ON news_sent_articles (user_id, article_link)
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("[DATABASE] Relational DB initialized successfully (Multi-Tenant Ready).")
@@ -876,3 +891,39 @@ def archive_memory(user_id: str, memory_id: str) -> bool:
         return False
     finally:
         conn.close()
+
+
+# ==========================================
+# NEWS AGENT — DEDUPLICATION
+# ==========================================
+
+def save_sent_articles(user_id: str, links: list, session: str) -> None:
+    """
+    Record article links that were sent in a news briefing session.
+    Used to prevent the same article appearing in both morning and afternoon briefings.
+    """
+    if not links:
+        return
+    with get_db() as conn:
+        conn.executemany(
+            "INSERT INTO news_sent_articles (user_id, article_link, session) VALUES (?, ?, ?)",
+            [(str(user_id), link, session) for link in links]
+        )
+    logger.info(f"[DB] Saved {len(links)} sent article links for user {user_id} ({session})")
+
+
+def get_recent_sent_links(user_id: str, hours: int = 24) -> set:
+    """
+    Return set of article links already sent to this user in the last N hours.
+    Used for deduplication between morning and afternoon briefings.
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT article_link FROM news_sent_articles
+            WHERE user_id = ?
+              AND sent_at >= datetime('now', ? || ' hours')
+            """,
+            (str(user_id), f"-{hours}")
+        ).fetchall()
+    return {row["article_link"] for row in rows}

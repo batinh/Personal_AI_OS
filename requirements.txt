@@ -11,3 +11,4 @@ python-multipart
 apscheduler
 pytz
 chromadb==0.4.24
+feedparser>=6.0.0

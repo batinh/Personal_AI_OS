@@ -19,5 +19,17 @@
     "admin_auth": {
       "username": "admin",
       "password": "123"
+    },
+    "news_agent": {
+      "enabled": true,
+      "morning_time": "07:00",
+      "afternoon_time": "17:00",
+      "telegram_chat_id": "",
+      "max_articles_per_feed": 5,
+      "feeds": [
+        {"name": "VnExpress", "url": "https://vnexpress.net/rss/tin-moi-nhat.rss"},
+        {"name": "Tuoi Tre", "url": "https://tuoitre.vn/rss/tin-moi-nhat.rss"},
+        {"name": "BBC Vietnamese", "url": "https://feeds.bbci.co.uk/vietnamese/rss.xml"}
+      ]
     }
   }

@@ -10,6 +10,7 @@ from app.agents.coach.harvest import harvest_data
 from app.services.backup import perform_backup
 from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, extract_implicit_memory
 from app.services.weather import get_today_weather
+from app.agents.news.agent import generate_news_briefing
 
 logger = logging.getLogger("AI_COACH")
 TZ_VN = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
@@ -67,6 +68,23 @@ def task_weekly_reflection():
 
 
 # ==========================================
+# 📰 NEWS BRIEFINGS
+# ==========================================
+def task_morning_news():
+    """Morning news briefing via RSS + Gemini. Must be regular def (BackgroundScheduler thread pool)."""
+    logger.info("[SCHEDULER] Triggering morning news briefing...")
+    config = load_config()
+    generate_news_briefing(config, session="morning")
+
+
+def task_afternoon_news():
+    """Afternoon news update via RSS + Gemini. Must be regular def (BackgroundScheduler thread pool)."""
+    logger.info("[SCHEDULER] Triggering afternoon news briefing...")
+    config = load_config()
+    generate_news_briefing(config, session="afternoon")
+
+
+# ==========================================
 # ⚙️ SCHEDULER MANAGEMENT
 # ==========================================
 def setup_jobs():
@@ -93,6 +111,19 @@ def setup_jobs():
     scheduler.add_job(perform_backup, CronTrigger(hour=bkh, minute=bkm, timezone=TZ_VN), id='backup', replace_existing=True)
     scheduler.add_job(task_auto_harvest, CronTrigger(hour=harv_hours, minute=harv_min, timezone=TZ_VN), id='harvest', replace_existing=True)
     scheduler.add_job(task_weekly_reflection, CronTrigger(day_of_week='sun', hour=20, minute=0, timezone=TZ_VN), id='weekly_reflection', replace_existing=True)
+
+    # News Agent jobs (only if enabled in config)
+    news_cfg = config.get("news_agent", {})
+    if news_cfg.get("enabled", False):
+        try:
+            nh, nm = map(int, news_cfg.get("morning_time", "07:00").split(":"))
+            ah, am = map(int, news_cfg.get("afternoon_time", "17:00").split(":"))
+        except Exception:
+            nh, nm = 7, 0
+            ah, am = 17, 0
+        scheduler.add_job(task_morning_news, CronTrigger(hour=nh, minute=nm, timezone=TZ_VN), id='news_morning', replace_existing=True)
+        scheduler.add_job(task_afternoon_news, CronTrigger(hour=ah, minute=am, timezone=TZ_VN), id='news_afternoon', replace_existing=True)
+        logger.info(f"[SCHEDULER] News jobs loaded: Morning({nh}:{nm:02d}), Afternoon({ah}:{am:02d})")
 
     logger.info(f"[SCHEDULER] Jobs loaded: Briefing({bh}:{bm}), Backup({bkh}:{bkm}), Harvest({harv_hours}h:{harv_min}m), Reflection(Sun 20:00)")
 
