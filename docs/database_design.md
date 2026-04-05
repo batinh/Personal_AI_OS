@@ -11,6 +11,15 @@
 * [cite_start]`ai_reasoning` (TEXT) - *Lý do AI quyết định điều chỉnh (Lưu lại chuỗi tư duy).* [cite: 274]
 * [cite_start]`updated_at` (TIMESTAMP) [cite: 275]
 
+**6. Table: `news_sent_articles` (Dedup Tin Tức)**
+Lưu các bài báo đã gửi để tránh gửi lại cùng một bài trong cả buổi sáng lẫn chiều.
+* `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+* `user_id` (TEXT NOT NULL) — multi-tenant required
+* `article_link` (TEXT NOT NULL) — URL bài báo dùng để dedup
+* `session` (TEXT NOT NULL) — `"morning"` hoặc `"afternoon"`
+* `sent_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+* Index: `(user_id, article_link)` cho fast dedup lookup
+
 ---
 
 #### ⚙️ TIER 3: SYSTEM CONFIGURATION (Trạng thái & Cấu hình App)

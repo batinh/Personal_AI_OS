@@ -24,6 +24,7 @@ flowchart TB
         
         Router --> CoachAgent
         Router --> MemoryAgent
+        Router --> NewsAgent[📰 News Agent]
         CoachAgent --> PromptEngine
         MemoryAgent --> PromptEngine
     end

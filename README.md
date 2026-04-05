@@ -2,7 +2,7 @@
 
 > An autonomous AI coaching agent that ingests your Strava data, applies sports science, and delivers personalized training guidance across Telegram, Strava, and Email — running 24/7 on a home lab.
 
-[![Tests](https://img.shields.io/badge/tests-216%20passed-brightgreen?style=flat-square)](./docs/testing/TEST_EXECUTION_REPORT.md)
+[![Tests](https://img.shields.io/badge/tests-267%20passed-brightgreen?style=flat-square)](./docs/testing/TEST_EXECUTION_REPORT.md)
 [![Python](https://img.shields.io/badge/python-3.11-blue?style=flat-square)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-latest-009688?style=flat-square)](https://fastapi.tiangolo.com/)
 [![Gemini](https://img.shields.io/badge/AI-Gemini%202.0%20Flash-4285F4?style=flat-square)](https://ai.google.dev/)
@@ -56,6 +56,7 @@ The system is designed as a **Modular Monolith** with a clear 5-layer architectu
 | **Sports Science Engine** | Pure Python TRIMP, ACWR, Efficiency Factor, Aerobic Decoupling, Training Phase calculator |
 | **Admin Dashboard** | Web UI to configure AI persona, sports parameters, scheduler times, and email settings |
 | **Manual Sync** | `/sync` command to backfill historical activities with RAG gap detection |
+| **News Briefings** | Daily news digest via RSS feeds (VnExpress, Tuổi Trẻ, BBC Vietnamese) — morning summary at 07:00, afternoon update at 17:00, delivered via Telegram |
 
 ---
 
@@ -153,6 +154,10 @@ Personal_AI_OS/
 │   │       ├── morning_briefing.py # generate_morning_briefing()
 │   │       ├── weekly_reflection.py # generate_weekly_reflection()
 │   │       └── memory_extraction.py # extract_implicit_memory()
+│   ├── agents/news/
+│   │   ├── agent.py               # News orchestrator: fetch → dedup → summarize → send
+│   │   ├── feeds.py               # RSS feed fetcher (feedparser, per-feed isolation)
+│   │   └── prompts.py             # Morning/afternoon prompt builders
 │   ├── routers/
 │   │   ├── webhooks.py            # POST/GET /webhook, POST /telegram-webhook
 │   │   ├── admin.py               # Admin UI + HTTP Basic auth
@@ -294,6 +299,11 @@ Key configuration fields:
 | `scheduler.briefing_time` | Daily briefing cron time (default: `06:00`) |
 | `scheduler.harvest_hours` | Hours to auto-harvest Strava (default: `0,6,12,18`) |
 | `email_config` | SMTP settings for email notifications |
+| `news_agent.enabled` | Enable/disable news briefings |
+| `news_agent.morning_time` | Morning news cron time (default: `07:00`) |
+| `news_agent.afternoon_time` | Afternoon news cron time (default: `17:00`) |
+| `news_agent.telegram_chat_id` | Telegram target for news (empty = same chat as coach) |
+| `news_agent.feeds` | List of RSS feed sources (`name` + `url`) |
 
 ---
 
@@ -351,6 +361,8 @@ All cron times are configured via the Admin UI (stored in `data/config.json`).
 | Job | Default Schedule | Description |
 |---|---|---|
 | **Morning Briefing** | Daily at `06:00` | Fetches weather, checks ACWR, delivers today's plan via Telegram |
+| **Morning News** | Daily at `07:00` | RSS news digest (VnExpress, Tuổi Trẻ, BBC Viet) — summarized by Gemini, sent via Telegram |
+| **Afternoon News** | Daily at `17:00` | Afternoon news update with deduplication against morning's articles |
 | **Auto Harvest** | `00:15`, `06:15`, `12:15`, `18:15` | Syncs last 10 Strava activities to SQLite |
 | **Weekly Reflection** | Sundays at `20:00` | Reviews the week, sets next week's target volume, saves to RAG |
 | **Daily Backup** | Daily at `02:00` | Archives `os_core.db` + `config.json` to `backups/` |
@@ -373,7 +385,7 @@ python -m pytest tests/test_webhooks.py -v
 python -m pytest tests/ -q
 ```
 
-**Current status: 216 passed / 0 failed**
+**Current status: 267 passed / 0 failed**
 
 | Module | Tests | Coverage |
 |---|---|---|
@@ -387,6 +399,9 @@ python -m pytest tests/ -q
 | `test_notification.py` | 20 | Telegram HTML sanitization, SMTP, retry logic |
 | `test_stream_storage.py` | 12 | File I/O, path resolution, error handling |
 | `test_tools.py` | 24 | All AI tool functions |
+| `test_news_feeds.py` | 14 | RSS fetch, per-feed isolation, timeout, malformed XML |
+| `test_news_prompts.py` | 11 | Prompt builders, curly brace safety, Vietnamese zone compliance |
+| `test_news_agent.py` | 14 | Orchestrator, Telegram routing (Option B), dedup, truncation, error handling |
 
 See [`docs/testing/`](./docs/testing/) for full test strategy, specs, and delivery checklist.
 
@@ -461,8 +476,9 @@ curl "https://your-domain.com/webhook?hub.verify_token=YOUR_TOKEN&hub.challenge=
 - [x] SQLite WAL mode + connection context manager
 - [x] 4-layer memory system (working, active facts, archive, episodic RAG)
 - [x] Modular agent refactor (flows/ architecture)
-- [x] 216-test production test suite
+- [x] 267-test production test suite
 - [x] Admin dashboard with dynamic scheduler configuration
+- [x] News Agent — RSS feed digest via Gemini, morning + afternoon Telegram delivery, 24h dedup
 
 ### 🚧 In Progress / Planned
 
@@ -494,7 +510,7 @@ This is a personal project but contributions are welcome.
    - **ZONE 2**: User-facing AI output in Vietnamese
    - **ZONE 3**: Transition layer — Python logic in English, f-string templates in Vietnamese
 4. Add tests for new functionality (see [`docs/testing/DELIVERY_CHECKLIST.md`](./docs/testing/DELIVERY_CHECKLIST.md))
-5. Run `python -m pytest tests/ -q` — ensure 216 pass, 0 new failures
+5. Run `python -m pytest tests/ -q` — ensure 267 pass, 0 new failures
 6. Submit a pull request
 
 ---
