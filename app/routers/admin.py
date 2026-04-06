@@ -49,8 +49,7 @@ async def admin_dashboard(request: Request, username: str = Depends(verify_crede
     """Render the Admin Dashboard interface."""
     logs_text = "\n".join(list(log_capture_string))
     
-    return templates.TemplateResponse("admin.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "admin.html", {
         "config": load_config(),
         "logs": logs_text,
         "service_active": state.service_active

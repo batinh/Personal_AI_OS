@@ -83,9 +83,9 @@ async def console_page(request: Request, tab: str = "overview", username: str = 
     logs_text = "\n".join(list(log_capture_string))
 
     return templates.TemplateResponse(
+        request,
         "console.html",
         {
-            "request": request,
             "active_tab": tab,
             # Overview
             "acwr": acwr_results,

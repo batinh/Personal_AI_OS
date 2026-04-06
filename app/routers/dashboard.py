@@ -39,11 +39,10 @@ async def user_dashboard(request: Request):
     activities = [dict(row) for row in c.fetchall()]
     conn.close()
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "dashboard.html", {
         "acwr": acwr_results,
         "loads": loads,
-        "load_history": load_history, # [NEW] Inject into Jinja2
-        "activities": activities[::-1], # Reverse to draw chart from left to right
+        "load_history": load_history,
+        "activities": activities[::-1],
         "config": config
     })
