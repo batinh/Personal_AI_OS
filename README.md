@@ -2,7 +2,7 @@
 
 > An autonomous AI coaching agent that ingests your Strava data, applies sports science, and delivers personalized training guidance across Telegram, Strava, and Email — running 24/7 on a home lab.
 
-[![Tests](https://img.shields.io/badge/tests-267%20passed-brightgreen?style=flat-square)](./docs/testing/TEST_EXECUTION_REPORT.md)
+[![Tests](https://img.shields.io/badge/tests-273%20passed-brightgreen?style=flat-square)](./docs/testing/TEST_EXECUTION_REPORT.md)
 [![Python](https://img.shields.io/badge/python-3.11-blue?style=flat-square)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-latest-009688?style=flat-square)](https://fastapi.tiangolo.com/)
 [![Gemini](https://img.shields.io/badge/AI-Gemini%202.0%20Flash-4285F4?style=flat-square)](https://ai.google.dev/)
@@ -159,9 +159,10 @@ Personal_AI_OS/
 │   │   ├── feeds.py               # RSS feed fetcher (feedparser, per-feed isolation)
 │   │   └── prompts.py             # Morning/afternoon prompt builders
 │   ├── routers/
+│   │   ├── console.py             # Unified control console (settings + metrics + memory + system)
 │   │   ├── webhooks.py            # POST/GET /webhook, POST /telegram-webhook
-│   │   ├── admin.py               # Admin UI + HTTP Basic auth
-│   │   └── dashboard.py           # Public training metrics dashboard
+│   │   ├── admin.py               # Legacy — redirects to /console
+│   │   └── dashboard.py           # Legacy — redirects to /console
 │   └── services/
 │       ├── scheduler.py           # APScheduler cron jobs
 │       ├── rag_memory.py          # ChromaDB wrapper (memorize/recall/forget)
@@ -187,6 +188,8 @@ Personal_AI_OS/
 │   ├── config.json                # Active configuration
 │   └── streams/                   # Raw Strava JSON stream files
 ├── infra/                         # Nginx + DuckDNS config
+├── scripts/
+│   └── deploy-t440.sh             # Automated deploy: push → SSH pull → rebuild → e2e test
 ├── config.example.json            # Config template (copy to data/config.json)
 ├── docker-compose.yml
 ├── Dockerfile
@@ -218,7 +221,7 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt  # for testing
 
 # 3. Set up environment variables
-cp .env.example .env  # then fill in your keys (see Configuration section)
+# Create .env file with your keys (see Environment Variables section below)
 
 # 4. Set up configuration
 cp config.example.json data/config.json
@@ -280,7 +283,7 @@ CHROMADB_CACHE_DIR=/app/data/chroma_cache
 
 ## Configuration
 
-Runtime configuration is managed via `data/config.json` and the Admin Dashboard at `/admin`.
+Runtime configuration is managed via `data/config.json` and the Console at `/console?tab=settings`.
 
 **If `data/config.json` is missing**, the system auto-copies `config.example.json` on startup and logs a warning — the system will run with example defaults until you update via the Admin UI.
 
@@ -342,15 +345,27 @@ Key configuration fields:
 | `/clear` or `/reset` | Clear conversation history |
 | Any text | AI coaching chat |
 
-### Admin & Dashboard
+### System
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `GET` | `/admin` | HTTP Basic | Admin configuration UI |
-| `POST` | `/admin/save` | HTTP Basic | Save configuration + reload scheduler |
-| `GET` | `/admin/test-email` | HTTP Basic | Send test email |
-| `POST` | `/admin/toggle` | HTTP Basic | Pause/resume AI service |
-| `GET` | `/dashboard` | Public | Training metrics dashboard |
+| `GET` | `/health` | None | Health check (DB, config, scheduler status) |
+
+### Console (Unified Control Panel)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/console` | HTTP Basic | Unified console: overview, training log, memory, settings, system |
+| `POST` | `/console/save` | HTTP Basic | Save configuration + reload scheduler |
+| `GET` | `/console/test-email` | HTTP Basic | Send test email |
+| `POST` | `/console/toggle` | HTTP Basic | Pause/resume AI service |
+
+### Legacy Redirects
+
+| Method | Path | Redirects To |
+|---|---|---|
+| `GET` | `/admin` | `/console?tab=settings` |
+| `GET` | `/dashboard` | `/console?tab=overview` |
 
 ---
 
@@ -446,19 +461,33 @@ volumes:
   - ./logs/:/app/logs               # Application logs
 ```
 
+### Automated Deploy (RPi5 → T440)
+
+For the home lab setup where code is edited on RPi5 and deployed to T440:
+
+```bash
+# Full deploy: push → SSH pull → rebuild → health check → e2e tests
+./scripts/deploy-t440.sh
+
+# Deploy only (code already pushed)
+./scripts/deploy-t440.sh --skip-push
+```
+
+Prerequisites: SSH key auth to T440, `tinhn` user in Docker group.
+
 ### Post-Deployment Smoke Test
 
 ```bash
-# 1. Verify Strava webhook endpoint
+# 1. Health check
+curl http://your-host:8000/health
+# Expected: {"status":"healthy","db":"ok","config":"ok","scheduler":"running"}
+
+# 2. Verify Strava webhook endpoint
 curl "https://your-domain.com/webhook?hub.verify_token=YOUR_TOKEN&hub.challenge=test"
 # Expected: {"hub.challenge": "test"}
 
-# 2. Trigger manual briefing via Telegram
-# Send: /standup
-# Expected: AI response within 30 seconds
-
-# 3. Check Admin UI
-# Open: https://your-domain.com/admin
+# 3. Check Console UI
+# Open: https://your-domain.com/console
 ```
 
 ---
@@ -485,7 +514,9 @@ curl "https://your-domain.com/webhook?hub.verify_token=YOUR_TOKEN&hub.challenge=
 - [ ] **Race Day Forecast** — 5-day weather forecast injection during Taper week for race strategy planning
 - [ ] **HRV/Resting HR Integration** — event-driven training adjustment from Garmin/Apple Health overnight signals
 - [ ] **FastAPI Lifespan Migration** — replace deprecated `@app.on_event` with `lifespan` context manager
-- [ ] **Health Endpoint** — `/health` for Docker health check and uptime monitoring
+- [x] **Health Endpoint** — `/health` for Docker health check and uptime monitoring
+- [x] **Unified Console** — `/console` merges admin, dashboard, and memory view into a single tabbed UI
+- [x] **Automated Deploy Script** — `scripts/deploy-t440.sh` for RPi5→T440 SSH deploy with health check + e2e tests
 - [ ] **Multi-Agent Expansion** — Work Agent and Finance Agent sharing the same memory infrastructure
 
 ### 🔮 Future: SaaS Multi-Tenant
@@ -510,7 +541,7 @@ This is a personal project but contributions are welcome.
    - **ZONE 2**: User-facing AI output in Vietnamese
    - **ZONE 3**: Transition layer — Python logic in English, f-string templates in Vietnamese
 4. Add tests for new functionality (see [`docs/testing/DELIVERY_CHECKLIST.md`](./docs/testing/DELIVERY_CHECKLIST.md))
-5. Run `python -m pytest tests/ -q` — ensure 267 pass, 0 new failures
+5. Run `python -m pytest tests/ -q` — ensure all tests pass, 0 new failures
 6. Submit a pull request
 
 ---
@@ -521,4 +552,4 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-*Built on a Lenovo T440 home lab. Powered by Google Gemini 2.0 Flash.*
+*Built on a Lenovo T440 home lab, developed on RPi5. Powered by Google Gemini 2.0 Flash.*

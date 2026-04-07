@@ -8,7 +8,44 @@ Zone 3 boundary rule (per CLAUDE.md):
 Security note: use .replace() instead of f-strings to inject article content.
 RSS article titles/summaries may contain literal {} characters (e.g. GDP growth {2.5%}),
 which would cause KeyError with str.format() or f-strings.
+
+Architecture:
+- build_news_system_instruction() → Gemini system_instruction parameter (agent identity)
+- build_morning_news_prompt() / build_afternoon_news_prompt() → user content (task + data)
 """
+
+# ==========================================
+# 🏛️ SYSTEM INSTRUCTION (News Agent Identity)
+# ==========================================
+
+_NEWS_SYSTEM_INSTRUCTION = """Bạn là News Curator, biên tập viên tin tức AI chuyên nghiệp.
+
+[VAI TRÒ]
+- Tổng hợp và tóm tắt tin tức từ nhiều nguồn tiếng Việt và quốc tế.
+- Chọn lọc tin quan trọng, loại bỏ tin trùng lặp hoặc kém chất lượng.
+- Trình bày ngắn gọn, dễ đọc trên Telegram.
+
+[PHONG CÁCH]
+- Tone: Khách quan, chuyên nghiệp, không thiên vị.
+- Ngôn ngữ: Tiếng Việt tự nhiên, tránh dịch máy.
+- Mỗi tin: 1-2 câu tóm tắt, đi thẳng vào trọng tâm.
+
+[QUY TẮC FORMAT TELEGRAM (BẮT BUỘC)]
+- KHÔNG dùng Markdown (##, **, ```). Telegram chỉ hỗ trợ HTML.
+- Dùng <b>text</b> cho tiêu đề quan trọng.
+- Dùng emoji phù hợp cho mỗi tin để dễ scan.
+- Giữ tổng độ dài dưới 3000 ký tự.
+- Mỗi tin cách nhau 1 dòng trống.
+
+[KHÔNG ĐƯỢC LÀM]
+- Không thêm ý kiến cá nhân hoặc bình luận chính trị.
+- Không bịa thông tin không có trong nguồn.
+- Không đưa link URL vào bản tóm tắt.
+- Không lặp lại nội dung giữa các tin."""
+
+# ==========================================
+# 📝 USER PROMPTS (Task + Data)
+# ==========================================
 
 _MORNING_TEMPLATE = """Hôm nay là {date_str}.
 
@@ -16,13 +53,10 @@ Dưới đây là các tin tức mới nhất:
 
 {articles_text}
 
-Hãy tóm tắt 3-5 tin quan trọng nhất theo format sau:
+Hãy tóm tắt 3-5 tin quan trọng nhất theo format:
 📰 TIN TỨC BUỔI SÁNG
 
-Với mỗi tin: dùng emoji phù hợp + tiêu đề ngắn gọn + 1-2 câu tóm tắt.
-
-Tone: Ngắn gọn, rõ ràng, tích cực để bắt đầu ngày mới.
-Không dùng Markdown headers (##). Dùng bold Telegram (<b>tiêu đề</b>) nếu cần."""
+Tone: Ngắn gọn, rõ ràng, tích cực để bắt đầu ngày mới."""
 
 _AFTERNOON_TEMPLATE = """Hôm nay là {date_str}.
 
@@ -30,13 +64,19 @@ Cập nhật tin tức buổi chiều:
 
 {articles_text}
 
-Hãy tóm tắt 3-5 tin nổi bật nhất theo format sau:
+Hãy tóm tắt 3-5 tin nổi bật nhất theo format:
 🌆 CẬP NHẬT CHIỀU
 
-Với mỗi tin: dùng emoji phù hợp + tiêu đề + 1-2 câu phân tích ngắn.
+Tone: Phân tích, trung lập, nhìn nhận đa chiều."""
 
-Tone: Phân tích, trung lập, nhìn nhận đa chiều.
-Không dùng Markdown headers (##). Dùng bold Telegram (<b>tiêu đề</b>) nếu cần."""
+
+def build_news_system_instruction() -> str:
+    """Build the system instruction for the News Agent persona.
+
+    This is passed to Gemini's system_instruction parameter, separate from user content.
+    The news agent has its own identity — it is NOT the Coach Dyno running coach.
+    """
+    return _NEWS_SYSTEM_INSTRUCTION
 
 
 def build_morning_news_prompt(articles_text: str, date_str: str) -> str:

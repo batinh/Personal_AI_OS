@@ -143,24 +143,13 @@ Run before any merge to `main` involving multiple files:
 python -m pytest tests/ -q
 ```
 
-**Expected baseline (as of 2026-03-23 / commit 3750a5f):**
+**Expected baseline (as of 2026-04-07):**
 
 ```
-202 passed, 14 failed
+273 passed, 0 failed
 ```
 
-**Gate:** Any new failure beyond the 14 known pre-existing failures = **BLOCK — do not push**.
-
-**Known pre-existing failures (do not count as new regressions):**
-```
-test_agent.py::TestGenerateMorningBriefing::*                 (2 tests)
-test_agent.py::TestExtractImplicitMemory::*                   (4 tests, 1 pass)
-test_agent.py::TestGenerateWeeklyReflection::*                (2 tests)
-test_database.py::TestRunActivities::test_gcs_placeholder_*  (1 test)
-test_database.py::TestChatHistory::test_save/load*            (2 tests)
-test_database.py::TestCoreMemory::test_inactive_overrides*    (1 test)
-test_database_run_activity_raw.py::*stream_file_path*         (2 tests)
-```
+**Gate:** Any new failure = **BLOCK — do not push**.
 
 ---
 
@@ -170,7 +159,7 @@ When doing an **urgent hotfix** to production:
 
 1. Fix the bug
 2. Run targeted tests for the changed module only
-3. Run `python -m pytest tests/ -q` — verify count doesn't increase beyond 14 failures
+3. Run `python -m pytest tests/ -q` — verify 0 failures
 4. Push with commit message: `hotfix: <description>`
 5. Update `TEST_EXECUTION_REPORT.md` trend table
 

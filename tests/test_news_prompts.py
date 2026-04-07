@@ -4,7 +4,11 @@ RED phase: all tests must FAIL before implementation exists.
 """
 import pytest
 
-from app.agents.news.prompts import build_morning_news_prompt, build_afternoon_news_prompt
+from app.agents.news.prompts import (
+    build_news_system_instruction,
+    build_morning_news_prompt,
+    build_afternoon_news_prompt,
+)
 
 
 SAMPLE_DATE = "Saturday, 05/04/2026"
@@ -88,3 +92,42 @@ def test_morning_and_afternoon_prompts_differ():
     morning = build_morning_news_prompt(SAMPLE_ARTICLES, SAMPLE_DATE)
     afternoon = build_afternoon_news_prompt(SAMPLE_ARTICLES, SAMPLE_DATE)
     assert morning != afternoon
+
+
+# ---------------------------------------------------------------------------
+# System instruction (News Agent identity)
+# ---------------------------------------------------------------------------
+
+def test_system_instruction_returns_string():
+    result = build_news_system_instruction()
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_system_instruction_is_vietnamese():
+    result = build_news_system_instruction()
+    vietnamese_markers = ["tin tức", "Telegram", "tiếng Việt"]
+    assert any(m.lower() in result.lower() for m in vietnamese_markers)
+
+
+def test_system_instruction_has_no_coach_content():
+    """News system instruction must NOT contain coach-specific terms."""
+    result = build_news_system_instruction()
+    coach_terms = ["Coach Dyno", "TRIMP", "ACWR", "HR Zone", "chạy bộ", "vận động viên"]
+    for term in coach_terms:
+        assert term not in result, f"News system instruction should not contain coach term: {term}"
+
+
+def test_system_instruction_has_telegram_format_rules():
+    result = build_news_system_instruction()
+    assert "Markdown" in result or "HTML" in result
+    assert "<b>" in result
+
+
+def test_system_instruction_not_in_user_prompts():
+    """User prompts should not duplicate system instruction content (persona, format rules)."""
+    morning = build_morning_news_prompt(SAMPLE_ARTICLES, SAMPLE_DATE)
+    afternoon = build_afternoon_news_prompt(SAMPLE_ARTICLES, SAMPLE_DATE)
+    # Format rules moved to system instruction — user prompts should not contain them
+    assert "<b>" not in morning
+    assert "<b>" not in afternoon

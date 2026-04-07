@@ -102,16 +102,27 @@ run_test() {
 run_test "GET /health"           "$T440_URL/health"    "200"
 run_test "GET /console (auth)"   "$T440_URL/console"   "401"
 run_test "GET /admin (auth)"     "$T440_URL/admin"     "401"
+run_test "GET /webhook (Strava)" "$T440_URL/webhook"   "200"
 
-# Test news agent config is loaded
+# Scheduler check
 HEALTH_BODY=$(curl -s "$HEALTH_ENDPOINT" 2>/dev/null)
+TOTAL=$((TOTAL + 1))
 if echo "$HEALTH_BODY" | grep -q '"scheduler":"running"'; then
     echo -e "  ${GREEN}PASS${NC} Scheduler is running"
     PASS=$((PASS + 1))
 else
     echo -e "  ${RED}FAIL${NC} Scheduler not running"
 fi
+
+# Docker logs error check (last 50 lines)
 TOTAL=$((TOTAL + 1))
+ERROR_COUNT=$(ssh_t440 "docker logs airunningcoach --tail 50 2>&1 | grep -ci 'error\|traceback\|exception'" 2>/dev/null || echo "0")
+if [ "$ERROR_COUNT" -eq 0 ]; then
+    echo -e "  ${GREEN}PASS${NC} No errors in recent logs"
+    PASS=$((PASS + 1))
+else
+    echo -e "  ${YELLOW}WARN${NC} Found $ERROR_COUNT error(s) in recent logs — check: docker logs airunningcoach --tail 50"
+fi
 
 # --- Summary ---
 echo ""

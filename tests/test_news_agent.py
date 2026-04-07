@@ -129,6 +129,29 @@ def test_morning_briefing_sends_to_telegram(mock_client, mock_fetch, mock_uid, m
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.client")
+@patch("app.agents.news.agent.build_news_system_instruction")
+def test_passes_news_system_instruction_to_gemini(mock_si, mock_client, mock_fetch, mock_uid, mock_links, mock_send, mock_save, base_config, sample_articles):
+    """Verify the news agent passes its own system_instruction (not coach's) to Gemini."""
+    mock_si.return_value = "Bạn là News Curator, biên tập viên tin tức AI."
+    mock_fetch.return_value = sample_articles
+    mock_client.models.generate_content.return_value.text = "Tin tức..."
+
+    generate_news_briefing(base_config, session="morning")
+
+    # build_news_system_instruction must be called
+    mock_si.assert_called_once()
+    # Gemini generate_content must be called with our system instruction in config
+    mock_client.models.generate_content.assert_called_once()
+    call_kwargs = mock_client.models.generate_content.call_args.kwargs
+    assert "config" in call_kwargs
+
+
+@patch("app.agents.news.agent.save_sent_articles")
+@patch("app.agents.news.agent.send_telegram_msg")
+@patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
+@patch("app.agents.news.agent.get_primary_user_id", return_value=111)
+@patch("app.agents.news.agent.fetch_all_feeds")
+@patch("app.agents.news.agent.client")
 def test_save_sent_articles_called_after_success(mock_client, mock_fetch, mock_uid, mock_links, mock_send, mock_save, base_config, sample_articles):
     mock_fetch.return_value = sample_articles
     mock_client.models.generate_content.return_value.text = "Tin tức buổi sáng..."

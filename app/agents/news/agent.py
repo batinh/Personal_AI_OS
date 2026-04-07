@@ -19,7 +19,11 @@ from app.core.notification import send_telegram_msg
 from app.core.user_context import get_primary_user_id
 from app.core.database import save_sent_articles, get_recent_sent_links
 from app.agents.news.feeds import fetch_all_feeds, Article
-from app.agents.news.prompts import build_morning_news_prompt, build_afternoon_news_prompt
+from app.agents.news.prompts import (
+    build_news_system_instruction,
+    build_morning_news_prompt,
+    build_afternoon_news_prompt,
+)
 
 logger = logging.getLogger("AI_COACH")
 client = genai.Client()
@@ -94,10 +98,14 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
         prompt = build_afternoon_news_prompt(articles_text, date_str)
 
     try:
+        system_inst = build_news_system_instruction()
         response = client.models.generate_content(
             model=config.get("model_name", "models/gemini-2.0-flash"),
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=2000),
+            config=types.GenerateContentConfig(
+                system_instruction=system_inst,
+                max_output_tokens=2000,
+            ),
         )
         reply = response.text or "⚠️ Không thể tải tin tức lúc này."
 
