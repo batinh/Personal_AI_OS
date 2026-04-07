@@ -69,13 +69,37 @@ Trước khi đề xuất BẤT KỲ thay đổi nào về kế hoạch hoặc k
 3. "Kết luận an toàn: [Hành động đề xuất]"
 Sau đó mới gọi Tool. KHÔNG gọi Tool mà không có lập luận này.
 
-[THANG ĐIỂM GCS (GOAL CONFIDENCE SCORE) — GROUNDED RUBRIC]
-GCS = 0–100% dựa trên 3 thành phần bằng nhau (mỗi phần ~33%):
-- 🔧 MOTOR (Kỹ thuật chạy): Cadence ≥ 175spm = full marks. Mỗi 5spm thấp hơn 175 = -10%. Stride Length ổn định = +5%.
-- 🏗️ FRAME (Thể lực nền): Aerobic Decoupling < 5% = full marks. Mỗi 5% tăng thêm = -15%.
-- ⛽ FUEL (Năng lực tốc độ): Pace thực tế so với Race Target Pace. Đạt pace = full. Chậm hơn 10s/km = -20%.
-Khi GCS < 40%: BẮT BUỘC khuyến khích, KHÔNG chỉ trích. Tập trung vào điểm mạnh.
-Khi GCS > 80%: Cảnh báo nguy cơ tự mãn, nhắc mục tiêu race.
+[THANG ĐIỂM GCS (GOAL CONFIDENCE SCORE) — POWER-INTEGRATED 4-PILLAR RUBRIC]
+GCS = 0–100% dựa trên 4 trụ cột có trọng số (BẮT BUỘC tính theo Power/IF nếu có dữ liệu Stryd):
+
+🏗️ SỨC BỀN / AEROBIC BASE (30%):
+  - Decoupling (Power-to-HR drift): <5% = +30pts | 5-10% = +18pts | >10% = +6pts
+  - Bài Easy/Long Run: IF thực tế 0.60-0.80 rFTP = đúng zone (+bonus). IF >0.85 ở bài Easy = cảnh báo chạy quá sức.
+  - Long run ≥25km: decoupling <7% + avg Power <82% rFTP → dấu hiệu FM readiness.
+
+⚡ TỐC ĐỘ / SPEED CAPACITY (30%):
+  - Cadence ≥ 175spm = full marks. Mỗi 5spm dưới 175 = -10%.
+  - Bài Interval: IF ≥ 0.95 rFTP = đúng cường độ. Bài Tempo/LT: IF 0.88-0.93.
+  - Bài Marathon Pace (MP): IF 0.82-0.87 rFTP (258-274W với rFTP 315W), Pace ≈ 5:35-5:45/km.
+  - Pace thực tế vs Race Target Pace Sub 4:00 (5:41/km): đạt = full | chậm 10s/km = -15%.
+
+🩺 SỨC KHỎE / HEALTH & INJURY RISK (25%):
+  - HR tăng đột biến không giải thích được (>10 bpm so với expected) = -15pts (nguy cơ overreach).
+  - Power sụt giảm >10% ở cùng effort level = dấu hiệu tích lũy mệt mỏi = -15pts.
+  - Không có dấu hiệu bất thường = +25pts. Có cảnh báo nhỏ = +15pts.
+
+🌀 THỂ TRẠNG / FRESHNESS & RECOVERY (15%):
+  - ACWR [0.8–1.3] = +15pts (sweet spot). ACWR [1.3–1.5] = +8pts (caution). ACWR >1.5 = +0pts (danger).
+  - Tuân thủ Taper (taper_factor < 1.0): BẮT BUỘC không tăng tải. Vi phạm Taper = -15pts ngay lập tức.
+
+[CHUẨN MỰC FM READINESS (SUB 4:00 — BẮT BUỘC ĐỐI CHIẾU KHI GCS > 70%)]
+- Long run benchmark: ≥30km, avg Power <82% rFTP, Decoupling <7%, Cadence ≥175 → GCS tin cậy cao.
+- MP simulation: 16-22km ở IF 0.82-0.87 (258-274W), HR <160 bpm, Decoupling <3% → tín hiệu race-ready.
+- Nền tảng: ≥3 tuần liên tiếp ở 65-75 km/tuần.
+- Cấu trúc tối ưu: 80% bài Easy (IF <0.75), 20% bài Quality (IF ≥0.88).
+
+Khi GCS < 40%: BẮT BUỘC khuyến khích, KHÔNG chỉ trích. Tập trung vào điểm mạnh và xu hướng cải thiện.
+Khi GCS > 80%: Nhắc VĐV duy trì kỷ luật, tránh tự mãn. So sánh với FM Readiness Benchmarks ở trên.
 
 [TÂM LÝ VẬN ĐỘNG VIÊN (EMOTIONAL INTELLIGENCE)]
 Luôn đánh giá tâm lý VĐV từ tone chat:
@@ -124,12 +148,12 @@ DEFAULT_ANALYSIS_TASK = """
 [NHIỆM VỤ PHÂN TÍCH CHUYÊN SÂU]
 Dựa vào dữ liệu buổi chạy và [ĐỐI CHIẾU GIÁO ÁN], hãy phân tích các khía cạnh sau:
 1. CONTEXT & HISTORY: Nhắc lại bối cảnh, mục tiêu bài chạy và tình trạng thể lực gần đây.
-2. EXECUTION: Đánh giá Pace, chiến thuật (Negative/Positive Split) và độ ổn định.
-3. MECHANICS: Đánh giá Guồng chân (Cadence), Sải chân (Stride), Lực (Power). Phát cảnh báo nếu có rủi ro.
-4. PHYSIOLOGY: Đánh giá Nhịp tim (so với LTHR), Độ trượt nhịp tim (Decoupling) và khả năng phục hồi.
-5. TRAINING LOAD: Xác định cường độ (IF) và tác động tải trọng.
-6. GOAL CONFIDENCE SCORE (GCS): Chấm điểm tự tin (0-100%) dựa trên Động cơ, Khung gầm, Nhiên liệu.
-7. NEXT ACTION: Đề xuất hành động cho 7 ngày tới.
+2. EXECUTION: Đánh giá Pace, IF (Avg Power / rFTP 315W), chiến thuật (Negative/Positive Split) và độ ổn định.
+3. MECHANICS: Đánh giá Cadence (ngưỡng 175spm), Power zone (% rFTP), Stride. Cảnh báo nếu IF bài Easy >0.80.
+4. PHYSIOLOGY: HR so với LTHR 168 bpm, Decoupling (Power-to-HR drift — ngưỡng 5%), phục hồi.
+5. TRAINING LOAD: IF tổng thể, loại bài tập, tác động ACWR.
+6. GOAL CONFIDENCE SCORE (GCS — 4 trụ cột): Tính theo Sức Bền 30% + Tốc Độ 30% + Sức Khỏe 25% + Thể Trạng 15%.
+7. NEXT ACTION: Đề xuất cụ thể 7 ngày tới với Power zone target và workout type.
 """
 
 # ==========================================
@@ -137,16 +161,18 @@ Dựa vào dữ liệu buổi chạy và [ĐỐI CHIẾU GIÁO ÁN], hãy phân 
 # ==========================================
 DEFAULT_ANALYSIS_REQUIREMENTS = """
 [YÊU CẦU PHÂN TÍCH CHI TIẾT]
-1. CONTEXT & HISTORY: Dựa vào bối cảnh, mục tiêu bài chạy và tình trạng thể lực gần đây để mở bài.
-2. EXECUTION: Đánh giá Pace trung bình, chiến thuật (Negative/Positive Split) và độ ổn định.
-3. MECHANICS: Đánh giá Guồng chân (Cadence — so sánh với ngưỡng 175spm), Sải chân (Stride) và Lực (Power). Phát cảnh báo nếu form chạy có vấn đề.
-4. PHYSIOLOGY: Đánh giá Nhịp tim (so sánh với [HR ZONES] trong bối cảnh), Độ trượt nhịp tim (Decoupling — ngưỡng 5%) và khả năng phục hồi.
-5. TRAINING LOAD: Xác định cường độ (IF) và tác động của tải trọng lên cơ thể.
-6. GOAL CONFIDENCE SCORE (GCS — 0–100%):
-   - 🔧 MOTOR (33%): Cadence ≥ 175spm = đủ điểm. Mỗi 5spm thấp hơn 175 = -10%. Stride ổn định = +5%.
-   - 🏗️ FRAME (33%): Decoupling < 5% = đủ điểm. Mỗi 5% tăng thêm = -15%.
-   - ⛽ FUEL (33%): Pace thực tế vs Race Pace mục tiêu. Đạt = đủ điểm. Chậm 10s/km = -20%.
-   Kết hợp 3 thành phần để đưa ra GCS% cuối cùng. KHÔNG được đoán mò.
+1. CONTEXT & HISTORY: Mở bài bằng bối cảnh đua (Sub 4:00 FM — 2026-12-06), mục tiêu bài chạy và tình trạng gần đây.
+2. EXECUTION: Pace trung bình, IF thực tế (Avg Power / rFTP), chiến thuật (Negative/Positive Split) và độ ổn định.
+3. MECHANICS: Cadence (so 175spm), Power zone (so % rFTP), Stride. Phát cảnh báo nếu IF bài Easy >0.80 rFTP.
+4. PHYSIOLOGY: HR so với LTHR/HR Zones, Decoupling (Power-to-HR drift — ngưỡng 5%), khả năng phục hồi.
+5. TRAINING LOAD: IF tổng thể, phân loại bài (Easy/Tempo/Interval/MP/Race-Specific), tác động lên ACWR.
+6. GOAL CONFIDENCE SCORE (GCS — 0–100%) — 4 TRỤ CỘT:
+   - 🏗️ SỨC BỀN (30%): Decoupling <5% = full | 5-10% = half | >10% = minimal. IF bài Easy <0.80 = bonus.
+   - ⚡ TỐC ĐỘ (30%): Cadence ≥175spm = full | -10% mỗi 5spm thiếu. Bài MP đạt IF 0.82-0.87 = full Speed.
+   - 🩺 SỨC KHỎE (25%): Không có HR/Power bất thường = full | HR spike hoặc Power sụt >10% = deduct 15pts.
+   - 🌀 THỂ TRẠNG (15%): ACWR [0.8-1.3] = full | [1.3-1.5] = half | >1.5 = zero + danger alert.
+   Tính GCS cuối cùng bằng tổng có trọng số. KHÔNG đoán mò — chỉ tính dựa trên dữ liệu thực tế trong bài chạy.
+7. NEXT ACTION: Đề xuất cụ thể cho 7 ngày tới, có Power zone target và workout type rõ ràng.
 """
 
 DEFAULT_REPORT_STRUCTURE = """
@@ -341,7 +367,7 @@ DEFAULT_REFLECTION_REQUIREMENTS = """
      • Tuần -1 / Race Week (taper_factor = 0.25): Target = 25%. Tập nhẹ, duy trì nhịp chân.
      • TUYỆT ĐỐI KHÔNG TĂNG TẢI trong bất kỳ tuần Taper nào.
    - Recovery Phase: Chỉ chạy thả lỏng Zone 1, không có bài Key.
-5. TIẾN ĐỘ MỤC TIÊU (GCS Trend): Nhìn vào điểm GCS của các bài chạy trong tuần. Xu hướng đang tăng lên, giữ nguyên, hay sụt giảm? Thể lực hiện tại có đáp ứng được mục tiêu Race không?
+5. TIẾN ĐỘ MỤC TIÊU (GCS Trend): Nhìn vào điểm GCS của các bài chạy trong tuần. Xu hướng đang tăng lên, giữ nguyên, hay sụt giảm? Đánh giá theo 4 trụ cột: Sức Bền (Decoupling + Power zone), Tốc Độ (Cadence + IF), Sức Khỏe (HR/Power anomalies), Thể Trạng (ACWR). Thể lực hiện tại có đáp ứng FM Sub 4:00 không?
 6. QUYẾT ĐỊNH (Action): Kết hợp cả 5 yếu tố trên để chốt Target (km) cho tuần tới. BẮT BUỘC tính taper_factor vào nếu đang trong Taper Phase.
 """
 
