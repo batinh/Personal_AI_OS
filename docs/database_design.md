@@ -20,6 +20,26 @@ Lưu các bài báo đã gửi để tránh gửi lại cùng một bài trong c
 * `sent_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
 * Index: `(user_id, article_link)` cho fast dedup lookup
 
+**7. Table: `news_alert_log` (Breaking Alert Cool-down)**
+Ghi nhận từng lần gửi breaking alert để thực thi cool-down (max 3 alert/category/2h).
+* `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+* `user_id` (TEXT NOT NULL)
+* `article_link` (TEXT NOT NULL) — URL bài báo được alert
+* `category` (TEXT NOT NULL) — category từ interest_profile (e.g. `"technology"`)
+* `alerted_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+* Index: `(user_id, category, alerted_at)` cho cool-down query
+
+**8. Table: `news_article_scores` (Score Cache)**
+Cache kết quả Gemini scoring để tránh re-score bài cũ trong mỗi watch cycle.
+* `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+* `user_id` (TEXT NOT NULL)
+* `article_link` (TEXT NOT NULL)
+* `score` (INTEGER NOT NULL) — 1–10
+* `category` (TEXT NOT NULL)
+* `reason` (TEXT)
+* `scored_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+* Unique constraint: `(user_id, article_link)`
+
 ---
 
 #### ⚙️ TIER 3: SYSTEM CONFIGURATION (Trạng thái & Cấu hình App)

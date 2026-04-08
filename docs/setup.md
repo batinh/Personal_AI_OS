@@ -117,7 +117,12 @@ Key fields to configure after first boot:
 | `race_distance_km` | Target race distance |
 | `model_name` | Gemini model (default: `models/gemini-2.0-flash`). Configurable from admin or console UI. |
 | `email_config` | SMTP settings for email notifications |
-| `news_agent.feeds` | List of RSS feed URLs for news briefings |
+| `news_agent.feeds` | 26 RSS feeds across 5 categories (general/technology/automotive/sports/economics). Add `category` field to each. |
+| `news_agent.watch_interval_minutes` | How often the watch cycle runs (default: `30`). |
+| `news_agent.alert_threshold` | Minimum score (1–10) to trigger a breaking alert (default: `7`). |
+| `news_agent.digest_threshold` | Minimum score to include an article in morning/afternoon digest (default: `4`). |
+| `news_agent.topic_cooldown_hours` | Cool-down window for alerts per category (default: `2`). Max 3 alerts/category/window. |
+| `news_agent.interest_profile` | 4-category relevance profile with `weight` and `keywords` arrays: `technology`, `sports_running`, `it_workforce`, `economics_politics`. |
 
 ---
 

@@ -5,6 +5,22 @@ Format: `[Date] type: description` — most recent first.
 
 ---
 
+## 2026-04-08 (2)
+
+### Added
+- **Agentic News Observer** — full event-driven upgrade of the news agent:
+  - `scorer.py`: batch Gemini scoring against a 4-category interest profile (technology/sports_running/it_workforce/economics_politics), each with configurable weight and keywords; result cached in `news_article_scores` table
+  - `alert_engine.py`: `run_news_watch()` cycle (default 30 min), scores all new articles, sends breaking alert via Telegram for any article scoring ≥ `alert_threshold` (default 7); cool-down enforces max 3 alerts/category per 2-hour window
+  - **26 RSS feeds** across 5 categories: general (3), technology (10), automotive (4), sports (3), it_workforce (1), economics (5)
+  - Two new DB tables: `news_alert_log` (cool-down tracking) and `news_article_scores` (score cache)
+  - `build_alert_prompt()` and `build_categorized_digest_prompt()` added to `prompts.py`
+  - Morning/afternoon digest now filters by `digest_threshold` (default 4) and skips already-alerted links
+  - `task_news_watch()` registered in `scheduler.py` on `IntervalTrigger`
+- **config.example.json**: added `watch_interval_minutes`, `alert_threshold`, `digest_threshold`, `topic_cooldown_hours`, `interest_profile`, and all 26 feed entries with `category` field
+- Test suite expanded to 273 passing (28 news-specific tests, 100% pass rate)
+
+---
+
 ## 2026-04-08
 
 ### Added
