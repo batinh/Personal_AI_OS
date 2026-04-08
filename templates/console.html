@@ -595,19 +595,8 @@
                     <option value="models/gemini-3.1-flash-preview"  {{ 'selected' if config.get('model_name')=='models/gemini-3.1-flash-preview' else '' }}>Gemini 3.1 Flash Preview</option>
                     <option value="models/gemini-3.1-pro-preview"    {{ 'selected' if config.get('model_name')=='models/gemini-3.1-pro-preview' else '' }}>Gemini 3.1 Pro Preview</option>
                   </optgroup>
-                  <optgroup label="── Gemini 2.5 ──">
-                    <option value="models/gemini-2.5-pro"            {{ 'selected' if config.get('model_name')=='models/gemini-2.5-pro' else '' }}>Gemini 2.5 Pro (Most Capable)</option>
-                    <option value="models/gemini-2.5-flash"          {{ 'selected' if config.get('model_name')=='models/gemini-2.5-flash' else '' }}>Gemini 2.5 Flash (Smarter)</option>
-                    <option value="models/gemini-2.5-flash-preview-04-17" {{ 'selected' if config.get('model_name')=='models/gemini-2.5-flash-preview-04-17' else '' }}>Gemini 2.5 Flash Preview 04-17</option>
-                  </optgroup>
-                  <optgroup label="── Gemini 2.0 ──">
-                    <option value="models/gemini-flash-latest"       {{ 'selected' if config.get('model_name')=='models/gemini-flash-latest' else '' }}>Gemini Flash Latest</option>
-                    <option value="models/gemini-2.0-flash"          {{ 'selected' if config.get('model_name')=='models/gemini-2.0-flash' else '' }}>Gemini 2.0 Flash (Recommended)</option>
-                    <option value="models/gemini-2.0-flash-lite"     {{ 'selected' if config.get('model_name')=='models/gemini-2.0-flash-lite' else '' }}>Gemini 2.0 Flash Lite (Fast)</option>
-                    <option value="models/gemini-2.0-pro-exp-02-05"  {{ 'selected' if config.get('model_name')=='models/gemini-2.0-pro-exp-02-05' else '' }}>Gemini 2.0 Pro Exp</option>
-                  </optgroup>
-                  <optgroup label="── Gemini 1.5 ──">
-                    <option value="models/gemini-1.5-flash"          {{ 'selected' if config.get('model_name')=='models/gemini-1.5-flash' else '' }}>Gemini 1.5 Flash (Stable)</option>
+                  <optgroup label="── Aliases ──">
+                    <option value="models/gemini-flash-latest"       {{ 'selected' if config.get('model_name')=='models/gemini-flash-latest' else '' }}>Gemini Flash Latest (Default)</option>
                     <option value="models/gemini-pro-latest"         {{ 'selected' if config.get('model_name')=='models/gemini-pro-latest' else '' }}>Gemini Pro Latest</option>
                   </optgroup>
                 </select>

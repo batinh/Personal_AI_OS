@@ -83,8 +83,8 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     digest_threshold = int(news_cfg.get("digest_threshold", 4))
     interest_profile = news_cfg.get("interest_profile", {})
     generation_model = config.get("model_name", "models/gemini-2.0-flash")
-    # Always use flash for batch scoring — consistent JSON, cost-efficient
-    scoring_model = "models/gemini-2.0-flash"
+    # Always use flash-latest for batch scoring — consistent JSON, cost-efficient
+    scoring_model = "models/gemini-flash-latest"
 
     logger.info(f"[NEWS] Fetching articles from {len(feeds)} feed(s)...")
     articles = fetch_all_feeds(feeds, max_per_feed=max_articles)

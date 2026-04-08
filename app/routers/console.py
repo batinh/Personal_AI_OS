@@ -128,7 +128,7 @@ async def console_save(
     harvest_minute: str = Form("15"),
     email_enabled: Optional[str] = Form(None),
     debug_mode: Optional[str] = Form(None),
-    model_name: str = Form("models/gemini-2.0-flash"),
+    model_name: str = Form("models/gemini-flash-latest"),
     username: str = Depends(verify_credentials),
 ):
     config = load_config()

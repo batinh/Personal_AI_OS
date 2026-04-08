@@ -15,7 +15,7 @@
     "report_structure": "",
     "output_format": "",
     "debug_mode": false,
-    "model_name": "models/gemini-2.0-flash",
+    "model_name": "models/gemini-flash-latest",
     "scheduler": {
         "briefing_time": "06:00",
         "backup_time": "02:00",
