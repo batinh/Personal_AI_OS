@@ -281,9 +281,16 @@ UNIVERSAL_FORMAT_RULES = """
 # ==========================================
 # 🏗️ LAYER 5: TASK BUILDERS (FINAL PROMPT ASSEMBLY)
 # ==========================================
-def build_chat_prompt(shared_context: str, current_plans: str) -> str:
+def build_chat_prompt(shared_context: str, current_plans: str, active_memories: str = "") -> str:
     """Flow 1: Handle Telegram Chat"""
-    return f"{shared_context}\n\n[GIÁO ÁN SẮP TỚI]\n{current_plans}\n\n[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu.\n\n{CHAT_FORMAT_RULES}"
+    memories_block = ""
+    if active_memories:
+        memories_block = (
+            f"\n\n[KÝ ỨC & TRẠNG THÁI VĐV]\n"
+            f"{active_memories}\n"
+            f"Lưu ý: Nếu VĐV đang có chấn thương hoặc tình trạng đặc biệt, hãy chủ động đề cập và điều chỉnh tư vấn cho phù hợp."
+        )
+    return f"{shared_context}\n\n[GIÁO ÁN SẮP TỚI]\n{current_plans}{memories_block}\n\n[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu.\n\n{CHAT_FORMAT_RULES}"
 
 def build_standup_prompt(shared_context: str, weather_data: str, recent_logs: str, today_plan: str, chat_context: str, active_memories: str = "Không có ghi chú đặc biệt.") -> str:
     """Flow 2: Morning Briefing (Standup) on Telegram

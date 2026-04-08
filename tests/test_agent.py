@@ -118,6 +118,7 @@ class TestHandleTelegramChat(unittest.TestCase):
             "g_loads": patch("app.agents.coach.agent.get_training_loads",
                              return_value={"acute_load_7d": 100, "chronic_load_28d": 400}),
             "g_target": patch("app.agents.coach.agent.get_weekly_target", return_value=None),
+            "g_mems":  patch("app.agents.coach.agent.get_all_active_memories", return_value=[]),
             "client":  patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT),
         }
 
@@ -221,6 +222,67 @@ class TestHandleTelegramChat(unittest.TestCase):
             mocks["typing"].assert_called_once_with("u1")
         finally:
             self._stop_patches(ps)
+
+    def test_active_memories_injected_into_standard_chat(self):
+        """Memories from DB are injected into chat prompt for standard messages."""
+        ps = self._patches()
+        ps["g_mems"] = patch(
+            "app.agents.coach.agent.get_all_active_memories",
+            return_value=[{"category": "injury_status", "fact": "Right knee pain since last week"}],
+        )
+        mocks = self._start_patches(ps)
+
+        fake_session = MagicMock()
+        fake_session.send_message.return_value = _make_response("Take care of that knee!")
+        _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
+
+        try:
+            from app.agents.coach.agent import handle_telegram_chat
+            # Long message → standard path
+            handle_telegram_chat("u1", "Tôi muốn biết kế hoạch chạy tuần này như thế nào?", _make_config())
+            mocks["g_mems"].assert_called_once_with("u1")
+            mocks["send_tg"].assert_called()
+        finally:
+            self._stop_patches(ps)
+
+    def test_short_message_uses_fast_path(self):
+        """Short conversational messages bypass full context build (fast path)."""
+        ps = self._patches()
+        mocks = self._start_patches(ps)
+
+        fake_session = MagicMock()
+        fake_session.send_message.return_value = _make_response("Chúc buổi sáng tốt lành!")
+        _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
+
+        try:
+            from app.agents.coach.agent import handle_telegram_chat
+            handle_telegram_chat("u1", "Chào buổi sáng!", _make_config())
+            # Fast path: should NOT call get_all_active_memories (full context skipped)
+            mocks["g_mems"].assert_not_called()
+            mocks["g_vol"].assert_not_called()
+            mocks["send_tg"].assert_called()
+        finally:
+            self._stop_patches(ps)
+
+    def test_classify_intent_fast_for_short_messages(self):
+        """Short conversational messages are classified as fast."""
+        from app.agents.coach.agent import _classify_intent
+        self.assertEqual(_classify_intent("Ok!"), "fast")
+        self.assertEqual(_classify_intent("Cảm ơn nhé"), "fast")
+        self.assertEqual(_classify_intent("👍"), "fast")
+
+    def test_classify_intent_standard_for_analysis(self):
+        """Messages with analysis keywords are classified as standard."""
+        from app.agents.coach.agent import _classify_intent
+        self.assertEqual(_classify_intent("Phân tích bài chạy hôm nay"), "standard")
+        self.assertEqual(_classify_intent("Kế hoạch tuần này như nào?"), "standard")
+        self.assertEqual(_classify_intent("Đổi lịch ngày mai đi"), "standard")
+
+    def test_classify_intent_standard_for_long_messages(self):
+        """Messages longer than 60 chars are classified as standard."""
+        from app.agents.coach.agent import _classify_intent
+        long_msg = "Hôm nay tôi cảm thấy hơi mệt và muốn hỏi về bài tập ngày mai?"
+        self.assertEqual(_classify_intent(long_msg), "standard")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

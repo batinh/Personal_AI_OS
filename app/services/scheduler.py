@@ -7,7 +7,10 @@ import logging
 
 from app.core.user_context import get_primary_user_id
 from app.core.config import load_config
+from app.core.database import get_training_loads
+from app.core.notification import send_telegram_msg
 from app.agents.coach.harvest import harvest_data
+from app.agents.coach.utils import calculate_training_phase
 from app.services.backup import perform_backup
 from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, extract_implicit_memory
 from app.services.weather import get_today_weather
@@ -97,6 +100,53 @@ def task_news_watch():
 
 
 # ==========================================
+# 🏃 PROACTIVE COACHING ALERTS
+# ==========================================
+def task_proactive_coach_check():
+    """
+    Daily proactive coaching check. Sends alerts for high training load or
+    upcoming race week taper reminders. Must be regular def (BackgroundScheduler thread pool).
+    """
+    chat_id = get_primary_user_id()
+    if not chat_id:
+        return
+
+    config = load_config()
+    loads = get_training_loads(str(chat_id))
+    acwr = loads.get("acwr", 0.0)
+    race_distance_km = float(config.get("race_distance_km", 21.1))
+    phase_info = calculate_training_phase(config.get("race_date", ""), race_distance_km)
+    weeks_left = phase_info.get("weeks_left", 99)
+
+    alerts = []
+
+    if acwr > 1.5:
+        alerts.append(
+            f"🚨 <b>CẢNH BÁO TẢI TRỌNG CAO</b>\n"
+            f"ACWR hiện tại: <b>{acwr:.2f}</b> (ngưỡng nguy hiểm > 1.5)\n"
+            f"Khuyến nghị: Giảm khối lượng ngay hôm nay. Bài Easy hoặc nghỉ hoàn toàn."
+        )
+    elif acwr > 1.3:
+        alerts.append(
+            f"⚠️ <b>Tải trọng tăng cao</b>\n"
+            f"ACWR: <b>{acwr:.2f}</b> (ngưỡng thận trọng > 1.3)\n"
+            f"Khuyến nghị: Không tăng thêm khối lượng tuần này."
+        )
+
+    if 1 <= weeks_left <= 3:
+        taper_label = {1: "Race Week", 2: "Tuần −2", 3: "Tuần −3"}.get(weeks_left, "")
+        taper_pct = {1: "25%", 2: "50%", 3: "75%"}.get(weeks_left, "")
+        alerts.append(
+            f"🏁 <b>Nhắc nhở Taper — {taper_label}</b>\n"
+            f"Còn {weeks_left} tuần đến ngày đua. Giảm khối lượng xuống còn {taper_pct} so với peak."
+        )
+
+    for msg in alerts:
+        send_telegram_msg(str(chat_id), msg)
+        logger.info(f"[SCHEDULER] Proactive alert sent: ACWR={acwr:.2f}, weeks_left={weeks_left}")
+
+
+# ==========================================
 # ⚙️ SCHEDULER MANAGEMENT
 # ==========================================
 def setup_jobs():
@@ -123,6 +173,7 @@ def setup_jobs():
     scheduler.add_job(perform_backup, CronTrigger(hour=bkh, minute=bkm, timezone=TZ_VN), id='backup', replace_existing=True)
     scheduler.add_job(task_auto_harvest, CronTrigger(hour=harv_hours, minute=harv_min, timezone=TZ_VN), id='harvest', replace_existing=True)
     scheduler.add_job(task_weekly_reflection, CronTrigger(day_of_week='sun', hour=20, minute=0, timezone=TZ_VN), id='weekly_reflection', replace_existing=True)
+    scheduler.add_job(task_proactive_coach_check, CronTrigger(hour=12, minute=0, timezone=TZ_VN), id='proactive_check', replace_existing=True)
 
     # News Agent jobs (only if enabled in config)
     news_cfg = config.get("news_agent", {})
