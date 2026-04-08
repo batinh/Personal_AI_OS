@@ -109,11 +109,13 @@ Key fields to configure after first boot:
 | Field | What to set |
 |---|---|
 | `system_instruction` | Your coach's personality and coaching style |
-| `user_profile` | Your athlete profile (age, FTP, target race, gear) |
-| `max_hr` / `rest_hr` | Your HR parameters for TRIMP calculation |
-| `race_date` | Target race date (ISO format: `YYYY-MM-DD`) |
+| `user_profile` | Identity-only: name, gear, target race. No zone tables — zones are computed from structured fields below. |
+| `max_hr` / `rest_hr` | HR parameters for TRIMP (Karvonen 5-zone). Required. |
+| `lthr_bpm` | Lactate Threshold HR (Joe Friel 7-zone model). Set `0` to fall back to Karvonen 5-zone. |
+| `rftp_watts` | Running FTP in watts (Stryd 6-zone power model). Set `0` to omit power zones. |
+| `race_date` | Target race date (ISO format: `YYYY-MM-DD`). Blank = off-season mode. |
 | `race_distance_km` | Target race distance |
-| `model_name` | Gemini model (default: `models/gemini-2.0-flash`) |
+| `model_name` | Gemini model (default: `models/gemini-2.0-flash`). Configurable from admin or console UI. |
 | `email_config` | SMTP settings for email notifications |
 | `news_agent.feeds` | List of RSS feed URLs for news briefings |
 

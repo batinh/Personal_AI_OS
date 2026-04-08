@@ -5,6 +5,25 @@ Format: `[Date] type: description` — most recent first.
 
 ---
 
+## 2026-04-08
+
+### Added
+- **LTHR / rFTP structured config fields**: `lthr_bpm` and `rftp_watts` added to `config.example.json` and the Admin UI Sports Science section
+  - `lthr_bpm > 0` → activates Joe Friel 7-zone HR model in `build_system_instruction()`
+  - `rftp_watts > 0` → activates Stryd 6-zone power zones
+  - Both set to `0` → falls back to Karvonen 5-zone HR model (unchanged behavior)
+
+### Changed
+- **`user_profile` convention**: now identity-only (name, gear, target race). Zone tables are no longer embedded here — they are computed dynamically from `lthr_bpm` / `rftp_watts` structured fields
+- **Gemini model selectors** updated in both `templates/admin.html` and `templates/console.html`:
+  - Full `<optgroup>` grouping: Gemini 3.1 / 2.5 / 2.0 / 1.5
+  - Added: `gemini-3.1-flash`, `gemini-3.1-flash-preview`, `gemini-3.1-pro-preview`
+
+### Fixed
+- **`scripts/deploy-t440.sh` log error check**: `[: 0\n0: integer expression expected` — SSH returned two lines from `grep -c`, breaking the arithmetic comparison. Fixed with `tr -d '[:space:]'` + `grep -oE '^[0-9]+'` to extract a clean integer.
+
+---
+
 ## 2026-04-07
 
 ### Added
