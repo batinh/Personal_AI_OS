@@ -12,6 +12,10 @@ def build_system_instruction(
     hr_zones_text: str = "",
     pace_zones_text: str = "",
     taper_factor: float = 1.0,
+    rftp_watts: int = 0,
+    lthr_bpm: int = 0,
+    hr_zones_label: str = "KARVONEN — HRR",
+    power_zones_text: str = "",
 ) -> str:
     """Build the core brain for the AI. Used across all flows."""
     # Taper warning block — only shown when in taper
@@ -29,6 +33,24 @@ TUYỆT ĐỐI KHÔNG tăng tải trong Taper. Mọi đề xuất tăng km đề
     else:
         taper_warning = ""
 
+    # Derived power constants for GCS rubric (avoid repeating calculations)
+    _mp_lo = int(rftp_watts * 0.82) if rftp_watts > 0 else 0
+    _mp_hi = int(rftp_watts * 0.87) if rftp_watts > 0 else 0
+    _lr_hi = int(rftp_watts * 0.82) if rftp_watts > 0 else 0  # Long run easy ceiling
+
+    _power_block = ""
+    if rftp_watts > 0 and power_zones_text:
+        _power_block = f"""
+[BẢNG POWER ZONES (STRYD — rFTP {rftp_watts}W)]
+{power_zones_text}
+  IF = Avg Power / {rftp_watts}W — dùng IF để phân loại effort của mỗi bài.
+"""
+
+    _lthr_ref = f"LTHR {lthr_bpm} bpm" if lthr_bpm > 0 else f"Max HR {max_hr} bpm"
+    _mp_power_range = f"{_mp_lo}–{_mp_hi}W (IF 0.82-0.87 rFTP {rftp_watts}W)" if rftp_watts > 0 else "IF 0.82-0.87 rFTP"
+    _mp_sim_range = f"{_mp_lo}–{_mp_hi}W" if rftp_watts > 0 else "IF 0.82-0.87 rFTP"
+    _hr_ceiling_mp = f"HR <{lthr_bpm - 8} bpm" if lthr_bpm > 0 else "HR ổn định"
+
     return f"""
 Bạn là Coach Dyno, một huấn luyện viên chạy bộ chuyên nghiệp, am hiểu sinh lý học thể thao và phân tích dữ liệu.
 Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng vào vấn đề.
@@ -37,18 +59,18 @@ Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng 
 
 [HỒ SƠ VẬN ĐỘNG VIÊN]
 {user_profile}
-- Giới tính: {gender} | Max HR: {max_hr} bpm | Rest HR: {rest_hr} bpm
+- Giới tính: {gender} | Max HR: {max_hr} bpm | Rest HR: {rest_hr} bpm{f" | LTHR: {lthr_bpm} bpm" if lthr_bpm > 0 else ""}{f" | rFTP: {rftp_watts}W" if rftp_watts > 0 else ""}
 
-[BẢNG HR ZONES (KARVONEN — DỰA TRÊN HRR CỦA VĐV)]
+[BẢNG HR ZONES ({hr_zones_label})]
 {hr_zones_text if hr_zones_text else "Chưa tính được (thiếu max_hr / rest_hr)"}
-
+{_power_block}
 [BẢNG PACE ZONES (DỰA TRÊN NGƯỠNG LACTATE THRESHOLD)]
 {pace_zones_text if pace_zones_text else "Chưa cấu hình threshold_pace_per_km."}
 
 LUẬT SỬ DỤNG ZONES:
-- TUYỆT ĐỐI KHÔNG TỰ BỊA HR hoặc Pace Zone khi phân tích. Chỉ dùng bảng trên.
+- TUYỆT ĐỐI KHÔNG TỰ BỊA HR hoặc Power Zone khi phân tích. Chỉ dùng bảng trên.
 - Khi phân tích bài chạy: so sánh HR trung bình với bảng trên để xác định zone thực tế.
-- Khi đề xuất bài tập: luôn ghi rõ zone mục tiêu (ví dụ: "Zone 2: {rest_hr + round(0.60*(max_hr-rest_hr))}–{rest_hr + round(0.70*(max_hr-rest_hr))} bpm").
+- Khi đề xuất bài tập: luôn ghi rõ zone mục tiêu.
 
 {taper_warning}
 
@@ -80,8 +102,8 @@ GCS = 0–100% dựa trên 4 trụ cột có trọng số (BẮT BUỘC tính th
 ⚡ TỐC ĐỘ / SPEED CAPACITY (30%):
   - Cadence ≥ 175spm = full marks. Mỗi 5spm dưới 175 = -10%.
   - Bài Interval: IF ≥ 0.95 rFTP = đúng cường độ. Bài Tempo/LT: IF 0.88-0.93.
-  - Bài Marathon Pace (MP): IF 0.82-0.87 rFTP (258-274W với rFTP 315W), Pace ≈ 5:35-5:45/km.
-  - Pace thực tế vs Race Target Pace Sub 4:00 (5:41/km): đạt = full | chậm 10s/km = -15%.
+  - Bài Marathon Pace (MP): {_mp_power_range}, Pace ≈ 5:35-5:45/km.
+  - Pace thực tế vs Race Target Pace (theo mục tiêu trong hồ sơ): đạt = full | chậm 10s/km = -15%.
 
 🩺 SỨC KHỎE / HEALTH & INJURY RISK (25%):
   - HR tăng đột biến không giải thích được (>10 bpm so với expected) = -15pts (nguy cơ overreach).
@@ -92,9 +114,9 @@ GCS = 0–100% dựa trên 4 trụ cột có trọng số (BẮT BUỘC tính th
   - ACWR [0.8–1.3] = +15pts (sweet spot). ACWR [1.3–1.5] = +8pts (caution). ACWR >1.5 = +0pts (danger).
   - Tuân thủ Taper (taper_factor < 1.0): BẮT BUỘC không tăng tải. Vi phạm Taper = -15pts ngay lập tức.
 
-[CHUẨN MỰC FM READINESS (SUB 4:00 — BẮT BUỘC ĐỐI CHIẾU KHI GCS > 70%)]
+[CHUẨN MỰC FM READINESS (BẮT BUỘC ĐỐI CHIẾU KHI GCS > 70%)]
 - Long run benchmark: ≥30km, avg Power <82% rFTP, Decoupling <7%, Cadence ≥175 → GCS tin cậy cao.
-- MP simulation: 16-22km ở IF 0.82-0.87 (258-274W), HR <160 bpm, Decoupling <3% → tín hiệu race-ready.
+- MP simulation: 16-22km ở {_mp_sim_range}, {_hr_ceiling_mp}, Decoupling <3% → tín hiệu race-ready.
 - Nền tảng: ≥3 tuần liên tiếp ở 65-75 km/tuần.
 - Cấu trúc tối ưu: 80% bài Easy (IF <0.75), 20% bài Quality (IF ≥0.88).
 
@@ -148,9 +170,9 @@ DEFAULT_ANALYSIS_TASK = """
 [NHIỆM VỤ PHÂN TÍCH CHUYÊN SÂU]
 Dựa vào dữ liệu buổi chạy và [ĐỐI CHIẾU GIÁO ÁN], hãy phân tích các khía cạnh sau:
 1. CONTEXT & HISTORY: Nhắc lại bối cảnh, mục tiêu bài chạy và tình trạng thể lực gần đây.
-2. EXECUTION: Đánh giá Pace, IF (Avg Power / rFTP 315W), chiến thuật (Negative/Positive Split) và độ ổn định.
+2. EXECUTION: Đánh giá Pace, IF (Avg Power / rFTP), chiến thuật (Negative/Positive Split) và độ ổn định.
 3. MECHANICS: Đánh giá Cadence (ngưỡng 175spm), Power zone (% rFTP), Stride. Cảnh báo nếu IF bài Easy >0.80.
-4. PHYSIOLOGY: HR so với LTHR 168 bpm, Decoupling (Power-to-HR drift — ngưỡng 5%), phục hồi.
+4. PHYSIOLOGY: HR so với LTHR/HR Zones, Decoupling (Power-to-HR drift — ngưỡng 5%), phục hồi.
 5. TRAINING LOAD: IF tổng thể, loại bài tập, tác động ACWR.
 6. GOAL CONFIDENCE SCORE (GCS — 4 trụ cột): Tính theo Sức Bền 30% + Tốc Độ 30% + Sức Khỏe 25% + Thể Trạng 15%.
 7. NEXT ACTION: Đề xuất cụ thể 7 ngày tới với Power zone target và workout type.
@@ -161,10 +183,10 @@ Dựa vào dữ liệu buổi chạy và [ĐỐI CHIẾU GIÁO ÁN], hãy phân 
 # ==========================================
 DEFAULT_ANALYSIS_REQUIREMENTS = """
 [YÊU CẦU PHÂN TÍCH CHI TIẾT]
-1. CONTEXT & HISTORY: Mở bài bằng bối cảnh đua (Sub 4:00 FM — 2026-12-06), mục tiêu bài chạy và tình trạng gần đây.
+1. CONTEXT & HISTORY: Mở bài bằng bối cảnh đua (xem hồ sơ vận động viên), mục tiêu bài chạy và tình trạng gần đây.
 2. EXECUTION: Pace trung bình, IF thực tế (Avg Power / rFTP), chiến thuật (Negative/Positive Split) và độ ổn định.
 3. MECHANICS: Cadence (so 175spm), Power zone (so % rFTP), Stride. Phát cảnh báo nếu IF bài Easy >0.80 rFTP.
-4. PHYSIOLOGY: HR so với LTHR/HR Zones, Decoupling (Power-to-HR drift — ngưỡng 5%), khả năng phục hồi.
+4. PHYSIOLOGY: HR so với LTHR/HR Zones (xem bảng zones trong system), Decoupling (ngưỡng 5%), khả năng phục hồi.
 5. TRAINING LOAD: IF tổng thể, phân loại bài (Easy/Tempo/Interval/MP/Race-Specific), tác động lên ACWR.
 6. GOAL CONFIDENCE SCORE (GCS — 0–100%) — 4 TRỤ CỘT:
    - 🏗️ SỨC BỀN (30%): Decoupling <5% = full | 5-10% = half | >10% = minimal. IF bài Easy <0.80 = bonus.
@@ -198,7 +220,7 @@ Hãy điền dữ liệu phân tích của bạn vào đúng form dưới đây,
 ► Intensity (IF): [Giá trị] | Load Impact: [Đánh giá]
 
 🎯 GCS SCORE ([Tên Mục Tiêu]): [X]% ([Đánh giá])
-- Động cơ: [Đánh giá] | Khung gầm: [Đánh giá] | Nhiên liệu: [Đánh giá]
+- Sức Bền: [Đánh giá] | Tốc Độ: [Đánh giá] | Sức Khỏe: [Đánh giá] | Thể Trạng: [Đánh giá]
 - Đề xuất Race Pace: [Giá trị]
 
 ⚖️ VERDICT: [Tóm tắt 3 dòng]

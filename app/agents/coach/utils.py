@@ -123,11 +123,62 @@ def calculate_hr_zones(max_hr: int, rest_hr: int) -> dict:
     }
 
 
+def calculate_lthr_zones(lthr_bpm: int) -> dict:
+    """
+    Calculate 7 Joe Friel HR Zones based on Lactate Threshold Heart Rate (LTHR).
+    Boundaries: Z1<70%, Z2 70-85%, Z3 85-90%, Z4 90-95%, Z5a 95-98%, Z5b 98-102%, Z5c >102% LTHR.
+    """
+    l = lthr_bpm
+    return {
+        "zone1":  {"name": "Recovery",       "min": 0,               "max": round(l * 0.70), "pct": "<70% LTHR"},
+        "zone2":  {"name": "Aerobic",         "min": round(l * 0.70), "max": round(l * 0.85), "pct": "70-85% LTHR"},
+        "zone3":  {"name": "Tempo",           "min": round(l * 0.85), "max": round(l * 0.90), "pct": "85-90% LTHR"},
+        "zone4":  {"name": "Sub-Threshold",   "min": round(l * 0.90), "max": round(l * 0.95), "pct": "90-95% LTHR"},
+        "zone5a": {"name": "VO2max (5a)",     "min": round(l * 0.95), "max": round(l * 0.98), "pct": "95-98% LTHR"},
+        "zone5b": {"name": "Anaerobic (5b)",  "min": round(l * 0.98), "max": round(l * 1.02), "pct": "98-102% LTHR"},
+        "zone5c": {"name": "Max Speed (5c)",  "min": round(l * 1.02), "max": 9999,              "pct": ">102% LTHR"},
+    }
+
+
 def format_hr_zones_for_prompt(zones: dict) -> str:
-    """Format HR zones dict into a compact string block for prompt injection."""
+    """Format Karvonen HR zones dict into a compact string block for prompt injection."""
     lines = []
     for k, v in zones.items():
         lines.append(f"  {k.upper()} ({v['name']}): {v['min']}–{v['max']} bpm")
+    return "\n".join(lines)
+
+
+def format_lthr_zones_for_prompt(zones: dict) -> str:
+    """Format Joe Friel LTHR zones dict into a compact string block for prompt injection."""
+    lines = []
+    for k, v in zones.items():
+        max_str = f">{v['min']} bpm" if v["max"] >= 9999 else f"{v['max']} bpm"
+        lines.append(f"  {k.upper()} ({v['name']}): {v['min']}–{max_str}  ({v['pct']})")
+    return "\n".join(lines)
+
+
+def calculate_power_zones(rftp_watts: int) -> dict:
+    """
+    Calculate 6 Stryd Power Zones based on Running FTP (rFTP).
+    Boundaries: Z1<60%, Z2 60-75%, Z3 75-88%, Z4 88-93%, Z5 93-110%, Z6 >110% rFTP.
+    """
+    r = rftp_watts
+    return {
+        "zone1": {"name": "Recovery",        "min": 0,               "max": round(r * 0.60), "pct": "<60% rFTP"},
+        "zone2": {"name": "Easy / Aerobic",  "min": round(r * 0.60), "max": round(r * 0.75), "pct": "60-75% rFTP"},
+        "zone3": {"name": "Tempo / LT",      "min": round(r * 0.75), "max": round(r * 0.88), "pct": "75-88% rFTP"},
+        "zone4": {"name": "Sub-Threshold",   "min": round(r * 0.88), "max": round(r * 0.93), "pct": "88-93% rFTP"},
+        "zone5": {"name": "VO2max",          "min": round(r * 0.93), "max": round(r * 1.10), "pct": "93-110% rFTP"},
+        "zone6": {"name": "Anaerobic / Max", "min": round(r * 1.10), "max": 9999,              "pct": ">110% rFTP"},
+    }
+
+
+def format_power_zones_for_prompt(zones: dict) -> str:
+    """Format Stryd power zones dict into a compact string block for prompt injection."""
+    lines = []
+    for v in zones.values():
+        max_str = f">{v['min']}W" if v["max"] >= 9999 else f"{v['max']}W"
+        lines.append(f"  {v['name']} ({v['pct']}): {v['min']}–{max_str}")
     return "\n".join(lines)
 
 
@@ -368,11 +419,23 @@ def build_agent_context(user_id: str, config: dict, now: datetime = None) -> Age
     actual_volume = get_weekly_volume(user_id, now)
     weekly_decision_context = get_formatted_weekly_context(user_id)
 
-    # Compute HR zones
+    # Compute HR zones — prefer Joe Friel LTHR model when lthr_bpm is configured
     max_hr = int(config.get("max_hr", 185))
     rest_hr = int(config.get("rest_hr", 55))
-    hr_zones = calculate_hr_zones(max_hr, rest_hr)
-    hr_zones_text = format_hr_zones_for_prompt(hr_zones)
+    lthr_bpm = int(config.get("lthr_bpm", 0))
+    if lthr_bpm > 0:
+        hr_zones_text = format_lthr_zones_for_prompt(calculate_lthr_zones(lthr_bpm))
+        hr_zones_label = f"JOE FRIEL — LTHR {lthr_bpm} bpm"
+    else:
+        hr_zones_text = format_hr_zones_for_prompt(calculate_hr_zones(max_hr, rest_hr))
+        hr_zones_label = "KARVONEN — HRR"
+
+    # Compute Power zones (Stryd) — only when rftp_watts is configured
+    rftp_watts = int(config.get("rftp_watts", 0))
+    if rftp_watts > 0:
+        power_zones_text = format_power_zones_for_prompt(calculate_power_zones(rftp_watts))
+    else:
+        power_zones_text = ""
 
     # Compute Pace zones (optional — only if threshold_pace_per_km is configured)
     threshold_pace = int(config.get("threshold_pace_per_km", 0))
@@ -387,6 +450,8 @@ def build_agent_context(user_id: str, config: dict, now: datetime = None) -> Age
     system_inst = build_system_instruction(
         config.get("system_instruction", ""), config.get("user_profile", ""),
         max_hr, rest_hr, gender, hr_zones_text, pace_zones_text, taper_factor,
+        rftp_watts=rftp_watts, lthr_bpm=lthr_bpm, hr_zones_label=hr_zones_label,
+        power_zones_text=power_zones_text,
     )
     shared_context = get_shared_context_block(
         now.strftime('%A, %d/%m/%Y'), user_id, phase_text, countdown_text,

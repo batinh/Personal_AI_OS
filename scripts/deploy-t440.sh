@@ -116,7 +116,8 @@ fi
 
 # Docker logs error check (last 50 lines)
 TOTAL=$((TOTAL + 1))
-ERROR_COUNT=$(ssh_t440 "docker logs airunningcoach --tail 50 2>&1 | grep -ci 'error\|traceback\|exception'" 2>/dev/null || echo "0")
+ERROR_COUNT=$(ssh_t440 "docker logs airunningcoach --tail 50 2>&1 | grep -ci 'error\|traceback\|exception'" 2>/dev/null | tr -d '[:space:]' | head -c 10 || echo "0")
+ERROR_COUNT=$(echo "${ERROR_COUNT:-0}" | grep -oE '^[0-9]+' || echo "0")
 if [ "$ERROR_COUNT" -eq 0 ]; then
     echo -e "  ${GREEN}PASS${NC} No errors in recent logs"
     PASS=$((PASS + 1))

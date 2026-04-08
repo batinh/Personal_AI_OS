@@ -1,35 +1,45 @@
 {
     "gender": "male",
-    "race_distance_km": 21.1,
-    "threshold_pace_per_km": 310,
-    "race_date": "2026-03-29",
-    "system_instruction": "Bạn là một huấn luyện viên chạy bộ chuyên nghiệp, am hiểu sinh lý học thể thao",
-    "user_profile": "User là nam, đang train sub 1:45 HM. Ngày race 29.03.2026, HR Max 185, sở hữu Garmin 955",
-    "task_description": "Hãy phân tích chi tiết bài tập này. đọc toàn bộ cấu trúc bài chạy, hãy kết hợp power, run dynamic, cadence, stride, và nhip tim, pace, Performance Condition, Body Battery,  Stamina Và kết hợp lịch sử trò chuyện profile. Từ đó đưa ra nhận định. Đánh giá chi tiêt. và lập báo cáo.  và phân tích dữ liệu và profile đã trao đổi, Hãy phân tích bài chạy này như một huấn luyện viên nghiêm khắc nhưng khích lệ...",
-    "analysis_requirements": "1. Effort Analysis: Based on HR Max and Resting HR, determine the primary Heart Rate Zones used.\n2. Pacing Strategy: Analyze 'Velocity_m_s'. Did the runner maintain a steady pace? Look for positive/negative splits.\n3. Technique & Terrain: Correlation between 'Cadence_spm' and 'Grade_pct'.\n4. Verdict: Give a short, actionable summary for the next session.",
-    "output_format": "- Do NOT use Markdown (no **bold**, no ## headers, no tables).\n- Use UPPERCASE for section headers.\n- Use Emojis for visual bullet points.\n- Structure exactly like this:\n\n🔥 PHÂN TÍCH NHỊP TIM\n(Short analysis of effort/zones)\n\n⚡ CHIẾN THUẬT PACE\n(Comments on pacing consistency)\n\n🦶 KỸ THUẬT & ĐỊA HÌNH\n(Cadence and terrain analysis)\n\n🎯 KẾT LUẬN\n(Final verdict and actionable advice for next run)\n\n---\n🤖 AI Coach",
-    "email_config": {
-      "enabled": true,
-      "smtp_server": "smtp.gmail.com",
-      "smtp_port": 587,
-      "sender_email": "Sender@gmail.com",
-      "sender_password": "your sender email app password",
-      "receiver_email": "your reciever email@gmail.com"
+    "race_distance_km": 42.2,
+    "threshold_pace_per_km": 335,
+    "race_date": "2026-10-18",
+    "current_goal": "Sub 4:00 FM",
+    "max_hr": 185,
+    "rest_hr": 55,
+    "lthr_bpm": 0,
+    "rftp_watts": 0,
+    "system_instruction": "You are an expert running coach specialising in endurance sports science.",
+    "user_profile": "Male runner targeting Sub 4:00 FM. Equipment: Garmin 955 + Stryd foot pod.",
+    "task_description": "",
+    "analysis_requirements": "",
+    "report_structure": "",
+    "output_format": "",
+    "debug_mode": false,
+    "model_name": "models/gemini-2.0-flash",
+    "scheduler": {
+        "briefing_time": "06:00",
+        "backup_time": "02:00",
+        "harvest_hours": "0,6,12,18",
+        "harvest_minute": "15"
     },
-    "admin_auth": {
-      "username": "admin",
-      "password": "123"
+    "email_config": {
+        "enabled": false,
+        "smtp_server": "smtp.gmail.com",
+        "smtp_port": 587,
+        "sender_email": "your.sender@gmail.com",
+        "sender_password": "your_gmail_app_password",
+        "receiver_email": "your.receiver@gmail.com"
     },
     "news_agent": {
-      "enabled": true,
-      "morning_time": "07:00",
-      "afternoon_time": "17:00",
-      "telegram_chat_id": "",
-      "max_articles_per_feed": 5,
-      "feeds": [
-        {"name": "VnExpress", "url": "https://vnexpress.net/rss/tin-moi-nhat.rss"},
-        {"name": "Tuoi Tre", "url": "https://tuoitre.vn/rss/tin-moi-nhat.rss"},
-        {"name": "BBC Vietnamese", "url": "https://feeds.bbci.co.uk/vietnamese/rss.xml"}
-      ]
+        "enabled": true,
+        "morning_time": "07:00",
+        "afternoon_time": "17:00",
+        "telegram_chat_id": "",
+        "max_articles_per_feed": 5,
+        "feeds": [
+            {"name": "VnExpress", "url": "https://vnexpress.net/rss/tin-moi-nhat.rss"},
+            {"name": "Tuoi Tre", "url": "https://tuoitre.vn/rss/tin-moi-nhat.rss"},
+            {"name": "BBC Vietnamese", "url": "https://feeds.bbci.co.uk/vietnamese/rss.xml"}
+        ]
     }
-  }
+}

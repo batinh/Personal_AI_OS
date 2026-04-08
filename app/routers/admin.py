@@ -66,6 +66,8 @@ async def save_settings(
     output_format: str = Form(""),          
     max_hr: int = Form(185),
     rest_hr: int = Form(55),
+    lthr_bpm: int = Form(0),
+    rftp_watts: int = Form(0),
     race_date: Optional[str] = Form(None),
     current_goal: str = Form(""),
     briefing_time: str = Form("06:00"),
@@ -91,6 +93,8 @@ async def save_settings(
     # 2. Update Sports Science parameters & Goals
     config["max_hr"] = max_hr
     config["rest_hr"] = rest_hr
+    config["lthr_bpm"] = lthr_bpm
+    config["rftp_watts"] = rftp_watts
     config["race_date"] = race_date
     config["current_goal"] = current_goal
     

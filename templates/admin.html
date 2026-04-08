@@ -108,6 +108,14 @@
                             <input type="number" class="form-control" name="rest_hr" value="{{ config.get('rest_hr', 55) }}">
                         </div>
                         <div class="col-md-3 mb-3">
+                            <label class="form-label fw-bold">LTHR (bpm) <small class="text-muted">Joe Friel zones</small></label>
+                            <input type="number" class="form-control" name="lthr_bpm" value="{{ config.get('lthr_bpm', 0) }}" placeholder="0 = use Karvonen">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label fw-bold">rFTP (watts) <small class="text-muted">Stryd Power zones</small></label>
+                            <input type="number" class="form-control" name="rftp_watts" value="{{ config.get('rftp_watts', 0) }}" placeholder="0 = no power zones">
+                        </div>
+                        <div class="col-md-3 mb-3">
                             <label class="form-label fw-bold">Target Race Date</label>
                             <input type="date" class="form-control" name="race_date" value="{{ config.get('race_date', '') }}">
                         </div>
@@ -189,14 +197,26 @@
                     <div class="mb-4 p-3 border rounded bg-light">
                         <label class="form-label fw-bold text-primary"><i class="fas fa-robot"></i> AI Brain Model (Live Switch)</label>
                         <select class="form-select border-primary" name="model_name">
-                            <option value="models/gemini-flash-latest" {% if config.get('model_name') == 'models/gemini-flash-latest' %}selected{% endif %}>Gemini Flash Latest (Luôn là bản mới nhất - Quota thấp)</option>
-                            <option value="models/gemini-2.5-flash" {% if config.get('model_name') == 'models/gemini-2.5-flash' %}selected{% endif %}>Gemini 2.5 Flash (Smarter - Tốt cho phân tích chuyên sâu)</option>
-                            <option value="models/gemini-2.0-flash" {% if config.get('model_name') == 'models/gemini-2.0-flash' %}selected{% endif %}>Gemini 2.0 Flash (Recommended - Ổn định & Nhanh)</option>
-                            <option value="models/gemini-1.5-flash" {% if config.get('model_name') == 'models/gemini-1.5-flash' %}selected{% endif %}>Gemini 1.5 Flash (Rất ổn định - Quota cao)</option>
-                            <option value="models/gemini-2.0-flash-lite" {% if config.get('model_name') == 'models/gemini-2.0-flash-lite' %}selected{% endif %}>Gemini 2.0 Flash Lite (Bản nhẹ - Siêu tốc)</option>
-                            <option value="models/gemini-3.1-pro-preview" {% if config.get('model_name') == 'models/gemini-3.1-pro-preview' %}selected{% endif %}>Gemini 3.1 Pro Preview (Bản Pro mới - Preview)</option>
-                            <option value="models/gemini-pro-latest" {% if config.get('model_name') == 'models/gemini-pro-latest' %}selected{% endif %}>Gemini Pro Latest (Pro ổn định - Luôn bản mới)</option>
-                            <option value="models/gemini-2.0-pro-exp-02-05" {% if config.get('model_name') == 'models/gemini-2.0-pro-exp-02-05' %}selected{% endif %}>Gemini 2.0 Pro Experimental (Rất thông minh - Hay bị giới hạn)</option>
+                            <optgroup label="─── Gemini 3.1 (Mới nhất) ───">
+                                <option value="models/gemini-3.1-flash" {% if config.get('model_name') == 'models/gemini-3.1-flash' %}selected{% endif %}>Gemini 3.1 Flash (Nhanh - Recommended)</option>
+                                <option value="models/gemini-3.1-flash-preview" {% if config.get('model_name') == 'models/gemini-3.1-flash-preview' %}selected{% endif %}>Gemini 3.1 Flash Preview (Mới nhất - Preview)</option>
+                                <option value="models/gemini-3.1-pro-preview" {% if config.get('model_name') == 'models/gemini-3.1-pro-preview' %}selected{% endif %}>Gemini 3.1 Pro Preview (Thông minh nhất - Preview)</option>
+                            </optgroup>
+                            <optgroup label="─── Gemini 2.5 ───">
+                                <option value="models/gemini-2.5-pro" {% if config.get('model_name') == 'models/gemini-2.5-pro' %}selected{% endif %}>Gemini 2.5 Pro (Phân tích chuyên sâu - Quota thấp)</option>
+                                <option value="models/gemini-2.5-flash" {% if config.get('model_name') == 'models/gemini-2.5-flash' %}selected{% endif %}>Gemini 2.5 Flash (Cân bằng tốc độ & độ chính xác)</option>
+                                <option value="models/gemini-2.5-flash-preview-04-17" {% if config.get('model_name') == 'models/gemini-2.5-flash-preview-04-17' %}selected{% endif %}>Gemini 2.5 Flash Preview 04-17</option>
+                            </optgroup>
+                            <optgroup label="─── Gemini 2.0 ───">
+                                <option value="models/gemini-flash-latest" {% if config.get('model_name') == 'models/gemini-flash-latest' %}selected{% endif %}>Gemini Flash Latest (Alias luôn mới nhất)</option>
+                                <option value="models/gemini-2.0-flash" {% if config.get('model_name') == 'models/gemini-2.0-flash' %}selected{% endif %}>Gemini 2.0 Flash (Ổn định & Nhanh)</option>
+                                <option value="models/gemini-2.0-flash-lite" {% if config.get('model_name') == 'models/gemini-2.0-flash-lite' %}selected{% endif %}>Gemini 2.0 Flash Lite (Siêu tốc - Quota cao)</option>
+                                <option value="models/gemini-2.0-pro-exp-02-05" {% if config.get('model_name') == 'models/gemini-2.0-pro-exp-02-05' %}selected{% endif %}>Gemini 2.0 Pro Experimental</option>
+                            </optgroup>
+                            <optgroup label="─── Gemini 1.5 ───">
+                                <option value="models/gemini-1.5-flash" {% if config.get('model_name') == 'models/gemini-1.5-flash' %}selected{% endif %}>Gemini 1.5 Flash (Rất ổn định - Quota cao nhất)</option>
+                                <option value="models/gemini-pro-latest" {% if config.get('model_name') == 'models/gemini-pro-latest' %}selected{% endif %}>Gemini Pro Latest (Alias Pro ổn định)</option>
+                            </optgroup>
                         </select>
                         <div class="form-text text-muted">Thay đổi có hiệu lực ngay lập tức cho tin nhắn tiếp theo.</div>
                     </div>
