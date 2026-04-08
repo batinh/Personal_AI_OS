@@ -1,5 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 import pytz
 import os
 import logging
@@ -11,6 +12,7 @@ from app.services.backup import perform_backup
 from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, extract_implicit_memory
 from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
+from app.agents.news.alert_engine import run_news_watch
 
 logger = logging.getLogger("AI_COACH")
 TZ_VN = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
@@ -85,6 +87,16 @@ def task_afternoon_news():
 
 
 # ==========================================
+# 📍 CONTINUOUS NEWS WATCH (ALERT ENGINE)
+# ==========================================
+def task_news_watch():
+    """Continuous news watch — scores articles and sends breaking alerts. Must be regular def."""
+    logger.info("[SCHEDULER] Running news watch cycle...")
+    config = load_config()
+    run_news_watch(config)
+
+
+# ==========================================
 # ⚙️ SCHEDULER MANAGEMENT
 # ==========================================
 def setup_jobs():
@@ -121,9 +133,16 @@ def setup_jobs():
         except Exception:
             nh, nm = 7, 0
             ah, am = 17, 0
+
+        # Add scheduled briefing jobs (morning + afternoon)
         scheduler.add_job(task_morning_news, CronTrigger(hour=nh, minute=nm, timezone=TZ_VN), id='news_morning', replace_existing=True)
         scheduler.add_job(task_afternoon_news, CronTrigger(hour=ah, minute=am, timezone=TZ_VN), id='news_afternoon', replace_existing=True)
-        logger.info(f"[SCHEDULER] News jobs loaded: Morning({nh}:{nm:02d}), Afternoon({ah}:{am:02d})")
+
+        # Add continuous news watch job (interval-based for breaking alerts)
+        watch_interval = int(news_cfg.get("watch_interval_minutes", 30))
+        scheduler.add_job(task_news_watch, IntervalTrigger(minutes=watch_interval, timezone=TZ_VN), id='news_watch', replace_existing=True)
+
+        logger.info(f"[SCHEDULER] News jobs loaded: Morning({nh}:{nm:02d}), Afternoon({ah}:{am:02d}), Watch(every {watch_interval}m)")
 
     logger.info(f"[SCHEDULER] Jobs loaded: Briefing({bh}:{bm}), Backup({bkh}:{bkm}), Harvest({harv_hours}h:{harv_min}m), Reflection(Sun 20:00)")
 

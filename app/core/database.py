@@ -205,6 +205,33 @@ def init_db():
         ON news_sent_articles (user_id, article_link)
     ''')
 
+    # [NEWS AGENT] Table: news_alert_log (track breaking alerts)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS news_alert_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            article_link TEXT NOT NULL,
+            score INTEGER,
+            category TEXT,
+            alert_type TEXT,
+            alerted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_news_alert_user
+        ON news_alert_log (user_id, alerted_at)
+    ''')
+
+    # [NEWS AGENT] Table: news_article_scores (cache relevance scores)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS news_article_scores (
+            article_link TEXT PRIMARY KEY,
+            score INTEGER,
+            category TEXT,
+            scored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("[DATABASE] Relational DB initialized successfully (Multi-Tenant Ready).")
@@ -927,3 +954,145 @@ def get_recent_sent_links(user_id: str, hours: int = 24) -> set:
             (str(user_id), f"-{hours}")
         ).fetchall()
     return {row["article_link"] for row in rows}
+
+
+def save_alert_log(user_id: str, article_link: str, score: int, category: str, alert_type: str) -> None:
+    """
+    Log a breaking alert for an article.
+
+    Args:
+        user_id: User ID
+        article_link: Article URL
+        score: Relevance score (0-10)
+        category: Category (technology, sports_running, it_workforce, economics_politics, general)
+        alert_type: Type of alert (e.g., "breaking", "trending")
+    """
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                INSERT INTO news_alert_log (user_id, article_link, score, category, alert_type)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (str(user_id), article_link, score, category, alert_type)
+            )
+        logger.info(f"[DB] Saved alert log for {article_link} (score={score})")
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to save alert log: {e}")
+
+
+def get_recent_alert_links(user_id: str, hours: int = 24) -> set:
+    """
+    Return set of article links already alerted in the last N hours.
+    Used to prevent duplicate breaking alerts.
+
+    Args:
+        user_id: User ID
+        hours: Look-back window
+
+    Returns:
+        Set of article links already alerted
+    """
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT DISTINCT article_link FROM news_alert_log
+                WHERE user_id = ?
+                  AND alerted_at >= datetime('now', ? || ' hours')
+                """,
+                (str(user_id), f"-{hours}")
+            ).fetchall()
+        return {row["article_link"] for row in rows}
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to get recent alert links: {e}")
+        return set()
+
+
+def get_recent_alerts_by_category(user_id: str, category: str, hours: int = 2) -> int:
+    """
+    Count alerts sent for a category in the last N hours.
+    Used for topic cool-down (max 3 alerts per category per cooldown window).
+
+    Args:
+        user_id: User ID
+        category: Category name
+        hours: Look-back window (default 2 hours)
+
+    Returns:
+        Count of alerts in the window
+    """
+    try:
+        with get_db() as conn:
+            result = conn.execute(
+                """
+                SELECT COUNT(*) as count FROM news_alert_log
+                WHERE user_id = ?
+                  AND category = ?
+                  AND alerted_at >= datetime('now', ? || ' hours')
+                """,
+                (str(user_id), category, f"-{hours}")
+            ).fetchone()
+        return result["count"] if result else 0
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to count alerts by category: {e}")
+        return 0
+
+
+def save_article_score(link: str, score: int, category: str) -> None:
+    """
+    Cache article relevance score to avoid re-scoring.
+
+    Args:
+        link: Article URL (primary key)
+        score: Relevance score (0-10)
+        category: Category assigned by scorer
+    """
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO news_article_scores (article_link, score, category, scored_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                """,
+                (link, score, category)
+            )
+        logger.debug(f"[DB] Cached score for {link} (score={score})")
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to save article score: {e}")
+
+
+def get_cached_scores(links: list[str]) -> dict:
+    """
+    Retrieve cached scores for a batch of articles.
+
+    Args:
+        links: List of article URLs
+
+    Returns:
+        Dict mapping link → {score, category} for cached articles.
+        Missing articles are not included in result.
+    """
+    if not links:
+        return {}
+
+    try:
+        with get_db() as conn:
+            placeholders = ",".join("?" * len(links))
+            query = f"""
+                SELECT article_link, score, category
+                FROM news_article_scores
+                WHERE article_link IN ({placeholders})
+            """
+            rows = conn.execute(query, links).fetchall()
+
+        result = {}
+        for row in rows:
+            result[row["article_link"]] = {
+                "score": row["score"],
+                "category": row["category"]
+            }
+        return result
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to get cached scores: {e}")
+        return {}

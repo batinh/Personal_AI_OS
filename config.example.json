@@ -36,10 +36,60 @@
         "afternoon_time": "17:00",
         "telegram_chat_id": "",
         "max_articles_per_feed": 5,
+        "watch_interval_minutes": 30,
+        "alert_threshold": 7,
+        "digest_threshold": 4,
+        "topic_cooldown_hours": 2,
+        "interest_profile": {
+            "technology": {
+                "weight": 10,
+                "keywords": ["ADAS", "autonomous", "EV", "xe điện", "AI", "LLM", "chip", "semiconductor", "automotive"]
+            },
+            "sports_running": {
+                "weight": 8,
+                "keywords": ["chạy bộ", "marathon", "running", "Garmin", "Strava", "VO2max", "triathlon"]
+            },
+            "it_workforce": {
+                "weight": 9,
+                "keywords": ["tuyển dụng IT", "tech layoff", "software engineer", "AI jobs", "nhân lực công nghệ"]
+            },
+            "economics_politics": {
+                "weight": 7,
+                "keywords": ["GDP", "lãi suất", "USD", "kinh tế Việt Nam", "thuế quan", "chính sách", "trade war"]
+            }
+        },
         "feeds": [
-            {"name": "VnExpress", "url": "https://vnexpress.net/rss/tin-moi-nhat.rss"},
-            {"name": "Tuoi Tre", "url": "https://tuoitre.vn/rss/tin-moi-nhat.rss"},
-            {"name": "BBC Vietnamese", "url": "https://feeds.bbci.co.uk/vietnamese/rss.xml"}
+            {"name": "VnExpress", "url": "https://vnexpress.net/rss/tin-moi-nhat.rss", "category": "general"},
+            {"name": "Tuoi Tre", "url": "https://tuoitre.vn/rss/tin-moi-nhat.rss", "category": "general"},
+            {"name": "BBC Vietnamese", "url": "https://feeds.bbci.co.uk/vietnamese/rss.xml", "category": "general"},
+
+            {"name": "VnExpress Công nghệ", "url": "https://vnexpress.net/rss/khoa-hoc-cong-nghe.rss", "category": "technology"},
+            {"name": "Tuoi Tre Công nghệ", "url": "https://tuoitre.vn/rss/nhip-song-so.rss", "category": "technology"},
+            {"name": "ICTNews", "url": "https://ictnews.vietnamnet.vn/rss", "category": "technology"},
+            {"name": "VnReview", "url": "https://vnreview.vn/rss", "category": "technology"},
+            {"name": "GenK", "url": "https://genk.vn/rss/home.rss", "category": "technology"},
+            {"name": "TechCrunch", "url": "https://techcrunch.com/feed/", "category": "technology"},
+            {"name": "The Verge", "url": "https://www.theverge.com/rss/index.xml", "category": "technology"},
+            {"name": "Ars Technica", "url": "https://feeds.arstechnica.com/arstechnica/index", "category": "technology"},
+            {"name": "MIT Tech Review", "url": "https://www.technologyreview.com/feed/", "category": "technology"},
+            {"name": "Hacker News", "url": "https://hnrss.org/frontpage", "category": "technology"},
+
+            {"name": "Electrek", "url": "https://electrek.co/feed/", "category": "automotive"},
+            {"name": "InsideEVs", "url": "https://insideevs.com/feed/", "category": "automotive"},
+            {"name": "SAE Automotive", "url": "https://www.sae.org/rss/news", "category": "automotive"},
+            {"name": "The Drive", "url": "https://www.thedrive.com/feeds/all", "category": "automotive"},
+
+            {"name": "Runner's World", "url": "https://www.runnersworld.com/feed/all", "category": "sports"},
+            {"name": "iRunFar", "url": "https://www.irunfar.com/feed", "category": "sports"},
+            {"name": "DC Rainmaker", "url": "https://www.dcrainmaker.com/feed", "category": "sports"},
+
+            {"name": "ITviec Blog", "url": "https://itviec.com/blog/feed/", "category": "it_workforce"},
+
+            {"name": "CafeF", "url": "https://cafef.vn/rss/home.rss", "category": "economics"},
+            {"name": "VnEconomy", "url": "https://vneconomy.vn/rss/home.rss", "category": "economics"},
+            {"name": "Tuoi Tre Kinh tế", "url": "https://tuoitre.vn/rss/kinh-doanh.rss", "category": "economics"},
+            {"name": "Reuters Business", "url": "https://feeds.reuters.com/reuters/businessNews", "category": "economics"},
+            {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml", "category": "economics"}
         ]
     }
 }

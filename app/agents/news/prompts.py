@@ -87,3 +87,79 @@ def build_morning_news_prompt(articles_text: str, date_str: str) -> str:
 def build_afternoon_news_prompt(articles_text: str, date_str: str) -> str:
     """Build the afternoon news update prompt. Uses .replace() to safely inject content."""
     return _AFTERNOON_TEMPLATE.replace("{date_str}", date_str).replace("{articles_text}", articles_text)
+
+
+# ==========================================
+# 🚨 BREAKING ALERT PROMPT
+# ==========================================
+
+_ALERT_TEMPLATE = """Hôm nay là {date_str}.
+
+Có một tin tức quan trọng:
+
+Tiêu đề: {title}
+Nguồn: {source}
+Tóm tắt: {summary}
+
+Hãy viết một thông báo cảnh báo ngắn gọn (1-2 dòng), dùng emoji phù hợp, không Markdown."""
+
+
+def build_alert_prompt(title: str, source: str, summary: str, date_str: str) -> str:
+    """
+    Build a breaking alert prompt for a single high-relevance article.
+    Uses .replace() to safely inject content (titles may contain {}).
+    """
+    template = _ALERT_TEMPLATE.replace("{date_str}", date_str)
+    template = template.replace("{title}", title)
+    template = template.replace("{source}", source)
+    template = template.replace("{summary}", summary)
+    return template
+
+
+# ==========================================
+# 📊 CATEGORIZED DIGEST PROMPT
+# ==========================================
+
+_DIGEST_TEMPLATE = """Hôm nay là {date_str}.
+
+Đây là bản tóm tắt tin tức {session} được phân loại:
+
+{categorized_content}
+
+Hãy tổng hợp lại theo định dạng:
+- Mỗi danh mục là một phần riêng với tiêu đề
+- Mỗi tin là 1-2 câu, ghi rõ nguồn
+- Dùng emoji phù hợp cho mỗi danh mục
+- Tone khách quan, chuyên nghiệp
+- Tổng độ dài dưới 3000 ký tự
+
+KHÔNG dùng Markdown, chỉ dùng text thuần (HTML cho Telegram nếu cần)."""
+
+
+def build_categorized_digest_prompt(
+    categorized_articles: dict,
+    date_str: str,
+    session: str = "sáng"
+) -> str:
+    """
+    Build a digest prompt for scored articles grouped by category.
+
+    Args:
+        categorized_articles: {category: [ScoredArticle, ...], ...}
+        date_str: formatted date string
+        session: "sáng" or "chiều"
+
+    Returns:
+        Vietnamese prompt for Gemini.
+    """
+    lines = []
+    for category, articles in categorized_articles.items():
+        lines.append(f"\n[{category}]")
+        for a in articles:
+            lines.append(f"- ({a.source}) {a.title}: {a.summary[:150]}")
+
+    content = "\n".join(lines)
+    template = _DIGEST_TEMPLATE.replace("{date_str}", date_str)
+    template = template.replace("{session}", session)
+    template = template.replace("{categorized_content}", content)
+    return template

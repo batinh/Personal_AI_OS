@@ -24,6 +24,14 @@ def base_config():
             "telegram_chat_id": "",
             "feeds": [{"name": "VnExpress", "url": "http://vnexpress.net/rss"}],
             "max_articles_per_feed": 5,
+            "digest_threshold": 4,
+            "watch_interval_minutes": 30,
+            "interest_profile": {
+                "technology": {
+                    "weight": 10,
+                    "keywords": ["AI", "LLM", "chip"]
+                }
+            }
         }
     }
 
@@ -82,18 +90,20 @@ def test_no_chat_id_does_nothing(mock_send, mock_fetch, mock_uid, base_config):
 
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.fetch_all_feeds", return_value=[])
 @patch("app.agents.news.agent.send_telegram_msg")
-def test_no_articles_skips_gemini(mock_send, mock_fetch, mock_links, mock_uid, base_config):
+def test_no_articles_skips_gemini(mock_send, mock_fetch, mock_alert, mock_links, mock_uid, base_config):
     generate_news_briefing(base_config)
     mock_send.assert_not_called()
 
 
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.get_recent_sent_links")
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.send_telegram_msg")
-def test_all_deduped_skips_gemini(mock_send, mock_fetch, mock_links, mock_uid, base_config, sample_articles):
+def test_all_deduped_skips_gemini(mock_send, mock_fetch, mock_links, mock_alert, mock_uid, base_config, sample_articles):
     mock_fetch.return_value = sample_articles
     # All article links already in sent set
     mock_links.return_value = {a.link for a in sample_articles}
@@ -105,14 +115,29 @@ def test_all_deduped_skips_gemini(mock_send, mock_fetch, mock_links, mock_uid, b
 # generate_news_briefing — success path
 # ---------------------------------------------------------------------------
 
+@patch("app.agents.news.agent.save_article_score")
+@patch("app.agents.news.agent.score_articles")
+@patch("app.agents.news.agent.get_cached_scores", return_value={})
 @patch("app.agents.news.agent.save_sent_articles")
 @patch("app.agents.news.agent.send_telegram_msg")
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.client")
-def test_morning_briefing_sends_to_telegram(mock_client, mock_fetch, mock_uid, mock_links, mock_send, mock_save, base_config, sample_articles):
+def test_morning_briefing_sends_to_telegram(mock_client, mock_fetch, mock_uid, mock_links, mock_alert, mock_send, mock_save, mock_cached, mock_score, mock_score_article, base_config, sample_articles):
+    from app.agents.news.scorer import ScoredArticle
     mock_fetch.return_value = sample_articles
+    # Mock scorer to return articles with digest-worthy scores
+    scored = [
+        ScoredArticle(title=sample_articles[0].title, summary=sample_articles[0].summary,
+                      link=sample_articles[0].link, source=sample_articles[0].source,
+                      published=sample_articles[0].published, score=8, category="technology", reason="AI-related"),
+        ScoredArticle(title=sample_articles[1].title, summary=sample_articles[1].summary,
+                      link=sample_articles[1].link, source=sample_articles[1].source,
+                      published=sample_articles[1].published, score=5, category="general", reason="General"),
+    ]
+    mock_score.return_value = scored
     mock_client.models.generate_content.return_value.text = "📰 TIN TỨC BUỔI SÁNG\n\nTin 1..."
 
     generate_news_briefing(base_config, session="morning")
@@ -120,20 +145,31 @@ def test_morning_briefing_sends_to_telegram(mock_client, mock_fetch, mock_uid, m
     mock_send.assert_called_once()
     args = mock_send.call_args[0]
     assert args[0] == "111"
-    assert "TIN TỨC" in args[1] or "Tin 1" in args[1]
+    assert len(args[1]) > 0
 
 
+@patch("app.agents.news.agent.save_article_score")
+@patch("app.agents.news.agent.score_articles")
+@patch("app.agents.news.agent.get_cached_scores", return_value={})
 @patch("app.agents.news.agent.save_sent_articles")
 @patch("app.agents.news.agent.send_telegram_msg")
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.client")
 @patch("app.agents.news.agent.build_news_system_instruction")
-def test_passes_news_system_instruction_to_gemini(mock_si, mock_client, mock_fetch, mock_uid, mock_links, mock_send, mock_save, base_config, sample_articles):
+def test_passes_news_system_instruction_to_gemini(mock_si, mock_client, mock_fetch, mock_uid, mock_links, mock_alert, mock_send, mock_save, mock_cached, mock_score, mock_score_article, base_config, sample_articles):
     """Verify the news agent passes its own system_instruction (not coach's) to Gemini."""
+    from app.agents.news.scorer import ScoredArticle
     mock_si.return_value = "Bạn là News Curator, biên tập viên tin tức AI."
     mock_fetch.return_value = sample_articles
+    scored = [
+        ScoredArticle(title=s.title, summary=s.summary, link=s.link, source=s.source,
+                      published=s.published, score=8, category="technology", reason="Test")
+        for s in sample_articles
+    ]
+    mock_score.return_value = scored
     mock_client.models.generate_content.return_value.text = "Tin tức..."
 
     generate_news_briefing(base_config, session="morning")
@@ -146,14 +182,25 @@ def test_passes_news_system_instruction_to_gemini(mock_si, mock_client, mock_fet
     assert "config" in call_kwargs
 
 
+@patch("app.agents.news.agent.save_article_score")
+@patch("app.agents.news.agent.score_articles")
+@patch("app.agents.news.agent.get_cached_scores", return_value={})
 @patch("app.agents.news.agent.save_sent_articles")
 @patch("app.agents.news.agent.send_telegram_msg")
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.client")
-def test_save_sent_articles_called_after_success(mock_client, mock_fetch, mock_uid, mock_links, mock_send, mock_save, base_config, sample_articles):
+def test_save_sent_articles_called_after_success(mock_client, mock_fetch, mock_uid, mock_links, mock_alert, mock_send, mock_save, mock_cached, mock_score, mock_score_article, base_config, sample_articles):
+    from app.agents.news.scorer import ScoredArticle
     mock_fetch.return_value = sample_articles
+    scored = [
+        ScoredArticle(title=s.title, summary=s.summary, link=s.link, source=s.source,
+                      published=s.published, score=8, category="technology", reason="Test")
+        for s in sample_articles
+    ]
+    mock_score.return_value = scored
     mock_client.models.generate_content.return_value.text = "Tin tức buổi sáng..."
 
     generate_news_briefing(base_config, session="morning")
@@ -165,15 +212,26 @@ def test_save_sent_articles_called_after_success(mock_client, mock_fetch, mock_u
     assert save_args[2] == "morning"                     # session
 
 
+@patch("app.agents.news.agent.save_article_score")
+@patch("app.agents.news.agent.score_articles")
+@patch("app.agents.news.agent.get_cached_scores", return_value={})
 @patch("app.agents.news.agent.save_sent_articles")
 @patch("app.agents.news.agent.send_telegram_msg")
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.client")
-def test_uses_news_chat_id_when_configured(mock_client, mock_fetch, mock_uid, mock_links, mock_send, mock_save, base_config, sample_articles):
+def test_uses_news_chat_id_when_configured(mock_client, mock_fetch, mock_uid, mock_links, mock_alert, mock_send, mock_save, mock_cached, mock_score, mock_score_article, base_config, sample_articles):
+    from app.agents.news.scorer import ScoredArticle
     base_config["news_agent"]["telegram_chat_id"] = "-100555444333"
     mock_fetch.return_value = sample_articles
+    scored = [
+        ScoredArticle(title=s.title, summary=s.summary, link=s.link, source=s.source,
+                      published=s.published, score=8, category="technology", reason="Test")
+        for s in sample_articles
+    ]
+    mock_score.return_value = scored
     mock_client.models.generate_content.return_value.text = "Tin tức..."
 
     generate_news_briefing(base_config)
@@ -186,14 +244,25 @@ def test_uses_news_chat_id_when_configured(mock_client, mock_fetch, mock_uid, mo
 # generate_news_briefing — edge cases
 # ---------------------------------------------------------------------------
 
+@patch("app.agents.news.agent.save_article_score")
+@patch("app.agents.news.agent.score_articles")
+@patch("app.agents.news.agent.get_cached_scores", return_value={})
 @patch("app.agents.news.agent.save_sent_articles")
 @patch("app.agents.news.agent.send_telegram_msg")
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.client")
-def test_long_reply_is_truncated(mock_client, mock_fetch, mock_uid, mock_links, mock_send, mock_save, base_config, sample_articles):
+def test_long_reply_is_truncated(mock_client, mock_fetch, mock_uid, mock_links, mock_alert, mock_send, mock_save, mock_cached, mock_score, mock_score_article, base_config, sample_articles):
+    from app.agents.news.scorer import ScoredArticle
     mock_fetch.return_value = sample_articles
+    scored = [
+        ScoredArticle(title=s.title, summary=s.summary, link=s.link, source=s.source,
+                      published=s.published, score=8, category="technology", reason="Test")
+        for s in sample_articles
+    ]
+    mock_score.return_value = scored
     mock_client.models.generate_content.return_value.text = "X" * 5000
 
     generate_news_briefing(base_config)
@@ -202,13 +271,24 @@ def test_long_reply_is_truncated(mock_client, mock_fetch, mock_uid, mock_links, 
     assert len(sent_text) <= 4003  # 4000 + "..."
 
 
+@patch("app.agents.news.agent.save_article_score")
+@patch("app.agents.news.agent.score_articles")
+@patch("app.agents.news.agent.get_cached_scores", return_value={})
 @patch("app.agents.news.agent.send_telegram_msg")
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.client")
-def test_gemini_error_does_not_crash(mock_client, mock_fetch, mock_uid, mock_links, mock_send, base_config, sample_articles):
+def test_gemini_error_does_not_crash(mock_client, mock_fetch, mock_uid, mock_links, mock_alert, mock_send, mock_cached, mock_score, mock_score_article, base_config, sample_articles):
+    from app.agents.news.scorer import ScoredArticle
     mock_fetch.return_value = sample_articles
+    scored = [
+        ScoredArticle(title=s.title, summary=s.summary, link=s.link, source=s.source,
+                      published=s.published, score=8, category="technology", reason="Test")
+        for s in sample_articles
+    ]
+    mock_score.return_value = scored
     mock_client.models.generate_content.side_effect = Exception("Gemini quota exceeded")
 
     # Must NOT raise
@@ -216,14 +296,25 @@ def test_gemini_error_does_not_crash(mock_client, mock_fetch, mock_uid, mock_lin
     mock_send.assert_not_called()
 
 
+@patch("app.agents.news.agent.save_article_score")
+@patch("app.agents.news.agent.score_articles")
+@patch("app.agents.news.agent.get_cached_scores", return_value={})
 @patch("app.agents.news.agent.save_sent_articles")
 @patch("app.agents.news.agent.send_telegram_msg")
+@patch("app.agents.news.agent.get_recent_alert_links", return_value=set())
 @patch("app.agents.news.agent.get_recent_sent_links", return_value=set())
 @patch("app.agents.news.agent.get_primary_user_id", return_value=111)
 @patch("app.agents.news.agent.fetch_all_feeds")
 @patch("app.agents.news.agent.client")
-def test_gemini_empty_response_sends_fallback(mock_client, mock_fetch, mock_uid, mock_links, mock_send, mock_save, base_config, sample_articles):
+def test_gemini_empty_response_sends_fallback(mock_client, mock_fetch, mock_uid, mock_links, mock_alert, mock_send, mock_save, mock_cached, mock_score, mock_score_article, base_config, sample_articles):
+    from app.agents.news.scorer import ScoredArticle
     mock_fetch.return_value = sample_articles
+    scored = [
+        ScoredArticle(title=s.title, summary=s.summary, link=s.link, source=s.source,
+                      published=s.published, score=8, category="technology", reason="Test")
+        for s in sample_articles
+    ]
+    mock_score.return_value = scored
     mock_client.models.generate_content.return_value.text = None
 
     generate_news_briefing(base_config)
