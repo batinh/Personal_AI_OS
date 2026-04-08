@@ -88,7 +88,7 @@
             {"name": "CafeF", "url": "https://cafef.vn/rss/home.rss", "category": "economics"},
             {"name": "VnEconomy", "url": "https://vneconomy.vn/rss/home.rss", "category": "economics"},
             {"name": "Tuoi Tre Kinh tế", "url": "https://tuoitre.vn/rss/kinh-doanh.rss", "category": "economics"},
-            {"name": "Reuters Business", "url": "https://feeds.reuters.com/reuters/businessNews", "category": "economics"},
+            {"name": "BBC Business", "url": "https://feeds.bbci.co.uk/news/business/rss.xml", "category": "economics"},
             {"name": "Al Jazeera", "url": "https://www.aljazeera.com/xml/rss/all.xml", "category": "economics"}
         ]
     }

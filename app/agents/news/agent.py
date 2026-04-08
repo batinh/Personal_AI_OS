@@ -82,7 +82,9 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     max_articles = int(news_cfg.get("max_articles_per_feed", 5))
     digest_threshold = int(news_cfg.get("digest_threshold", 4))
     interest_profile = news_cfg.get("interest_profile", {})
-    model_name = config.get("model_name", "models/gemini-2.0-flash")
+    generation_model = config.get("model_name", "models/gemini-2.0-flash")
+    # Always use flash for batch scoring — consistent JSON, cost-efficient
+    scoring_model = "models/gemini-2.0-flash"
 
     logger.info(f"[NEWS] Fetching articles from {len(feeds)} feed(s)...")
     articles = fetch_all_feeds(feeds, max_per_feed=max_articles)
@@ -148,7 +150,7 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
         # Score uncached articles
         if to_score:
             try:
-                newly_scored = score_articles(to_score, interest_profile, model_name)
+                newly_scored = score_articles(to_score, interest_profile, scoring_model)
                 for scored in newly_scored:
                     scored_map[scored.link] = scored
                     save_article_score(scored.link, scored.score, scored.category)
@@ -193,7 +195,7 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     try:
         system_inst = build_news_system_instruction()
         response = client.models.generate_content(
-            model=model_name,
+            model=generation_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,

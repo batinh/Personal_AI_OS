@@ -77,7 +77,8 @@ def run_news_watch(config: dict) -> None:
     alert_threshold = int(news_cfg.get("alert_threshold", 7))
     cooldown_hours = int(news_cfg.get("topic_cooldown_hours", 2))
     interest_profile = news_cfg.get("interest_profile", {})
-    model_name = config.get("model_name", "models/gemini-2.0-flash")
+    # Always use flash for batch scoring — cheaper, faster, more reliable JSON output
+    model_name = "models/gemini-2.0-flash"
 
     if not interest_profile:
         logger.warning("[NEWS-WATCH] No interest profile configured. Skipping.")
