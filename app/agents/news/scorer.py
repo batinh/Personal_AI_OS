@@ -96,7 +96,10 @@ def score_articles(
             response = client.models.generate_content(
                 model=model_name,
                 contents=batch_prompt,
-                config=types.GenerateContentConfig(max_output_tokens=2000),
+                config=types.GenerateContentConfig(
+                    max_output_tokens=2000,
+                    response_mime_type="application/json",
+                ),
             )
 
             response_text = response.text or ""
@@ -159,31 +162,45 @@ def _format_articles_for_scoring(articles: list[Article]) -> str:
 
 
 def _extract_json(text: str) -> Optional[str]:
-    """Extract JSON array from response text. Handles markdown code blocks."""
+    """Extract JSON array from response text. Handles markdown code blocks and stray prose."""
     text = text.strip()
 
-    # Try to find JSON between code blocks
-    if "```json" in text:
-        start = text.find("```json") + len("```json")
-        end = text.find("```", start)
-        if end > start:
-            return text[start:end].strip()
-
-    if "```" in text:
-        start = text.find("```") + 3
-        end = text.find("```", start)
-        if end > start:
-            return text[start:end].strip()
-
-    # Try to parse directly
+    # 1. Try direct parse first (response_mime_type=application/json should give clean output)
     try:
-        # Find first [ and last ]
-        start = text.find("[")
-        end = text.rfind("]")
-        if start >= 0 and end > start:
-            return text[start : end + 1]
-    except Exception:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return text
+        if isinstance(parsed, dict):
+            return json.dumps([parsed])
+    except (json.JSONDecodeError, ValueError):
         pass
+
+    # 2. Strip markdown code fences
+    for fence in ("```json", "```"):
+        if fence in text:
+            start = text.find(fence) + len(fence)
+            end = text.find("```", start)
+            if end > start:
+                candidate = text[start:end].strip()
+                try:
+                    parsed = json.loads(candidate)
+                    if isinstance(parsed, list):
+                        return candidate
+                    if isinstance(parsed, dict):
+                        return json.dumps([parsed])
+                except (json.JSONDecodeError, ValueError):
+                    pass
+
+    # 3. Scan for outermost [...] bracket pair
+    start = text.find("[")
+    end = text.rfind("]")
+    if start >= 0 and end > start:
+        candidate = text[start:end + 1]
+        try:
+            json.loads(candidate)  # Validate before returning
+            return candidate
+        except (json.JSONDecodeError, ValueError):
+            pass
 
     return None
 
