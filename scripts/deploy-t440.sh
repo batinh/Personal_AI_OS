@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-# deploy-t440.sh — Push code from RPi5 and deploy on T440 via SSH.
+# deploy-t440.sh — Deploy locally on T440 (T440 is the primary dev/deploy machine).
 #
 # Usage:
-#   ./scripts/deploy-t440.sh          # push current branch + deploy
-#   ./scripts/deploy-t440.sh --skip-push  # deploy only (code already pushed)
+#   ./scripts/deploy-t440.sh             # git pull + rebuild + health check
+#   ./scripts/deploy-t440.sh --skip-pull # rebuild only (skip git pull)
 #
 # Prerequisites:
-#   - SSH key auth: ssh -p 8922 tinhn@192.168.1.89 (no password)
-#   - T440 user in docker group: sudo usermod -aG docker tinhn
+#   - Running on T440 directly
+#   - User in docker group: sudo usermod -aG docker tinhn
 
 set -euo pipefail
 
 # --- Config ---
-T440_HOST="tinhn@192.168.1.89"
-T440_PORT="8922"
-T440_REPO="~/repo/Personal_AI_OS"
-T440_URL="http://192.168.1.89:8000"
-HEALTH_ENDPOINT="${T440_URL}/health"
-HEALTH_TIMEOUT=90      # seconds to wait for healthy status
-HEALTH_INTERVAL=5      # seconds between health checks
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+BASE_URL="http://localhost:8000"
+HEALTH_ENDPOINT="${BASE_URL}/health"
+HEALTH_TIMEOUT=90
+HEALTH_INTERVAL=5
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -30,37 +28,27 @@ log()  { echo -e "${GREEN}[DEPLOY]${NC} $*"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 fail() { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
 
-ssh_t440() {
-    ssh -p "$T440_PORT" -o ConnectTimeout=10 "$T440_HOST" "$@"
-}
-
 # --- Step 0: Parse args ---
-SKIP_PUSH=false
+SKIP_PULL=false
 for arg in "$@"; do
     case "$arg" in
-        --skip-push) SKIP_PUSH=true ;;
+        --skip-pull) SKIP_PULL=true ;;
     esac
 done
 
-# --- Step 1: Push code from RPi5 ---
-if [ "$SKIP_PUSH" = false ]; then
-    log "Pushing code to origin..."
-    BRANCH=$(git -C "$(dirname "$0")/.." rev-parse --abbrev-ref HEAD)
-    git -C "$(dirname "$0")/.." push origin "$BRANCH"
-    log "Pushed branch: $BRANCH"
+# --- Step 1: Pull latest code ---
+if [ "$SKIP_PULL" = false ]; then
+    log "Pulling latest code..."
+    git -C "$REPO_DIR" pull --ff-only || fail "git pull failed"
+    log "Pull complete"
 else
-    log "Skipping push (--skip-push)"
+    log "Skipping pull (--skip-pull)"
 fi
 
-# --- Step 2: SSH into T440 — pull + rebuild ---
-log "Connecting to T440..."
-ssh_t440 "echo 'SSH OK'" || fail "Cannot SSH into T440"
-
-log "Pulling latest code on T440..."
-ssh_t440 "cd $T440_REPO && git pull --ff-only" || fail "git pull failed on T440"
-
-log "Rebuilding and restarting containers on T440..."
-ssh_t440 "cd $T440_REPO && docker compose up --build -d" || fail "docker compose up failed"
+# --- Step 2: Rebuild and restart containers ---
+log "Rebuilding and restarting containers..."
+cd "$REPO_DIR"
+docker compose up --build -d || fail "docker compose up failed"
 
 # --- Step 3: Wait for health check ---
 log "Waiting for health check at $HEALTH_ENDPOINT ..."
@@ -99,10 +87,10 @@ run_test() {
     fi
 }
 
-run_test "GET /health"           "$T440_URL/health"    "200"
-run_test "GET /console (auth)"   "$T440_URL/console"   "401"
-run_test "GET /admin (auth)"     "$T440_URL/admin"     "401"
-run_test "GET /webhook (Strava)" "$T440_URL/webhook"   "200"
+run_test "GET /health"           "$BASE_URL/health"    "200"
+run_test "GET /console (auth)"   "$BASE_URL/console"   "401"
+run_test "GET /admin (auth)"     "$BASE_URL/admin"     "401"
+run_test "GET /webhook (Strava)" "$BASE_URL/webhook"   "200"
 
 # Scheduler check
 HEALTH_BODY=$(curl -s "$HEALTH_ENDPOINT" 2>/dev/null)
@@ -116,9 +104,8 @@ fi
 
 # Docker logs error check (last 50 lines)
 TOTAL=$((TOTAL + 1))
-ERROR_COUNT=$(ssh_t440 "docker logs airunningcoach --tail 50 2>&1 | grep -ci 'error\|traceback\|exception'" 2>/dev/null | tr -d '[:space:]' | head -c 10 || echo "0")
-ERROR_COUNT=$(echo "${ERROR_COUNT:-0}" | grep -oE '^[0-9]+' || echo "0")
-if [ "$ERROR_COUNT" -eq 0 ]; then
+ERROR_COUNT=$(docker logs airunningcoach --tail 50 2>&1 | grep -ci 'error\|traceback\|exception' || echo "0")
+if [ "${ERROR_COUNT:-0}" -eq 0 ]; then
     echo -e "  ${GREEN}PASS${NC} No errors in recent logs"
     PASS=$((PASS + 1))
 else

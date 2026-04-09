@@ -17,10 +17,10 @@ python -m pytest tests/ --cov=app --cov-report=html
 # Run full stack (requires .env + data/config.json)
 docker compose up --build
 
-# Deploy to T440 home server (push already done → skip-push)
-bash scripts/deploy-t440.sh             # push + deploy
-bash scripts/deploy-t440.sh --skip-push # deploy only (code already pushed)
-# T440: tinhn@192.168.1.89:8922 | health: http://192.168.1.89:8000/health
+# Deploy (run on T440 — this IS the server)
+bash scripts/deploy-t440.sh              # git pull + rebuild + health check
+bash scripts/deploy-t440.sh --skip-pull # rebuild only (skip git pull)
+# health: http://localhost:8000/health
 
 # Local dev server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
