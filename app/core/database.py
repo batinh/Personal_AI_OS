@@ -232,6 +232,30 @@ def init_db():
         )
     ''')
 
+    # [LOG AUDIT] Table: audit_entries (structured log issue tracker)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS audit_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            severity TEXT NOT NULL CHECK(severity IN ('error', 'warning', 'info')),
+            category TEXT NOT NULL,
+            message TEXT NOT NULL,
+            raw_line TEXT NOT NULL,
+            status TEXT DEFAULT 'open' CHECK(status IN ('open', 'acknowledged', 'resolved')),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, raw_line)
+        )
+    ''')
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_audit_user_status
+        ON audit_entries(user_id, status)
+    ''')
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_audit_severity
+        ON audit_entries(severity, category)
+    ''')
+
     conn.commit()
     conn.close()
     logger.info("[DATABASE] Relational DB initialized successfully (Multi-Tenant Ready).")
@@ -1095,4 +1119,100 @@ def get_cached_scores(links: list[str]) -> dict:
         return result
     except Exception as e:
         logger.error(f"[DB_ERROR] Failed to get cached scores: {e}")
-        return {}
+
+
+# ==========================================
+# LOG AUDIT CRUD
+# ==========================================
+
+def insert_audit_entry(user_id: str, severity: str, category: str, message: str, raw_line: str) -> bool:
+    """
+    Insert a new audit entry. Returns True if inserted, False if duplicate (UNIQUE constraint).
+    raw_line acts as the dedup key per user.
+    """
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO audit_entries (user_id, severity, category, message, raw_line)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user_id, severity, category, message, raw_line),
+            )
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to insert audit entry: {e}")
+        return False
+
+
+def get_audit_entries(
+    user_id: str,
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = 100,
+) -> List[Dict]:
+    """Fetch audit entries filtered by status/category/severity, ordered newest-first."""
+    try:
+        with get_db() as conn:
+            clauses = ["user_id = ?"]
+            params: list = [user_id]
+            if status:
+                clauses.append("status = ?")
+                params.append(status)
+            if category:
+                clauses.append("category = ?")
+                params.append(category)
+            if severity:
+                clauses.append("severity = ?")
+                params.append(severity)
+            where = " AND ".join(clauses)
+            rows = conn.execute(
+                f"SELECT * FROM audit_entries WHERE {where} ORDER BY created_at DESC LIMIT ?",
+                params + [limit],
+            ).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to get audit entries: {e}")
+        return []
+
+
+def update_audit_status(entry_id: int, new_status: str) -> bool:
+    """Update the status of an audit entry. Returns True on success."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE audit_entries SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (new_status, entry_id),
+            )
+            return conn.execute("SELECT changes()").fetchone()[0] > 0
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to update audit status: {e}")
+        return False
+
+
+def get_audit_stats(user_id: str) -> Dict:
+    """Return total count and breakdowns by severity and status for a user's audit entries."""
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT severity, status, COUNT(*) as cnt
+                FROM audit_entries
+                WHERE user_id = ?
+                GROUP BY severity, status
+                """,
+                (user_id,),
+            ).fetchall()
+            by_severity: Dict = {}
+            by_status: Dict = {}
+            total = 0
+            for row in rows:
+                sev, st, cnt = row["severity"], row["status"], row["cnt"]
+                by_severity[sev] = by_severity.get(sev, 0) + cnt
+                by_status[st] = by_status.get(st, 0) + cnt
+                total += cnt
+            return {"total": total, "by_severity": by_severity, "by_status": by_status}
+    except Exception as e:
+        logger.error(f"[DB_ERROR] Failed to get audit stats: {e}")
+        return {"total": 0, "by_severity": {}, "by_status": {}}

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log Audit — AI OS</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    body { background: #0d1117; color: #c9d1d9; }
+    .navbar-brand { font-weight: 700; letter-spacing: 1px; }
+    .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem 1.5rem; }
+    .stat-number { font-size: 2rem; font-weight: 700; }
+    .badge-error    { background: #da3633; }
+    .badge-warning  { background: #d29922; color: #000; }
+    .badge-info     { background: #388bfd; }
+    .badge-open     { background: #da3633; }
+    .badge-acknowledged { background: #d29922; color: #000; }
+    .badge-resolved { background: #238636; }
+    .entry-row { border-bottom: 1px solid #21262d; }
+    .entry-row:hover { background: #161b22; }
+    .raw-line { font-family: monospace; font-size: 0.78rem; color: #8b949e; word-break: break-all; }
+    .filter-bar { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    .btn-sm { font-size: 0.75rem; }
+    #toast-container { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999; }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark" style="background:#161b22; border-bottom:1px solid #30363d;">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/console"><i class="bi bi-house-fill me-2"></i>AI OS</a>
+    <span class="navbar-text"><i class="bi bi-journal-text me-1"></i>Log Audit Dashboard</span>
+    <div>
+      <button class="btn btn-sm btn-outline-warning" onclick="runAuditNow()" id="btn-run">
+        <i class="bi bi-play-fill me-1"></i>Quét ngay
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid py-3">
+
+  <!-- Stats row -->
+  <div class="row g-3 mb-3" id="stats-row">
+    <div class="col-6 col-md-3">
+      <div class="stat-card text-center">
+        <div class="stat-number text-danger" id="stat-error">–</div>
+        <div class="text-muted small">Errors</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card text-center">
+        <div class="stat-number text-warning" id="stat-warning">–</div>
+        <div class="text-muted small">Warnings</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card text-center">
+        <div class="stat-number text-info" id="stat-open">–</div>
+        <div class="text-muted small">Open</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="stat-card text-center">
+        <div class="stat-number text-success" id="stat-resolved">–</div>
+        <div class="text-muted small">Resolved</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-bar d-flex flex-wrap gap-2 align-items-center">
+    <label class="text-muted small me-1">Bộ lọc:</label>
+    <select class="form-select form-select-sm w-auto" id="filter-status" onchange="loadEntries()">
+      <option value="">Tất cả trạng thái</option>
+      <option value="open" selected>Open</option>
+      <option value="acknowledged">Acknowledged</option>
+      <option value="resolved">Resolved</option>
+    </select>
+    <select class="form-select form-select-sm w-auto" id="filter-severity" onchange="loadEntries()">
+      <option value="">Tất cả mức độ</option>
+      <option value="error">Error</option>
+      <option value="warning">Warning</option>
+      <option value="info">Info</option>
+    </select>
+    <select class="form-select form-select-sm w-auto" id="filter-category" onchange="loadEntries()">
+      <option value="">Tất cả loại</option>
+      <option value="crash">Crash</option>
+      <option value="network">Network</option>
+      <option value="news_scoring">News Scoring</option>
+      <option value="news_agent">News Agent</option>
+      <option value="performance">Performance</option>
+      <option value="scheduler">Scheduler</option>
+      <option value="database">Database</option>
+      <option value="improvement">Improvement</option>
+      <option value="general">General</option>
+    </select>
+    <span class="text-muted small ms-auto" id="entry-count"></span>
+  </div>
+
+  <!-- Table -->
+  <div class="table-responsive">
+    <table class="table table-dark table-sm mb-0">
+      <thead style="background:#1c2128;">
+        <tr>
+          <th style="width:140px">Thời gian</th>
+          <th style="width:80px">Mức độ</th>
+          <th style="width:110px">Loại</th>
+          <th>Thông báo</th>
+          <th style="width:100px">Trạng thái</th>
+          <th style="width:130px">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody id="entries-tbody">
+        <tr><td colspan="6" class="text-center text-muted py-4">Đang tải...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- Raw line modal -->
+<div class="modal fade" id="rawModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background:#161b22; border:1px solid #30363d;">
+      <div class="modal-header" style="border-color:#30363d;">
+        <h6 class="modal-title text-muted">Raw Log Line</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <pre id="raw-modal-content" class="raw-line p-2" style="background:#0d1117; border-radius:4px; white-space:pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const SEV_BADGE = { error: 'badge-error', warning: 'badge-warning', info: 'badge-info' };
+const STATUS_BADGE = { open: 'badge-open', acknowledged: 'badge-acknowledged', resolved: 'badge-resolved' };
+const SEV_ICON = { error: 'bi-x-circle-fill', warning: 'bi-exclamation-triangle-fill', info: 'bi-info-circle-fill' };
+
+function toast(msg, type='success') {
+  const c = document.getElementById('toast-container');
+  const id = 'toast-' + Date.now();
+  c.insertAdjacentHTML('beforeend', `
+    <div id="${id}" class="toast align-items-center text-white bg-${type} border-0 show" role="alert">
+      <div class="d-flex">
+        <div class="toast-body">${msg}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>`);
+  setTimeout(() => document.getElementById(id)?.remove(), 4000);
+}
+
+async function loadEntries() {
+  const status = document.getElementById('filter-status').value;
+  const severity = document.getElementById('filter-severity').value;
+  const category = document.getElementById('filter-category').value;
+  let url = '/audit/api/entries?limit=500';
+  if (status)   url += '&status='   + encodeURIComponent(status);
+  if (severity) url += '&severity=' + encodeURIComponent(severity);
+  if (category) url += '&category=' + encodeURIComponent(category);
+
+  try {
+    const r = await fetch(url);
+    const data = await r.json();
+    renderStats(data.stats);
+    renderEntries(data.entries);
+  } catch(e) {
+    document.getElementById('entries-tbody').innerHTML =
+      '<tr><td colspan="6" class="text-center text-danger py-4">Lỗi tải dữ liệu</td></tr>';
+  }
+}
+
+function renderStats(s) {
+  document.getElementById('stat-error').textContent   = s.by_severity?.error   || 0;
+  document.getElementById('stat-warning').textContent = s.by_severity?.warning || 0;
+  document.getElementById('stat-open').textContent    = s.by_status?.open      || 0;
+  document.getElementById('stat-resolved').textContent= s.by_status?.resolved  || 0;
+}
+
+function renderEntries(entries) {
+  document.getElementById('entry-count').textContent = entries.length + ' mục';
+  const tbody = document.getElementById('entries-tbody');
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Không có mục nào</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries.map(e => {
+    const sevBadge   = SEV_BADGE[e.severity]   || 'bg-secondary';
+    const statusBadge= STATUS_BADGE[e.status]  || 'bg-secondary';
+    const icon       = SEV_ICON[e.severity]    || 'bi-dot';
+    const ts = e.created_at ? e.created_at.replace('T', ' ').substring(0,16) : '';
+    const actions = e.status === 'open'
+      ? `<button class="btn btn-sm btn-outline-warning me-1" onclick="ack(${e.id})">Ack</button>
+         <button class="btn btn-sm btn-outline-success"   onclick="resolve(${e.id})">OK</button>`
+      : e.status === 'acknowledged'
+      ? `<button class="btn btn-sm btn-outline-success" onclick="resolve(${e.id})">Resolve</button>`
+      : `<span class="text-muted small">–</span>`;
+    const rawBtn = `<button class="btn btn-sm btn-link p-0 ms-1 text-muted" title="Xem raw" onclick="showRaw(${e.id})"><i class="bi bi-terminal"></i></button>`;
+    return `<tr class="entry-row" data-id="${e.id}">
+      <td class="small text-muted">${ts}</td>
+      <td><span class="badge ${sevBadge}"><i class="bi ${icon} me-1"></i>${e.severity}</span></td>
+      <td><span class="badge bg-secondary">${e.category}</span></td>
+      <td>${e.message}${rawBtn}</td>
+      <td><span class="badge ${statusBadge}">${e.status}</span></td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
+}
+
+const _rawCache = {};
+async function showRaw(id) {
+  if (!_rawCache[id]) {
+    // find from current DOM data — we need to re-fetch or cache entries
+    const r = await fetch('/audit/api/entries?limit=1000');
+    const d = await r.json();
+    d.entries.forEach(e => _rawCache[e.id] = e.raw_line);
+  }
+  document.getElementById('raw-modal-content').textContent = _rawCache[id] || '(not found)';
+  new bootstrap.Modal(document.getElementById('rawModal')).show();
+}
+
+async function ack(id) {
+  const r = await fetch(`/audit/api/entries/${id}/acknowledge`, {method:'POST'});
+  if (r.ok) { toast('Đã đánh dấu Acknowledged'); loadEntries(); }
+  else toast('Lỗi cập nhật', 'danger');
+}
+
+async function resolve(id) {
+  const r = await fetch(`/audit/api/entries/${id}/resolve`, {method:'POST'});
+  if (r.ok) { toast('Đã đánh dấu Resolved', 'success'); loadEntries(); }
+  else toast('Lỗi cập nhật', 'danger');
+}
+
+async function runAuditNow() {
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang quét...';
+  try {
+    const r = await fetch('/audit/api/run', {method:'POST'});
+    const d = await r.json();
+    toast(`Quét xong: ${d.new_entries} mục mới`);
+    loadEntries();
+  } catch(e) {
+    toast('Lỗi quét log', 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Quét ngay';
+  }
+}
+
+// Initial load
+loadEntries();
+// Auto-refresh every 5 minutes
+setInterval(loadEntries, 5 * 60 * 1000);
+</script>
+</body>
+</html>

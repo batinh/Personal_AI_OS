@@ -16,6 +16,7 @@ from app.agents.coach.agent import generate_weekly_reflection, generate_morning_
 from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
 from app.agents.news.alert_engine import run_news_watch
+from app.services.log_auditor import run_audit
 
 logger = logging.getLogger("AI_COACH")
 TZ_VN = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
@@ -147,6 +148,21 @@ def task_proactive_coach_check():
 
 
 # ==========================================
+# 🔍 LOG AUDIT
+# ==========================================
+def task_log_audit():
+    """Scan app.log for errors/warnings, persist findings to audit_entries table. Regular def (thread pool)."""
+    user_id = str(get_primary_user_id())
+    if not user_id or user_id == "None":
+        logger.warning("[SCHEDULER] No primary user ID. Skipping log audit.")
+        return
+    logger.info("[SCHEDULER] Running log audit...")
+    count = run_audit(user_id)
+    if count:
+        logger.info(f"[SCHEDULER] Log audit complete: {count} new entries inserted.")
+
+
+# ==========================================
 # ⚙️ SCHEDULER MANAGEMENT
 # ==========================================
 def setup_jobs():
@@ -174,6 +190,7 @@ def setup_jobs():
     scheduler.add_job(task_auto_harvest, CronTrigger(hour=harv_hours, minute=harv_min, timezone=TZ_VN), id='harvest', replace_existing=True)
     scheduler.add_job(task_weekly_reflection, CronTrigger(day_of_week='sun', hour=20, minute=0, timezone=TZ_VN), id='weekly_reflection', replace_existing=True)
     scheduler.add_job(task_proactive_coach_check, CronTrigger(hour=12, minute=0, timezone=TZ_VN), id='proactive_check', replace_existing=True)
+    scheduler.add_job(task_log_audit, IntervalTrigger(hours=6, timezone=TZ_VN), id='log_audit', replace_existing=True)
 
     # News Agent jobs (only if enabled in config)
     news_cfg = config.get("news_agent", {})
