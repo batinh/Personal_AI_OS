@@ -19,7 +19,7 @@ from app.agents.news.feeds import Article
 logger = logging.getLogger("AI_COACH")
 client = genai.Client()
 
-_BATCH_SIZE = 20  # Max articles per Gemini call
+_BATCH_SIZE = 50  # Max articles per Gemini call
 
 
 @dataclass(frozen=True)
