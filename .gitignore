@@ -53,6 +53,10 @@ get_full_context.py
 .cursorrules
 .idea/
 
+# --- Claude Code local state (not portable) ---
+.claude/worktrees/
+.claude/plan/
+
 # SQLite WAL mode temp files
 *.db-shm
 *.db-wal

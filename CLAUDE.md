@@ -28,6 +28,22 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Before every commit, mentally run `docs/pragmatic_review_checklist.md`. For new features, read `docs/feature_design_template.md` first.
 
+## First-time setup on a new machine (e.g. T440)
+
+```bash
+git clone git@github.com:batinh/Personal_AI_OS.git ~/repo/Personal_AI_OS
+cd ~/repo/Personal_AI_OS
+
+# Sync global Claude Code config (hooks, rules) from old machine + install memory files
+RPI5_HOST=tinhn@<rpi5-ip> bash scripts/setup-claude-t440.sh
+
+# Copy .env (secrets — never in git)
+scp -P 22 tinhn@<rpi5-ip>:~/repo/Personal_AI_OS/.env .env
+
+# Copy runtime data config
+scp -P 22 tinhn@<rpi5-ip>:~/repo/Personal_AI_OS/data/config.json data/config.json
+```
+
 ## File Map — Read Only What You Need
 
 | Task | Read |

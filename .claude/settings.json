@@ -1,0 +1,10 @@
+{
+  "enabledPlugins": {
+    "everything-claude-code@everything-claude-code": true
+  },
+  "model": "sonnet",
+  "disabledMcpServers": ["supabase", "railway", "vercel"],
+  "env": {
+    "CLAUDE_PACKAGE_MANAGER": "pnpm"
+  }
+}
