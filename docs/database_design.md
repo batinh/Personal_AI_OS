@@ -40,6 +40,20 @@ Cache kết quả Gemini scoring để tránh re-score bài cũ trong mỗi watc
 * `scored_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
 * Unique constraint: `(user_id, article_link)`
 
+**9. Table: `audit_entries` (Log Audit)**
+Lưu các log line được phân loại từ `data/app.log*` phục vụ web UI và AI-assisted analysis.
+* `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
+* `user_id` (TEXT NOT NULL) — multi-tenant required
+* `created_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+* `severity` (TEXT NOT NULL) — `"error"` | `"warning"` | `"info"`
+* `category` (TEXT NOT NULL) — `crash` | `network` | `news_scoring` | `news_agent` | `performance` | `scheduler` | `database` | `improvement` | `general`
+* `message` (TEXT NOT NULL) — human-readable label (e.g. `"DNS resolution failure"`)
+* `raw_line` (TEXT NOT NULL) — bản gốc log line (truncated tại 1000 chars)
+* `status` (TEXT DEFAULT `'open'`) — `"open"` | `"acknowledged"` | `"resolved"`
+* `updated_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+* Unique constraint: `(user_id, raw_line)` — dedup, `INSERT OR IGNORE` safe
+* Index: `idx_audit_user_status (user_id, status)`, `idx_audit_severity (user_id, severity)`
+
 ---
 
 #### ⚙️ TIER 3: SYSTEM CONFIGURATION (Trạng thái & Cấu hình App)
