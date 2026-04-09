@@ -35,7 +35,7 @@ Before every commit, mentally run `docs/pragmatic_review_checklist.md`. For new 
 | Coach flow bug | `app/agents/coach/agent.py` + affected `flows/` module |
 | Prompt change | `app/agents/coach/prompts.py` |
 | DB schema / query | `app/core/database.py` + `docs/database_design.md` |
-| News agent | `app/agents/news/agent.py`, `feeds.py`, `prompts.py` |
+| News agent | `app/agents/news/agent.py`, `feeds.py`, `prompts.py`, `telegram_handler.py` |
 | Scheduler job | `app/services/scheduler.py` |
 | Webhook / Strava | `app/routers/webhooks.py` + `app/agents/coach/strava_client.py` |
 | Memory / RAG | `app/services/rag_memory.py` + `flows/memory_extraction.py` |
@@ -45,7 +45,7 @@ Before every commit, mentally run `docs/pragmatic_review_checklist.md`. For new 
 Run targeted tests first, full suite only before commit:
 ```bash
 python -m pytest tests/test_<module>.py   # fast feedback on affected module
-python -m pytest tests/                   # gate before commit (273 must pass)
+python -m pytest tests/                   # gate before commit (329 must pass)
 ```
 
 ## Language Zones — STRICTLY ENFORCED
@@ -77,6 +77,21 @@ agents/coach/
 - All file paths use `Path(__file__).resolve().parent...` — never relative (Docker WORKDIR=/app breaks them)
 - `data/config.json` is gitignored; auto-initialized from `config.example.json` on first boot
 - Use `build_agent_context()` in every flow — never duplicate context building
+
+## Telegram Commands
+
+| Command | Handler | Description |
+|---------|---------|-------------|
+| `/sync [N\|month]` | `webhooks.py` | Manual Strava sync (default 3 activities) |
+| `/standup` | `webhooks.py` | Trigger morning briefing immediately |
+| `/news` | `telegram_handler.py` | Morning news briefing |
+| `/news morning` | `telegram_handler.py` | Morning digest |
+| `/news afternoon` | `telegram_handler.py` | Afternoon digest |
+| `/news watch` | `telegram_handler.py` | Immediate breaking-news scan |
+| `/news help` | `telegram_handler.py` | Show command list |
+
+News commands are disabled silently when `news_agent.enabled = false` in config.
+Patch target for tests: `app.agents.news.telegram_handler.handle_news_command` (lazy import inside webhook handler).
 
 ## Database
 

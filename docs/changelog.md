@@ -5,6 +5,25 @@ Format: `[Date] type: description` — most recent first.
 
 ---
 
+## 2026-04-09
+
+### Added
+- **Log Audit System** — periodic log scanning with web UI and AI-analysis-ready storage:
+  - `app/services/log_auditor.py`: pattern-matching engine scanning `data/app.log*` (all rotated files); detects crash/traceback, network, news_scoring, performance, scheduler, database, improvement, and general error/warning patterns
+  - `app/routers/audit.py`: REST API — `GET /audit` (HTML), `GET /audit/api/entries` (JSON with filters), `POST /audit/api/entries/{id}/acknowledge`, `POST /audit/api/entries/{id}/resolve`, `POST /audit/api/run` (manual trigger)
+  - `templates/audit.html`: dark Bootstrap dashboard with stats cards, severity/category/status filters, and one-click acknowledge/resolve
+  - `audit_entries` table in SQLite: dedup via `UNIQUE(user_id, raw_line)` — idempotent re-runs
+  - `task_log_audit()` registered in scheduler (`IntervalTrigger(hours=6)`)
+  - `app/core/logging_conf.py`: added `RotatingFileHandler` (10MB × 3 backups) for persistent log storage
+  - 32 new tests; full suite now 310 passing
+
+### Changed
+- **Default Gemini model** updated to `models/gemini-flash-latest` everywhere (coach agent, news agent, alert engine, console router, config.example.json) — alias always tracks the newest flash model automatically
+- **Model selector UI** (`console.html`, `admin.html`): removed deprecated gemini-2.x / gemini-1.5 optgroups; kept gemini-3.1 group + new "Aliases" group (`gemini-flash-latest`, `gemini-pro-latest`)
+- **`CLAUDE.md`**: added T440 deploy commands (`bash scripts/deploy-t440.sh`) for session persistence
+
+---
+
 ## 2026-04-08 (2)
 
 ### Added

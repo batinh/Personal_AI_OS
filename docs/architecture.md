@@ -1,6 +1,6 @@
 # 🏛️ Hệ điều hành Trí tuệ Nhân tạo Cá nhân (Personal AI OS Architecture)
 
-**Phiên bản:** v5.1 | **Trạng thái:** Production (273 tests, 100% pass rate)
+**Phiên bản:** v5.2 | **Trạng thái:** Production (310 tests, 100% pass rate)
 **Định hướng:** Event-Driven (Hướng sự kiện) & Multi-Agent Modular (Đa tác tử Mô-đun hóa).
 
 ## 1. Biểu đồ Kiến trúc Tổng thể (The System Graph)
@@ -13,6 +13,7 @@ flowchart TB
         StravaWH[Strava Webhook]
         TeleWH[Telegram Webhook]
         Cron[Cronjobs / Scheduler]
+        LogAudit[🔍 Log Audit\nEvery 6h]
     end
 
     %% --- TẦNG 2: LÕI NHẬN THỨC ĐA TÁC TỬ ---
@@ -45,6 +46,7 @@ flowchart TB
     end
 
     %% --- LIÊN KẾT GIỮA CÁC TẦNG ---
+    Cron --> LogAudit
     Layer1 --> Router
     
     PromptEngine --> WM

@@ -2,6 +2,7 @@
 # TinhN AI OS — Unified Control Console
 # Merges: admin (settings, system control) + dashboard (metrics, charts, training log) + memory view
 
+import json
 import os
 import secrets
 import logging
@@ -82,6 +83,8 @@ async def console_page(request: Request, tab: str = "overview", username: str = 
     # --- System tab ---
     logs_text = "\n".join(list(log_capture_string))
 
+    news_config = config.get("news_agent", {})
+
     return templates.TemplateResponse(
         request,
         "console.html",
@@ -99,6 +102,8 @@ async def console_page(request: Request, tab: str = "overview", username: str = 
             "config": config,
             "logs": logs_text,
             "service_active": state.service_active,
+            # News settings
+            "news_config": news_config,
         },
     )
 
@@ -165,6 +170,64 @@ async def console_save(
 @router.get("/console/save", include_in_schema=False)
 async def console_save_redirect(username: str = Depends(verify_credentials)):
     return RedirectResponse(url="/console?tab=settings", status_code=303)
+
+
+# ==========================================
+# 📰 NEWS SETTINGS — POST
+# ==========================================
+@router.post("/console/save-news")
+async def console_save_news(
+    request: Request,
+    username: str = Depends(verify_credentials),
+):
+    """Save news agent configuration from the console News tab."""
+    form = await request.form()
+
+    config = load_config()
+    news_cfg = config.get("news_agent", {})
+
+    # --- Basic toggles & scalars ---
+    news_cfg["enabled"] = form.get("news_enabled") == "on"
+    news_cfg["morning_time"] = form.get("morning_time", "07:00").strip()
+    news_cfg["afternoon_time"] = form.get("afternoon_time", "17:00").strip()
+    news_cfg["watch_interval_minutes"] = _parse_int(form.get("watch_interval_minutes"), 30)
+    news_cfg["alert_threshold"] = _parse_int(form.get("alert_threshold"), 7)
+    news_cfg["digest_threshold"] = _parse_int(form.get("digest_threshold"), 4)
+    news_cfg["topic_cooldown_hours"] = _parse_int(form.get("topic_cooldown_hours"), 2)
+    news_cfg["max_articles_per_feed"] = _parse_int(form.get("max_articles_per_feed"), 5)
+    news_cfg["telegram_chat_id"] = form.get("news_telegram_chat_id", "").strip()
+
+    # --- Feeds (serialized as JSON by client-side JS) ---
+    feeds_json = form.get("feeds_json", "[]")
+    try:
+        feeds = json.loads(feeds_json)
+        if isinstance(feeds, list):
+            news_cfg["feeds"] = feeds
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("[CONSOLE] Invalid feeds_json submitted — keeping existing feeds.")
+
+    # --- Interest profile (serialized as JSON by client-side JS) ---
+    profile_json = form.get("interest_profile_json", "{}")
+    try:
+        profile = json.loads(profile_json)
+        if isinstance(profile, dict):
+            news_cfg["interest_profile"] = profile
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("[CONSOLE] Invalid interest_profile_json — keeping existing profile.")
+
+    config["news_agent"] = news_cfg
+    save_config(config)
+    reload_scheduler()
+    logger.info(f"[CONSOLE] User '{username}' saved news agent configuration.")
+    return RedirectResponse(url="/console?tab=news", status_code=303)
+
+
+def _parse_int(value: Optional[str], default: int) -> int:
+    """Parse a form string value to int, returning default on failure."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 # ==========================================

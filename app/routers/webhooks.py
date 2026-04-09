@@ -184,7 +184,16 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
             background_tasks.add_task(task_morning_briefing)
             return {"status": "ok"}
 
-        # 3. If not a system command, route to AI Chat
+        # 3. Catch /news command for manual news trigger
+        if text.strip().lower().startswith("/news"):
+            from app.agents.news.telegram_handler import handle_news_command
+            config = load_config()
+            parts = text.strip().split()
+            args = parts[1:] if len(parts) > 1 else []
+            background_tasks.add_task(handle_news_command, str(chat_id), args, config)
+            return {"status": "ok"}
+
+        # 4. If not a system command, route to AI Chat
         config = load_config()
         background_tasks.add_task(handle_telegram_chat, str(chat_id), text, config)
         
