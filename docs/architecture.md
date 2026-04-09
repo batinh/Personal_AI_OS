@@ -1,6 +1,6 @@
 # 🏛️ Hệ điều hành Trí tuệ Nhân tạo Cá nhân (Personal AI OS Architecture)
 
-**Phiên bản:** v5.2 | **Trạng thái:** Production (310 tests, 100% pass rate)
+**Phiên bản:** v5.3 | **Trạng thái:** Production (329 tests, 100% pass rate)
 **Định hướng:** Event-Driven (Hướng sự kiện) & Multi-Agent Modular (Đa tác tử Mô-đun hóa).
 
 ## 1. Biểu đồ Kiến trúc Tổng thể (The System Graph)

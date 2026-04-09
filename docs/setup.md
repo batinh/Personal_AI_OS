@@ -199,10 +199,47 @@ curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://you
 
 ---
 
-## 7. Running Tests
+## 7. Telegram Command Reference
+
+Once the bot is running and the webhook is registered, send commands in your Telegram chat with the bot.
+
+### Coach Commands
+
+| Command | Description |
+|---------|-------------|
+| `/sync` | Sync latest 3 activities from Strava |
+| `/sync 10` | Sync latest 10 activities |
+| `/sync month` | Sync all activities from the last 30 days |
+| `/standup` | Trigger today's morning briefing immediately |
+
+### News Commands
+
+| Command | Description |
+|---------|-------------|
+| `/news` | Morning digest right now |
+| `/news morning` | Morning digest |
+| `/news afternoon` | Afternoon digest |
+| `/news watch` | Immediate breaking-news scan (scores all unread articles, sends alerts) |
+| `/news help` | Show this command list in Telegram |
+
+> **Note:** News commands return `⚠️ News Agent đang tắt.` if `news_agent.enabled = false`.
+> Enable it in the console: `http://your-host/console?tab=news`
+
+### Configuring News via Console UI
+
+1. Open `/console?tab=news`
+2. Toggle **Bật News Agent**
+3. Add RSS feeds (name / URL / category) — click **+ Thêm nguồn**
+4. Add interest profile entries (category / keywords / weight) — click **+ Thêm chủ đề**
+5. Adjust schedule times and thresholds
+6. Click **Lưu cài đặt News Agent**
+
+---
+
+## 8. Running Tests
 
 ```bash
-# Full suite (must pass: 273/273)
+# Full suite (must pass: 329/329)
 python -m pytest tests/ -q
 
 # With coverage report

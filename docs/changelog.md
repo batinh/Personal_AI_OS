@@ -5,6 +5,25 @@ Format: `[Date] type: description` — most recent first.
 
 ---
 
+## 2026-04-09 (2)
+
+### Added
+- **News Agent Telegram Commands** — `/news [morning|afternoon|watch|help]` now handled via `app/agents/news/telegram_handler.py`:
+  - Lazy imports prevent circular deps; all user-facing messages in Vietnamese (Zone 2)
+  - `/news` or `/news morning` → morning digest; `/news afternoon` → afternoon digest; `/news watch` → immediate breaking-news scan; `/news help` → command list
+  - Silently sends disabled message if `news_agent.enabled = false`
+  - Wired into `app/routers/webhooks.py` between `/standup` and AI chat fallback
+- **News Agent Settings UI Tab** — new "📰 News Agent" tab in `/console`:
+  - Enable/disable toggle + optional Telegram chat ID override
+  - Schedule section: `morning_time`, `afternoon_time`, `watch_interval_minutes`, `max_articles_per_feed`
+  - Thresholds section: `alert_threshold`, `digest_threshold`, `topic_cooldown_hours` (live range sliders)
+  - RSS feeds table: editable rows (name / URL / category) with add/remove; serialized to JSON on submit
+  - Interest profile table: editable rows (category / keywords / weight) with add/remove; serialized to JSON on submit
+- **`POST /console/save-news`** endpoint in `app/routers/console.py`: parses form data, `json.loads()` feeds + interest profile, calls `save_config()` + `reload_scheduler()`
+- 19 new tests in `tests/test_news_telegram.py`; full suite now **329 passing**
+
+---
+
 ## 2026-04-09
 
 ### Added
