@@ -38,7 +38,7 @@ Create a `.env` file in the project root. **Never commit this file.**
 
 ```env
 # ── AI ──────────────────────────────────────────────────────────────
-GOOGLE_API_KEY=your_gemini_api_key
+GEMINI_API_KEY=your_gemini_api_key
 
 # ── Strava ──────────────────────────────────────────────────────────
 STRAVA_CLIENT_ID=your_client_id
@@ -77,7 +77,7 @@ CHROMADB_CACHE_DIR=/app/data/chroma_cache
 
 **Google Gemini API key:**
 1. Go to [Google AI Studio](https://aistudio.google.com/)
-2. Create an API key → copy to `GOOGLE_API_KEY`
+2. Create an API key → copy to `GEMINI_API_KEY`
 
 **Strava credentials:**
 1. [Strava Developers](https://www.strava.com/settings/api) → create application
@@ -252,21 +252,20 @@ python -m pytest tests/ --cov=app --cov-report=html
 
 ---
 
-## 8. Home Lab Deploy (RPi5 → T440)
+## 8. Home Lab Deploy (T440)
 
-For the setup where code is edited on RPi5 and deployed to T440:
+T440 is the primary dev/deploy machine. Run directly on T440:
 
 ```bash
-# Full automated deploy: push → SSH pull → rebuild → health check → e2e tests
+# Full deploy: git pull + rebuild + health check
 ./scripts/deploy-t440.sh
 
-# Deploy only (skip git push — code already pushed)
-./scripts/deploy-t440.sh --skip-push
+# Rebuild only (skip git pull — local changes already in place)
+./scripts/deploy-t440.sh --skip-pull
 ```
 
 Prerequisites:
-- SSH key auth: `ssh -p 8922 tinhn@192.168.1.89` (no password prompt)
-- T440 user in Docker group: `sudo usermod -aG docker tinhn`
+- User in Docker group: `sudo usermod -aG docker tinhn`
 
 ---
 
@@ -279,7 +278,7 @@ docker logs airunningcoach --tail 50
 ```
 
 Common causes:
-- Missing `.env` file → `GOOGLE_API_KEY` not set
+- Missing `.env` file → `GEMINI_API_KEY` not set
 - `data/config.json` corrupted → delete and restart (auto-restored from example)
 - Port 8000 already in use → `lsof -i :8000`
 

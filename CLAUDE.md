@@ -52,10 +52,12 @@ scp -P 22 tinhn@<rpi5-ip>:~/repo/Personal_AI_OS/data/config.json data/config.jso
 | Prompt change | `app/agents/coach/prompts.py` |
 | DB schema / query | `app/core/database.py` + `docs/database_design.md` |
 | News agent | `app/agents/news/agent.py`, `feeds.py`, `prompts.py`, `telegram_handler.py` |
+| News alerts | `app/agents/news/alert_engine.py` |
 | Scheduler job | `app/services/scheduler.py` |
 | Webhook / Strava | `app/routers/webhooks.py` + `app/agents/coach/strava_client.py` |
 | Memory / RAG | `app/services/rag_memory.py` + `flows/memory_extraction.py` |
 | Config / settings | `app/core/config.py` + `config.example.json` |
+| Log audit | `app/services/log_auditor.py` + `app/routers/audit.py` |
 | Test failures | `tests/conftest.py` + `tests/test_<module>.py` |
 
 Run targeted tests first, full suite only before commit:
@@ -86,13 +88,33 @@ agents/coach/
   prompts.py        8-layer Lego Prompt Engine — see docs/architecture.md
   utils.py          build_agent_context() — SINGLE factory for all flow context
   tools.py          Gemini AFC tools — top-level imports only, no local imports
+
+agents/news/
+  agent.py          news briefing orchestrator (morning/afternoon digests)
+  alert_engine.py   event-driven breaking-news alerts (runs on interval via scheduler)
+  scorer.py         Gemini-based article scoring for alert threshold decisions
+
+services/
+  scheduler.py      APScheduler (BackgroundScheduler) cron jobs
+  log_auditor.py    log file scanning → audit_entries DB table → /audit dashboard
+  backup.py         data backup tasks
+  weather.py        weather API integration for morning briefing context
+
+core/
+  user_context.py   get_primary_user_id() — canonical way to get user from env
+  database.py       all DB access; schema initialized via init_db()
+  config.py         load_config() / save_config() with 60s TTL cache;
+                    auto-inits data/config.json from config.example.json on first boot
 ```
 
 **Non-obvious rules:**
 - All `scheduler.py` tasks must be `def`, not `async def` — `BackgroundScheduler` is a thread pool
 - All file paths use `Path(__file__).resolve().parent...` — never relative (Docker WORKDIR=/app breaks them)
-- `data/config.json` is gitignored; auto-initialized from `config.example.json` on first boot
+- `data/config.json` is gitignored; auto-initialized from `config.example.json` on first boot via `_EXAMPLE_CONFIG_PATH` in `config.py`
 - Use `build_agent_context()` in every flow — never duplicate context building
+- Primary user ID: always use `get_primary_user_id()` from `app.core.user_context`, not `os.getenv("TELEGRAM_CHAT_ID")` directly in new code
+- Tool routing in `agent.py`: `_select_tools_for_message()` routes to read-only vs write tool set based on intent keywords — add Vietnamese write-intent keywords to `_WRITE_INTENT_KEYWORDS` when needed
+- `ENABLE_MEMORY_DEBUG=true` env var enables verbose memory extraction logging in `extract_implicit_memory()`
 
 ## Telegram Commands
 
@@ -100,11 +122,9 @@ agents/coach/
 |---------|---------|-------------|
 | `/sync [N\|month]` | `webhooks.py` | Manual Strava sync (default 3 activities) |
 | `/standup` | `webhooks.py` | Trigger morning briefing immediately |
-| `/news` | `telegram_handler.py` | Morning news briefing |
-| `/news morning` | `telegram_handler.py` | Morning digest |
-| `/news afternoon` | `telegram_handler.py` | Afternoon digest |
-| `/news watch` | `telegram_handler.py` | Immediate breaking-news scan |
-| `/news help` | `telegram_handler.py` | Show command list |
+| `/clear` / `/reset` | `agent.py` | Clear short-term chat history |
+| `/reflect` / `/reflection` | `agent.py` | Trigger memory extraction + weekly reflection (test/admin mode) |
+| `/news [morning\|afternoon\|watch\|help]` | `telegram_handler.py` | News digest / breaking-news scan |
 
 News commands are disabled silently when `news_agent.enabled = false` in config.
 Patch target for tests: `app.agents.news.telegram_handler.handle_news_command` (lazy import inside webhook handler).
@@ -126,17 +146,13 @@ See `app/agents/coach/prompts.py` for the full 8-layer system.
 **Critical gotchas:**
 - Use `.replace()` not f-strings when injecting user data containing `{}` — avoids `KeyError`
 - Format rules are platform-specific: HTML only for Telegram/email, plain-text only for Strava
-- GCS rubric is grounded: Motor = cadence vs 175 spm, Frame = decoupling vs 5%, Fuel = pace vs race target
 - Patch paths in tests must target **where the symbol is imported**, not defined:
   - ✅ `@patch("app.agents.coach.tools.calculate_acwr")`
   - ❌ `@patch("app.agents.coach.utils.calculate_acwr")`
 
-## Coaching Science (non-obvious constants)
+## Coaching Science
 
-- **TRIMP male**: `0.64 × e^(1.92 × HRR)` **female**: `0.86 × e^(1.67 × HRR)` — gender comes from `config["gender"]`
-- **ACWR sweet spot**: 0.8–1.3 | > 1.3 caution | > 1.5 danger
-- **Taper** (inject via `taper_factor`): week −3 = 75%, week −2 = 50%, race week = 25% — never increase during taper
-- **15% Rule**: weekly volume increases must not exceed 15%
+See `docs/coaching_constants.md` for TRIMP formula, ACWR thresholds, taper schedule, 15% rule, and GCS rubric.
 
 ## Conventions
 

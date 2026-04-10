@@ -63,7 +63,7 @@ Tests must pass before every push:
 
 ```bash
 python -m pytest tests/ -q
-# Expected: 273 passed, 0 failed
+# Expected: 329 passed, 0 failed
 ```
 
 ### TDD — Required for new features
@@ -90,7 +90,7 @@ Run mentally against [pragmatic_review_checklist.md](./pragmatic_review_checklis
 - [ ] `try/except` around all external calls (Gemini, Telegram, Strava)
 - [ ] `WHERE user_id = ?` in every SQL query
 - [ ] `.replace()` not f-strings for injecting external content into prompts
-- [ ] `python -m pytest tests/ -q` → 273 passed, 0 failed
+- [ ] `python -m pytest tests/ -q` → 329 passed, 0 failed
 
 ---
 
@@ -108,7 +108,7 @@ Examples:
 ```
 feat: add news agent with morning/afternoon Telegram briefings
 fix: patch path mismatch for flows/ submodule tests
-docs: update README test count badge to 273
+docs: update README test count badge to 329
 ```
 
 ---

@@ -1,23 +1,23 @@
 # Runbook — Personal AI OS
 
-Operational procedures for the home lab deployment (RPi5 dev → T440 production).
+Operational procedures for the home lab deployment (T440 is the primary dev/deploy machine).
 
 ---
 
 ## Deployment
 
-### Standard deploy (RPi5 → T440)
+### Standard deploy (run on T440)
 
 ```bash
-# Full: push code → SSH pull → rebuild → health check → e2e tests
+# Full: git pull + rebuild + health check
 ./scripts/deploy-t440.sh
 
-# If code is already pushed
-./scripts/deploy-t440.sh --skip-push
+# If code is already pulled / local-only changes
+./scripts/deploy-t440.sh --skip-pull
 ```
 
 The script:
-1. Pushes current branch to origin (unless `--skip-push`)
+1. Runs `git pull --ff-only` (unless `--skip-pull`)
 2. SSHs into T440 (`-p 8922 tinhn@192.168.1.89`)
 3. Runs `git pull --ff-only` in `~/repo/Personal_AI_OS`
 4. Runs `docker compose up --build -d`
@@ -38,18 +38,12 @@ Checks pytest suite, config loads, and docker compose syntax. Must exit 0 before
 If the script fails:
 
 ```bash
-# 1. Push from RPi5
-git push origin main
-
-# 2. SSH into T440
-ssh -p 8922 tinhn@192.168.1.89
-
-# 3. On T440
+# Run directly on T440
 cd ~/repo/Personal_AI_OS
 git pull --ff-only
 docker compose up --build -d
 
-# 4. Verify
+# Verify
 curl http://localhost:8000/health
 docker logs airunningcoach --tail 20
 ```
@@ -109,7 +103,7 @@ curl -s "$T440/health" | python3 -c "import sys,json; d=json.load(sys.stdin); pr
 docker logs airunningcoach --tail 50
 ```
 
-**`GOOGLE_API_KEY not set`** → verify `.env` file exists and has the key  
+**`GEMINI_API_KEY not set`** → verify `.env` file exists and has the key  
 **`Config is EMPTY`** → delete `data/config.json` and restart (auto-restored from example)  
 **Port conflict** → `lsof -i :8000` on T440  
 
@@ -171,13 +165,13 @@ ssh -p 8922 tinhn@192.168.1.89 "cd ~/repo/Personal_AI_OS && git stash && git pul
 ### Roll back to the previous commit
 
 ```bash
-# On RPi5: find the commit to roll back to
+# On T440: find the commit to roll back to
 git log --oneline -10
 
-# Push the previous commit as a new deploy
+# Revert and redeploy
 git revert HEAD --no-edit
 git push origin main
-./scripts/deploy-t440.sh --skip-push
+./scripts/deploy-t440.sh --skip-pull
 ```
 
 Avoid `git push --force` to `main` — it rewrites shared history.
