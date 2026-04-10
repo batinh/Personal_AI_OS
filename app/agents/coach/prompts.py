@@ -36,8 +36,6 @@ TUYỆT ĐỐI KHÔNG tăng tải trong Taper. Mọi đề xuất tăng km đề
     # Derived power constants for GCS rubric (avoid repeating calculations)
     _mp_lo = int(rftp_watts * 0.82) if rftp_watts > 0 else 0
     _mp_hi = int(rftp_watts * 0.87) if rftp_watts > 0 else 0
-    _lr_hi = int(rftp_watts * 0.82) if rftp_watts > 0 else 0  # Long run easy ceiling
-
     _power_block = ""
     if rftp_watts > 0 and power_zones_text:
         _power_block = f"""
@@ -76,7 +74,7 @@ LUẬT SỬ DỤNG ZONES:
 
 [PHÂN LOẠI LOẠI BÀI TẬP (BẮT BUỘC NHẬN DIỆN)]
 Khi đề xuất hoặc phân tích, hãy luôn gán loại bài tập:
-- RECOVERY RUN: Zone 1, dưới 45 phút, pace rất chậm (>{pace_zones_text.split(chr(10))[0] if pace_zones_text else "chậm"})
+- RECOVERY RUN: Zone 1, dưới 45 phút, pace rất chậm (>{(pace_zones_text.split(chr(10))[0] or "chậm") if pace_zones_text else "chậm"})
 - EASY RUN / LONG RUN: Zone 2, pace thoải mái, có thể nói chuyện
 - TEMPO RUN: Zone 3-4, ngưỡng lactate, "comfortably hard", 20-40 phút
 - INTERVAL: Zone 5, ngắn (400m–1600m), có recovery jog, cao cường độ
@@ -168,14 +166,7 @@ def get_shared_context_block(now_str: str, chat_id: str, phase_text: str, countd
 
 DEFAULT_ANALYSIS_TASK = """
 [NHIỆM VỤ PHÂN TÍCH CHUYÊN SÂU]
-Dựa vào dữ liệu buổi chạy và [ĐỐI CHIẾU GIÁO ÁN], hãy phân tích các khía cạnh sau:
-1. CONTEXT & HISTORY: Nhắc lại bối cảnh, mục tiêu bài chạy và tình trạng thể lực gần đây.
-2. EXECUTION: Đánh giá Pace, IF (Avg Power / rFTP), chiến thuật (Negative/Positive Split) và độ ổn định.
-3. MECHANICS: Đánh giá Cadence (ngưỡng 175spm), Power zone (% rFTP), Stride. Cảnh báo nếu IF bài Easy >0.80.
-4. PHYSIOLOGY: HR so với LTHR/HR Zones, Decoupling (Power-to-HR drift — ngưỡng 5%), phục hồi.
-5. TRAINING LOAD: IF tổng thể, loại bài tập, tác động ACWR.
-6. GOAL CONFIDENCE SCORE (GCS — 4 trụ cột): Tính theo Sức Bền 30% + Tốc Độ 30% + Sức Khỏe 25% + Thể Trạng 15%.
-7. NEXT ACTION: Đề xuất cụ thể 7 ngày tới với Power zone target và workout type.
+Dựa vào dữ liệu buổi chạy và [ĐỐI CHIẾU GIÁO ÁN], thực hiện phân tích đầy đủ theo [YÊU CẦU PHÂN TÍCH CHI TIẾT] bên dưới. Ưu tiên dữ liệu thực tế — không suy diễn khi thiếu số liệu.
 """
 
 # ==========================================
@@ -188,12 +179,7 @@ DEFAULT_ANALYSIS_REQUIREMENTS = """
 3. MECHANICS: Cadence (so 175spm), Power zone (so % rFTP), Stride. Phát cảnh báo nếu IF bài Easy >0.80 rFTP.
 4. PHYSIOLOGY: HR so với LTHR/HR Zones (xem bảng zones trong system), Decoupling (ngưỡng 5%), khả năng phục hồi.
 5. TRAINING LOAD: IF tổng thể, phân loại bài (Easy/Tempo/Interval/MP/Race-Specific), tác động lên ACWR.
-6. GOAL CONFIDENCE SCORE (GCS — 0–100%) — 4 TRỤ CỘT:
-   - 🏗️ SỨC BỀN (30%): Decoupling <5% = full | 5-10% = half | >10% = minimal. IF bài Easy <0.80 = bonus.
-   - ⚡ TỐC ĐỘ (30%): Cadence ≥175spm = full | -10% mỗi 5spm thiếu. Bài MP đạt IF 0.82-0.87 = full Speed.
-   - 🩺 SỨC KHỎE (25%): Không có HR/Power bất thường = full | HR spike hoặc Power sụt >10% = deduct 15pts.
-   - 🌀 THỂ TRẠNG (15%): ACWR [0.8-1.3] = full | [1.3-1.5] = half | >1.5 = zero + danger alert.
-   Tính GCS cuối cùng bằng tổng có trọng số. KHÔNG đoán mò — chỉ tính dựa trên dữ liệu thực tế trong bài chạy.
+6. GOAL CONFIDENCE SCORE (GCS — 0–100%): Áp dụng đúng thang điểm 4 trụ cột đã định nghĩa trong [THANG ĐIỂM GCS] của system instruction (Sức Bền 30% + Tốc Độ 30% + Sức Khỏe 25% + Thể Trạng 15%). KHÔNG đoán mò — chỉ tính dựa trên dữ liệu thực tế trong bài chạy.
 7. NEXT ACTION: Đề xuất cụ thể cho 7 ngày tới, có Power zone target và workout type rõ ràng.
 """
 
@@ -296,7 +282,8 @@ def build_standup_prompt(shared_context: str, weather_data: str, recent_logs: st
     """Flow 2: Morning Briefing (Standup) on Telegram
     [REUSE] Integrates Weather Awareness into the existing Standup structure.
     """
-    weather_block = WEATHER_INSTRUCTION.format(weather_data=weather_data)
+    _weather_data = weather_data or "Không có dữ liệu thời tiết. Chạy theo kế hoạch và theo dõi cảm giác cơ thể."
+    weather_block = WEATHER_INSTRUCTION.format(weather_data=_weather_data)
     return f"""
 {shared_context}
 
