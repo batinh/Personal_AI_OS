@@ -227,6 +227,7 @@ CHAT_FORMAT_RULES = """
 1. Luôn dùng Emoji (📊, 🏃‍♂️, ⚠️, 💡) cho các tiêu đề mục.
 2. BẮT BUỘC dùng thẻ HTML <b>...</b> để in đậm các số liệu: Pace, HR, Km, TRIMP, ACWR. TUYỆT ĐỐI KHÔNG dùng dấu sao (**).
 3. Câu văn ngắn, xuống dòng rõ ràng, dùng gạch đầu dòng (-) khi liệt kê.
+4. ĐỘ DÀI: Chào hỏi hoặc câu hỏi đơn giản → tối đa 3 câu. Phân tích hoặc câu hỏi kỹ thuật → tối đa 15 dòng.
 """
 
 STRAVA_FORMAT_RULES = """
@@ -268,15 +269,23 @@ UNIVERSAL_FORMAT_RULES = """
 # 🏗️ LAYER 5: TASK BUILDERS (FINAL PROMPT ASSEMBLY)
 # ==========================================
 def build_chat_prompt(shared_context: str, current_plans: str, active_memories: str = "") -> str:
-    """Flow 1: Handle Telegram Chat"""
-    memories_block = ""
+    """Flow 1: Handle Telegram Chat.
+    Fast path passes empty shared_context/current_plans to keep the prompt minimal.
+    """
+    parts = []
+    if shared_context:
+        parts.append(shared_context)
+    if current_plans:
+        parts.append(f"[GIÁO ÁN SẮP TỚI]\n{current_plans}")
     if active_memories:
-        memories_block = (
-            f"\n\n[KÝ ỨC & TRẠNG THÁI VĐV]\n"
+        parts.append(
+            f"[KÝ ỨC & TRẠNG THÁI VĐV]\n"
             f"{active_memories}\n"
             f"Lưu ý: Nếu VĐV đang có chấn thương hoặc tình trạng đặc biệt, hãy chủ động đề cập và điều chỉnh tư vấn cho phù hợp."
         )
-    return f"{shared_context}\n\n[GIÁO ÁN SẮP TỚI]\n{current_plans}{memories_block}\n\n[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu.\n\n{CHAT_FORMAT_RULES}"
+    parts.append("[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu.")
+    parts.append(CHAT_FORMAT_RULES)
+    return "\n\n".join(parts)
 
 def build_standup_prompt(shared_context: str, weather_data: str, recent_logs: str, today_plan: str, chat_context: str, active_memories: str = "Không có ghi chú đặc biệt.") -> str:
     """Flow 2: Morning Briefing (Standup) on Telegram

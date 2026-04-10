@@ -317,9 +317,16 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         send_telegram_msg(chat_id, "🧹 Đã xóa sạch ký ức ngắn hạn.")
         return
         
-    # [2] Handle Manual Reflection Trigger (TESTING/ADMIN MODE)
+    # [2a] /brief → dedicated morning briefing flow (avoids generic chat verbosity)
+    if text.strip().lower() in ["/brief", "/standup"]:
+        logger.info(f"[WEBHOOK] /brief triggered by {chat_id}")
+        from app.core.config import load_config
+        generate_morning_briefing(load_config())
+        return
+
+    # [2b] Handle Manual Reflection Trigger (TESTING/ADMIN MODE)
     # Hỗ trợ cả 2 cách gõ lệnh để tránh user gõ nhầm
-    if text in ["/reflect", "/reflection"]:
+    if text in ["/reflect", "/reflection", "/refect"]:
         send_telegram_msg(chat_id, "⚙️ [TEST MODE] Đang kích hoạt luồng Phân tích Ký ức & Tổng kết tuần. Quá trình này sẽ mất khoảng 15-30 giây...")
         
         try:
@@ -365,15 +372,18 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
     )
 
-    shared_context = get_shared_context_block(
-        datetime.now(tz).strftime('%A, %Y-%m-%d %H:%M:%S'), chat_id, phase_text, countdown_text,
-        "ACWR đang tính (Dùng tool check_training_status nếu cần)", # Offload computation
-        actual_volume, weekly_decision_context
-    )
-
-    task_prompt = build_chat_prompt(shared_context, get_upcoming_plans(chat_id, limit_days=7))
-    if intent == "standard" and active_memories_text:
-        task_prompt += f"\n\n[ACTIVE MEMORIES]\n{active_memories_text}"
+    if intent == "standard":
+        shared_context = get_shared_context_block(
+            datetime.now(tz).strftime('%A, %Y-%m-%d %H:%M:%S'), chat_id, phase_text, countdown_text,
+            "ACWR đang tính (Dùng tool check_training_status nếu cần)",
+            actual_volume, weekly_decision_context
+        )
+        task_prompt = build_chat_prompt(
+            shared_context, get_upcoming_plans(chat_id, limit_days=7), active_memories_text
+        )
+    else:
+        # Fast path: skip heavy context — casual chat doesn't need training block
+        task_prompt = build_chat_prompt("", "", "")
 
     debug_log_prompt("DEBUG CHAT INPUT", f"[SYSTEM]:\n{system_inst}\n[TASK_CONTEXT]:\n{task_prompt}\n[USER TEXT]: {text}")
 
@@ -394,11 +404,14 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         selected_tools = _select_tools_for_message(text)
         logger.info(f"[CHAT] Tool routing: {'WRITE' if len(selected_tools) > len(_TOOLS_READ_ONLY) else 'READ-ONLY'} ({len(selected_tools)} tools) for message: '{text[:50]}'")
 
+        # Fast path caps output to keep greetings/simple Q&A concise
+        max_tokens = 512 if intent == "fast" else 1200
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),
             history=formatted_history[:-1], # Pass previous history
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
+                max_output_tokens=max_tokens,
                 tools=selected_tools
             )
         )
