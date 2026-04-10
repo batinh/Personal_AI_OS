@@ -119,7 +119,11 @@ def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
         # 1. Always calculate and update SQLite (REPLACE command ensures safe overwrite/healing)
         activity_data = build_activity_record(activity, max_hr, rest_hr, gender)
         trimp_data = activity_data.pop('_trimp_data')
-        save_run_activity(user_id=chat_id, activity_data=activity_data)
+        try:
+            save_run_activity(user_id=chat_id, activity_data=activity_data)
+        except Exception as exc:
+            logger.error(f"[SYNC] Failed to save activity {act_id}: {exc}")
+            continue
         loaded_count += 1
 
         dist_km = activity_data['distance_km']

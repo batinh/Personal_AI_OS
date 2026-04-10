@@ -180,6 +180,12 @@ def test_passes_news_system_instruction_to_gemini(mock_si, mock_client, mock_fet
     mock_client.models.generate_content.assert_called_once()
     call_kwargs = mock_client.models.generate_content.call_args.kwargs
     assert "config" in call_kwargs
+    # The config object is constructed via types.GenerateContentConfig — since types is a stub
+    # MagicMock from conftest, verify via the constructor's call_args that the correct
+    # system_instruction was passed.
+    from google.genai import types as _types
+    si_passed = _types.GenerateContentConfig.call_args.kwargs.get("system_instruction")
+    assert si_passed == "Bạn là News Curator, biên tập viên tin tức AI."
 
 
 @patch("app.agents.news.agent.save_article_score")
@@ -321,4 +327,6 @@ def test_gemini_empty_response_sends_fallback(mock_client, mock_fetch, mock_uid,
 
     mock_send.assert_called_once()
     sent_text = mock_send.call_args[0][1]
-    assert len(sent_text) > 0
+    # Fallback string is "⚠️ Không thể tải tin tức lúc này."
+    assert "⚠️" in sent_text
+    assert "Không thể tải" in sent_text

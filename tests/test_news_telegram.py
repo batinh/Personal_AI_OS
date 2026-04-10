@@ -154,11 +154,11 @@ class TestConsoleSaveNews(unittest.TestCase):
 
     def setUp(self):
         import os
-        os.environ.setdefault("ADMIN_USERNAME", "admin")
-        os.environ.setdefault("ADMIN_PASSWORD", "123456")
+        os.environ["ADMIN_USERNAME"] = "admin"
+        os.environ["ADMIN_PASSWORD"] = "testpass"
         from app.main import app
         self.client = TestClient(app, raise_server_exceptions=False)
-        self.auth = ("admin", "123456")
+        self.auth = ("admin", "testpass")
 
     def _post(self, data):
         return self.client.post("/console/save-news", data=data, auth=self.auth,

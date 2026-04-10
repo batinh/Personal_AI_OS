@@ -147,6 +147,37 @@ class TestGetActivityData(unittest.TestCase):
         self.assertIsNone(name)
 
     @patch("app.agents.coach.strava_client.requests.get")
+    def test_rate_limited_returns_none_tuple(self, mock_get):
+        """429 rate limit on activity fetch should return (None, None, None, None)."""
+        resp = MagicMock()
+        resp.status_code = 429
+        mock_get.return_value = resp
+
+        name, csv, meta, raw = self._make_client().get_activity_data("123")
+        self.assertIsNone(name)
+        self.assertIsNone(csv)
+
+    @patch("app.agents.coach.strava_client.requests.get")
+    def test_502_transient_returns_none_tuple(self, mock_get):
+        """502 bad gateway should return (None, None, None, None)."""
+        resp = MagicMock()
+        resp.status_code = 502
+        mock_get.return_value = resp
+
+        name, csv, meta, raw = self._make_client().get_activity_data("123")
+        self.assertIsNone(name)
+
+    @patch("app.agents.coach.strava_client.requests.get")
+    def test_timeout_returns_none_tuple(self, mock_get):
+        """requests.exceptions.Timeout should be caught and return (None, None, None, None)."""
+        import requests as req_mod
+        mock_get.side_effect = req_mod.exceptions.Timeout("timed out")
+
+        name, csv, meta, raw = self._make_client().get_activity_data("123")
+        self.assertIsNone(name)
+        self.assertIsNone(csv)
+
+    @patch("app.agents.coach.strava_client.requests.get")
     def test_no_streams_returns_meta_only(self, mock_get):
         """If streams endpoint fails, should return activity name + meta without csv."""
         activity_resp = MagicMock()

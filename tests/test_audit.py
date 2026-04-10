@@ -44,10 +44,12 @@ def tmp_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
-def auth_headers():
-    """Basic-auth headers matching default ADMIN_USERNAME/ADMIN_PASSWORD."""
+def auth_headers(monkeypatch):
+    """Basic-auth headers — force env to match so tests are isolated from .env."""
     import base64
-    creds = base64.b64encode(b"admin:123456").decode()
+    monkeypatch.setenv("ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", "testpass")
+    creds = base64.b64encode(b"admin:testpass").decode()
     return {"Authorization": f"Basic {creds}"}
 
 
