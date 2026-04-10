@@ -1,10 +1,24 @@
 {
-  "enabledPlugins": {
-    "everything-claude-code@everything-claude-code": true
-  },
-  "model": "sonnet",
-  "disabledMcpServers": ["supabase", "railway", "vercel"],
   "env": {
     "CLAUDE_PACKAGE_MANAGER": "pnpm"
-  }
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/test_audit.py::TestAuditApi::test_audit_page_html -v)",
+      "Bash(python -m pytest tests/test_news_telegram.py::TestConsoleSaveNews::test_feeds_json_parsed_correctly -v)",
+      "Bash(python -m pytest tests/test_news_telegram.py --tb=short -q)",
+      "Bash(git commit -m ':*)",
+      "Bash(git commit:*)"
+    ]
+  },
+  "model": "sonnet",
+  "enabledPlugins": {
+    "everything-claude-code@everything-claude-code": true,
+    "ecc@ecc": true
+  },
+  "disabledMcpServers": [
+    "supabase",
+    "railway",
+    "vercel"
+  ]
 }
