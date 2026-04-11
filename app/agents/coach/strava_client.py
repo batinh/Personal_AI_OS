@@ -225,3 +225,33 @@ class StravaClient:
         except Exception as e:
             logger.error(f"Activities Exception: {e}")
         return []
+
+    def fetch_activity_detail_status(self, activity_id: str) -> dict:
+        """
+        Verify existence of a Strava activity by ID.
+        Returns a dict: {"status": "exists"|"not_found"|"forbidden"|"rate_limited"|"error", "code": int}
+        This lets reconciler decide whether it's safe to delete local copies when Strava truly reports 404.
+        """
+        token = self.get_access_token()
+        if not token:
+            return {"status": "error", "code": None}
+        headers = {"Authorization": f"Bearer {token}"}
+        url = f"{self.base_url}/activities/{activity_id}"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            code = r.status_code
+            if code == 200:
+                return {"status": "exists", "code": code}
+            if code == 404:
+                return {"status": "not_found", "code": code}
+            if code in (401, 403):
+                return {"status": "forbidden", "code": code}
+            if code == 429:
+                return {"status": "rate_limited", "code": code}
+            # treat other 5xx as error
+            if 500 <= code < 600:
+                return {"status": "error", "code": code}
+            return {"status": "error", "code": code}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[STRAVA] Network error verifying activity {activity_id}: {e}")
+            return {"status": "error", "code": None}

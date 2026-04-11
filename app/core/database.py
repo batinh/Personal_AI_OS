@@ -379,6 +379,28 @@ def delete_run_activity(activity_id: str):
         logger.error(f"[DB_ERROR] Error deleting run activity {activity_id}: {e}")
 
 
+def list_run_activity_ids_in_date_range(user_id: str, start_date_str: str, end_date_str: str) -> List[Dict]:
+    """
+    Return list of run activity ids in the inclusive date range [start_date_str, end_date_str].
+    Each item is a dict: {"activity_id": str, "start_date": str} ordered by start_date DESC.
+    Dates must be YYYY-MM-DD strings.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT activity_id, start_date FROM run_activities
+            WHERE user_id = ? AND date(start_date) >= ? AND date(start_date) <= ?
+            ORDER BY start_date DESC
+        ''', (str(user_id), start_date_str, end_date_str))
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"activity_id": r[0], "start_date": r[1]} for r in rows]
+    except Exception as e:
+        logger.error(f"[DB_ERROR] list_run_activity_ids_in_date_range: {e}")
+        return []
+
+
 def save_run_activity_raw(
     user_id: str,
     activity_id: str,

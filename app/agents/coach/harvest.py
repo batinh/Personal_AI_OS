@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from app.agents.coach.strava_client import StravaClient
 from app.agents.coach.utils import calculate_trimp, calculate_efficiency_factor, analyze_decoupling
 from app.core.config import load_config
-from app.core.database import init_db, upsert_user, save_run_activity, save_run_activity_raw, save_message, get_db_connection
+from app.core.database import init_db, upsert_user, save_run_activity, save_run_activity_raw, save_message, get_db_connection, delete_run_activity, list_run_activity_ids_in_date_range
 from app.services.stream_storage import save_activity_stream_to_file
 from app.core.notification import send_telegram_msg
 from app.services.rag_memory import rag_db
@@ -189,6 +189,82 @@ def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
         # [FIX P0] Use time.sleep (NOT asyncio.sleep) — this runs in a threadpool via BackgroundTasks
         time.sleep(1)
     send_telegram_msg(chat_id, f"🎉 <b>Hoàn tất Đồng bộ Lịch sử!</b>\nĐã bổ sung {loaded_count} bài chạy vào Cơ sở dữ liệu và cấy {analyzed_count} Gói Ký ức (EF, Decoupling, TRIMP) vào não bộ AI. Số liệu ACWR đã được cân bằng.")
+
+    # ------------------------
+    # Reconciliation: detect runs deleted on Strava and remove local copies (SAFE MODE)
+    # ------------------------
+    try:
+        # Build strava id set from this batch (only runs)
+        strava_ids_in_batch = set([str(a.get('id')) for a in target_activities if a.get('type') in ['Run', 'TrailRun', 'VirtualRun']])
+
+        # Determine window start/end per plan (limit N: min/max of batch start_date_local; days_back: cutoff)
+        if days_back:
+            window_start = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+            window_end = datetime.now().strftime('%Y-%m-%d')
+        else:
+            # Extract start_date_local strings; fall back to today if parsing fails
+            dates = []
+            for a in target_activities:
+                try:
+                    dates.append(a.get('start_date_local', a.get('start_date'))[:10])
+                except Exception:
+                    continue
+            if dates:
+                window_start = min(dates)
+                window_end = max(dates)
+            else:
+                # Nothing to reconcile
+                window_start = None
+                window_end = None
+
+        removed_count = 0
+        max_verify = int(os.getenv('SYNC_RECONCILE_CAP', '10'))
+
+        if window_start and window_end:
+            db_rows = list_run_activity_ids_in_date_range(chat_id, window_start, window_end)
+            db_ids = [r['activity_id'] for r in db_rows]
+            candidates = [r for r in db_rows if r['activity_id'] not in strava_ids_in_batch]
+
+            logger.info(f"[SYNC-RECONCILE] Window {window_start} -> {window_end}. DB ids in window: {len(db_ids)}. Candidates: {len(candidates)}")
+
+            # Verify up to max_verify candidates, newest first
+            for cand in candidates[:max_verify]:
+                aid = str(cand['activity_id'])
+                logger.info(f"[SYNC-RECONCILE] Verifying candidate {aid} via Strava API...")
+                res = strava_client.fetch_activity_detail_status(aid)
+                status = res.get('status')
+                code = res.get('code')
+                logger.info(f"[SYNC-RECONCILE] Strava returned {status} (code={code}) for {aid}")
+
+                if status == 'not_found':
+                    try:
+                        delete_run_activity(aid)
+                        try:
+                            rag_db.forget(doc_id=aid)
+                        except Exception:
+                            pass
+                        removed_count += 1
+                        logger.info(f"[SYNC-RECONCILE] removed stale activity {aid}")
+                    except Exception as e:
+                        logger.error(f"[SYNC-RECONCILE] Failed to remove {aid}: {e}")
+                elif status == 'rate_limited':
+                    logger.warning('[SYNC-RECONCILE] Rate limited by Strava; stopping verification loop to avoid 429.')
+                    break
+                elif status in ('forbidden', 'error'):
+                    logger.warning(f"[SYNC-RECONCILE] Received {status} for {aid}; skipping delete (safe mode).")
+                    continue
+                else:
+                    logger.debug(f"[SYNC-RECONCILE] Activity {aid} still exists on Strava (list mismatch).")
+                # small delay between verifies
+                time.sleep(0.5)
+
+        # Notify via Telegram about reconciliation results
+        if removed_count > 0:
+            send_telegram_msg(chat_id, f"🗑️ <b>Reconcile:</b> Đã gỡ {removed_count} bài không còn trên Strava (đã xác minh bằng API).")
+        else:
+            logger.info('[SYNC-RECONCILE] No stale activities removed.')
+    except Exception as e:
+        logger.error(f"[SYNC-RECONCILE] Exception during reconcile: {e}")
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
