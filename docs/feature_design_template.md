@@ -1,3 +1,19 @@
+# Feature Design Template
+
+## Convention
+
+| Item | Rule |
+|------|------|
+| **Location** | `docs/features/{feature-slug}.md` |
+| **Slug format** | lowercase, hyphens, English (e.g. `news-agent-overhaul`, `telegram-routing`) |
+| **When required** | Any new feature or significant change touching ≥2 files |
+| **When to create** | Before writing code — design first, then implement |
+| **Reference in ISSUES.md** | Link the doc in the issue detail section |
+
+Copy everything below the horizontal rule into `docs/features/{your-slug}.md`.
+
+---
+
 ### 🏛️ 1. Thẩm định Giá trị & Tầm nhìn (YAGNI / KISS)
 
 *Trước khi viết dòng code đầu tiên, hãy tự hỏi:*

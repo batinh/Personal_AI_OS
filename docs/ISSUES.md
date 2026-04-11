@@ -35,6 +35,9 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 | [ISS-004](#iss-004--telegram-messages-always-routed-to-coach-no-news-agent-routing) | feature | Telegram messages always routed to coach — no news agent routing | High | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `webhooks.py` |
 | [ISS-005](#iss-005--news-schedule-not-fixed-at-0630--1730--2000) | feature | News schedule not fixed at 06:30 / 17:30 / 20:00 | Medium | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `scheduler.py` |
 | [ISS-006](#iss-006--no-feature-design-doc-convention-or-location-standard) | refactor | No feature design doc convention or location standard | Low | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `docs/` |
+| [ISS-007](#iss-007--news-command-sends-two-messages-loading--result) | bug | `/news` command sends two messages (loading + result) | Medium | U | 2026-04-11 | 2026-04-11 | pending | `telegram_handler.py` |
+| [ISS-008](#iss-008--news-help-message-missing-routing-and-schedule-info) | enhancement | `/news help` missing routing and schedule info | Low | U | 2026-04-11 | 2026-04-11 | pending | `telegram_handler.py` |
+| [ISS-009](#iss-009--feature-design-doc-convention-not-documented) | refactor | Feature design doc convention not documented in CLAUDE.md | Low | U | 2026-04-11 | 2026-04-11 | pending | `CLAUDE.md`, `docs/` |
 | [ISS-F01](#iss-f01--news-scorer-returns-invalid-json) | bug | News scorer returns invalid JSON | High | AI | 2026-03-xx | 2026-03-xx | `fe8d12c` | `scorer.py` |
 | [ISS-F02](#iss-f02--reuters-rss-feed-dead) | bug | Reuters RSS feed dead / returns no articles | Medium | AI | 2026-03-xx | 2026-03-xx | `0b711ae` | `feeds.py` |
 | [ISS-F03](#iss-f03--relative-file-paths-break-inside-docker) | bug | Relative file paths break inside Docker | Critical | AI | 2026-03-xx | 2026-03-xx | `63864b8` | `config.py`, `database.py` |
@@ -47,6 +50,49 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 ---
 
 ## Detail: Open
+
+### ISS-007 — `/news` command sends two messages (loading + result)
+
+**Type:** bug · **Priority:** Medium · **Reporter:** U · **Date:** 2026-04-11
+**Module:** `app/agents/news/telegram_handler.py:84`
+
+**Symptom:**
+Every `/news` command produces 2 Telegram messages: `⏳ Đang lấy tin...` immediately, then the full digest.
+
+**Root cause:**
+`handle_news_command()` always sends a loading acknowledgement before dispatching to `generate_news_briefing()`. The final message already contains a header (session label), so the loading message is redundant.
+
+**Fix:**
+Remove `send_telegram_msg(chat_id, f"⏳ Đang lấy tin <b>{label}</b>...")` from `telegram_handler.py:84`.
+
+---
+
+### ISS-008 — `/news help` missing routing and schedule info
+
+**Type:** enhancement · **Priority:** Low · **Reporter:** U · **Date:** 2026-04-11
+**Module:** `app/agents/news/telegram_handler.py`
+
+**Symptom:**
+User didn't know they could chat with the news agent via `@news` / `@tin` prefix, or that the agent runs automatically at fixed times.
+
+**Fix:**
+Update `_HELP_MSG` to show the automatic schedule (06:30 / 17:30 / 20:00) and the `@news` / `@tin` routing syntax with an example.
+
+---
+
+### ISS-009 — Feature design doc convention not documented
+
+**Type:** refactor · **Priority:** Low · **Reporter:** U · **Date:** 2026-04-11
+**Module:** `CLAUDE.md`, `docs/feature_design_template.md`
+
+**Symptom:**
+No enforced standard for naming or placing feature design docs. `docs/feature_design_template.md` existed but had no header explaining the convention.
+
+**Fix:**
+- Add convention table header to `docs/feature_design_template.md`
+- Add "Feature Design Doc Convention" section to `CLAUDE.md`
+
+---
 
 ### ISS-001 — Alert prompt leaks raw template to Telegram
 

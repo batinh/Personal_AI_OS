@@ -18,15 +18,21 @@ logger = logging.getLogger("AI_COACH")
 client = genai.Client()
 
 _HELP_MSG = (
-    "📰 <b>Lệnh tin tức:</b>\n\n"
+    "📰 <b>News Agent</b>\n\n"
+    "<b>Lịch tự động:</b>\n"
+    "• 🌅 06:30 — Điểm tin buổi sáng\n"
+    "• 🌆 17:30 — Điểm tin buổi chiều\n"
+    "• 🌙 20:00 — Điểm tin buổi tối\n"
+    "• ⚡ Tin nóng sốc: cảnh báo ngay, không đợi lịch\n\n"
+    "<b>Lệnh thủ công:</b>\n"
     "• <code>/news</code> — Điểm tin buổi sáng ngay bây giờ\n"
     "• <code>/news morning</code> — Điểm tin buổi sáng\n"
     "• <code>/news afternoon</code> — Điểm tin buổi chiều\n"
     "• <code>/news evening</code> — Điểm tin buổi tối\n"
-    "• <code>/news watch</code> — Quét và gửi tin nóng ngay lập tức\n"
-    "• <code>/news help</code> — Hiển thị trợ giúp này\n\n"
-    "💬 <b>Chat với News Agent:</b>\n"
-    "Gõ <code>@news câu hỏi</code> hoặc <code>@tin câu hỏi</code> để hỏi về tin tức."
+    "• <code>/news watch</code> — Quét tin nóng ngay lập tức\n\n"
+    "<b>Chat với News Agent:</b>\n"
+    "Nhắn <code>@news câu hỏi</code> hoặc <code>@tin câu hỏi</code>\n"
+    "Ví dụ: <code>@news tóm tắt tình hình kinh tế hôm nay</code>"
 )
 
 _DISABLED_MSG = (
@@ -81,7 +87,6 @@ def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
         return
 
     label = _FLOW_LABELS[sub]
-    send_telegram_msg(chat_id, f"⏳ Đang lấy tin <b>{label}</b>...")
     logger.info(f"[NEWS-CMD] Triggered '{sub}' flow for chat_id={chat_id}")
 
     try:

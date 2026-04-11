@@ -12,6 +12,11 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 Before commit: `docs/pragmatic_review_checklist.md`. New feature: `docs/feature_design_template.md`. Bug or feature: `docs/ISSUES.md`.
 
+## Feature Design Doc Convention
+- **Every new feature** (≥2 files changed): create `docs/features/{feature-slug}.md` using `docs/feature_design_template.md`
+- **Slug**: lowercase English, hyphens — e.g. `news-agent-overhaul`, `telegram-routing`
+- **Before code**: design doc first, then implement — link from the issue in `docs/ISSUES.md`
+
 ## File Map
 | Task | Read |
 |------|------|

@@ -103,8 +103,8 @@ class TestHandleNewsCommand(unittest.TestCase):
     def test_error_in_flow_sends_error_message(self, mock_brief, mock_send):
         mock_brief.side_effect = Exception("network error")
         self._call(["morning"])
-        # Should send loading message + error message (at least 2 sends)
-        self.assertGreaterEqual(mock_send.call_count, 2)
+        # Should send exactly 1 error message (no loading message)
+        self.assertEqual(mock_send.call_count, 1)
         last_msg = mock_send.call_args[0][1]
         self.assertIn("Lỗi", last_msg)
 
