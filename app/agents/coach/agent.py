@@ -24,7 +24,7 @@ from app.services.rag_memory import rag_db
 
 # [REFACTOR] Import builder functions
 from app.agents.coach.prompts import (
-    build_system_instruction, get_shared_context_block, build_universal_run_analysis_prompt,build_chat_prompt,
+    build_system_instruction, build_core_system_instruction, get_shared_context_block, build_universal_run_analysis_prompt,build_chat_prompt,
     DEFAULT_ANALYSIS_TASK, DEFAULT_ANALYSIS_REQUIREMENTS, DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES,CHAT_FORMAT_RULES,
     build_weekly_reflection_prompt,
     build_standup_prompt,
@@ -367,10 +367,15 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         active_memories_text = ""
 
     # 2. BUILD PROMPT (Lego Architecture)
-    system_inst = build_system_instruction(
-        config.get("system_instruction", ""), config.get("user_profile", ""),
-        int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
-    )
+    # Fast path uses core-only system prompt (identity + psychology, ~300 tokens).
+    # Standard path uses full system prompt (zones, GCS rubric, tool discipline, ~2000 tokens).
+    if intent == "fast":
+        system_inst = build_core_system_instruction(config.get("system_instruction", ""))
+    else:
+        system_inst = build_system_instruction(
+            config.get("system_instruction", ""), config.get("user_profile", ""),
+            int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+        )
 
     if intent == "standard":
         shared_context = get_shared_context_block(

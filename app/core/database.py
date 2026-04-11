@@ -359,7 +359,7 @@ def delete_run_activity(activity_id: str):
         c = conn.cursor()
         c.execute("SELECT stream_file_path FROM run_activity_raw WHERE activity_id = ?", (str(activity_id),))
         row = c.fetchone()
-        stream_path = row["stream_file_path"] if row and row.get("stream_file_path") else None
+        stream_path = row["stream_file_path"] if row and row["stream_file_path"] else None
         c.execute("DELETE FROM run_activity_raw WHERE activity_id = ?", (str(activity_id),))
         c.execute("DELETE FROM run_activities WHERE activity_id = ?", (str(activity_id),))
         conn.commit()

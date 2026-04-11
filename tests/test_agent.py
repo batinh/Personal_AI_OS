@@ -514,5 +514,95 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
             self.fail("generate_weekly_reflection must not crash on API error")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Tiered System Prompt
+# ══════════════════════════════════════════════════════════════════════════════
+class TestTieredSystemPrompt(unittest.TestCase):
+    """Verify the fast/standard prompt tier split in chat_with_coach."""
+
+    def test_core_prompt_excludes_gcs_rubric(self):
+        from app.agents.coach.prompts import build_core_system_instruction
+        prompt = build_core_system_instruction("Be brief.")
+        self.assertNotIn("GCS", prompt)
+        self.assertNotIn("THANG ĐIỂM", prompt)
+        self.assertNotIn("BẢNG HR ZONES", prompt)
+        self.assertNotIn("BẢNG POWER ZONES", prompt)
+        self.assertNotIn("BẢNG PACE ZONES", prompt)
+        self.assertNotIn("KỶ LUẬT SỬ DỤNG TOOL", prompt)
+
+    def test_core_prompt_includes_identity_and_psychology(self):
+        from app.agents.coach.prompts import build_core_system_instruction
+        prompt = build_core_system_instruction("Custom rule.")
+        self.assertIn("Coach Dyno", prompt)
+        self.assertIn("Custom rule.", prompt)
+        self.assertIn("TÂM LÝ VẬN ĐỘNG VIÊN", prompt)
+
+    def test_full_prompt_includes_gcs_rubric(self):
+        from app.agents.coach.prompts import build_system_instruction
+        prompt = build_system_instruction(
+            custom_instruction="Be concise.",
+            user_profile="Runner, age 35",
+            max_hr=185,
+            rest_hr=55,
+        )
+        self.assertIn("THANG ĐIỂM GCS", prompt)
+        self.assertIn("BẢNG HR ZONES", prompt)
+        self.assertIn("KỶ LUẬT SỬ DỤNG TOOL", prompt)
+
+    @patch("app.agents.coach.agent.build_core_system_instruction")
+    @patch("app.agents.coach.agent.build_system_instruction")
+    @patch("app.agents.coach.agent.send_telegram_msg")
+    @patch("app.agents.coach.agent.send_message_with_retry")
+    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[])
+    @patch("app.agents.coach.agent.calculate_training_phase",
+           return_value={"phase": "Base", "microcycle": "W1", "weeks_left": 8})
+    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
+    def test_fast_path_uses_core_prompt(
+        self, mock_phase, mock_hist, mock_send, mock_tg, mock_full, mock_core,
+    ):
+        mock_core.return_value = "CORE_SYSTEM"
+        mock_full.return_value = "FULL_SYSTEM"
+        fake_session = MagicMock()
+        fake_session.send_message.return_value = _make_response("Hi!")
+        _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
+
+        from app.agents.coach.agent import handle_telegram_chat
+        handle_telegram_chat("TEST_CHAT_ID", "hello", _make_config())
+
+        mock_core.assert_called_once()
+        mock_full.assert_not_called()
+
+    @patch("app.agents.coach.agent.build_core_system_instruction")
+    @patch("app.agents.coach.agent.build_system_instruction")
+    @patch("app.agents.coach.agent.send_telegram_msg")
+    @patch("app.agents.coach.agent.send_message_with_retry")
+    @patch("app.agents.coach.agent.load_history_for_gemini", return_value=[])
+    @patch("app.agents.coach.agent.get_upcoming_plans", return_value="")
+    @patch("app.agents.coach.agent.get_weekly_volume", return_value=0.0)
+    @patch("app.agents.coach.agent.get_formatted_weekly_context", return_value="")
+    @patch("app.agents.coach.agent.get_all_active_memories", return_value=[])
+    @patch("app.agents.coach.agent.calculate_training_phase",
+           return_value={"phase": "Base", "microcycle": "W1", "weeks_left": 8})
+    @patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT)
+    def test_standard_path_uses_full_prompt(
+        self, mock_phase, mock_mem, mock_weekly_ctx,
+        mock_vol, mock_plans, mock_hist, mock_send, mock_tg,
+        mock_full, mock_core,
+    ):
+        mock_core.return_value = "CORE_SYSTEM"
+        mock_full.return_value = "FULL_SYSTEM"
+        fake_session = MagicMock()
+        fake_session.send_message.return_value = _make_response("Analysis done.")
+        _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
+
+        # >60 chars → triggers standard path
+        long_msg = "Phân tích bài chạy hôm qua cho tôi, xem ACWR và GCS thế nào?"
+        from app.agents.coach.agent import handle_telegram_chat
+        handle_telegram_chat("TEST_CHAT_ID", long_msg, _make_config())
+
+        mock_full.assert_called_once()
+        mock_core.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
