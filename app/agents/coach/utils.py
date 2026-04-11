@@ -356,13 +356,26 @@ def get_formatted_weekly_context(user_id: str) -> str:
 
 def send_message_with_retry(chat_session, message, max_retries=3):
     """
-    Wrapper to call Gemini API with an exponential backoff retry mechanism
-    when the Google Server is overloaded.
-    Gracefully handles 503 (Unavailable) and 429 (Too Many Requests) errors.
+    Wrapper to call Gemini API with an exponential backoff retry mechanism.
+    Handles 503/429 errors and MALFORMED_RESPONSE (truncated output from preview models).
     """
     for attempt in range(max_retries):
         try:
-            return chat_session.send_message(message)
+            response = chat_session.send_message(message)
+
+            # Detect MALFORMED_RESPONSE — model stopped mid-generation, retry
+            finish = None
+            try:
+                finish = response.candidates[0].finish_reason if response.candidates else None
+            except Exception:
+                pass
+            if finish is not None and "MALFORMED" in str(finish):
+                if attempt < max_retries - 1:
+                    logger.warning(f"[API RESILIENCE] MALFORMED_RESPONSE from Gemini, response truncated. Retrying... (Attempt {attempt + 1}/{max_retries})")
+                    continue
+                logger.error("[API RESILIENCE] MALFORMED_RESPONSE persists after all retries.")
+
+            return response
         except Exception as e:
             error_msg = str(e)
             if "503" in error_msg or "429" in error_msg or "Unavailable" in error_msg:

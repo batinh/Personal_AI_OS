@@ -102,6 +102,9 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
             )
         )
         response = send_message_with_retry(chat_session, prompt)
+        if not response.text:
+            logger.warning("[RUN-ANALYSIS] Gemini returned empty response (MALFORMED_RESPONSE or blocked)")
+            return None
         result = json.loads(response.text)
 
         analysis_text = result.get("analysis_text", "")

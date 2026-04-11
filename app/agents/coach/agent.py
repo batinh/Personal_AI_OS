@@ -193,8 +193,11 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
             )
         )
         response = send_message_with_retry(chat_session, prompt)
+        if not response.text:
+            logger.warning("[RUN-ANALYSIS] Gemini returned empty response (MALFORMED_RESPONSE or blocked)")
+            return None
         result = json.loads(response.text)
-        
+
         analysis_text = result.get("analysis_text", "")
         update_run_gcs_score(activity_id, user_id_str, result.get("gcs_score", 0))
         
@@ -355,17 +358,45 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     intent = _classify_intent(text)
     logger.info(f"[CHAT] Intent classified as '{intent}' for message: '{text[:50]}'")
 
-    if intent == "standard":
-        actual_volume = get_weekly_volume(chat_id)
-        weekly_decision_context = get_formatted_weekly_context(chat_id)
-        memories = get_all_active_memories(chat_id)
-        memory_lines = [f"- [{m['category'].upper()}]: {m['fact']}" for m in memories]
-        active_memories_text = "\n".join(memory_lines) if memory_lines else "Chưa có ghi nhận đặc biệt."
-    else:
-        actual_volume = 0.0
-        weekly_decision_context = ""
-        active_memories_text = ""
+    # Heuristic override: if the user mentions past/week/memory keywords, force 'standard' intent
+    past_keywords = [
+        'tuần', 'hôm qua', 'quá khứ', 'review', 'tổng kết', 'reflection', 'nhớ', 'ký ức',
+        'memory', 'past', 'đã hoàn thành', 'đã', 'xong', 'kết quả'
+    ]
+    lowered = text.lower() if isinstance(text, str) else ''
+    if any(k in lowered for k in past_keywords):
+        if intent != 'standard':
+            logger.info(f"[CHAT] Forcing intent 'standard' due to past-related keyword match.")
+        intent = 'standard'
 
+    # Always compute local context (weekly volume, decision context, active memories).
+    # These are local facts and must not be skipped even for 'fast' conversational intents —
+    # skipping causes the agent to lack factual grounding and misroute tools.
+    try:
+        actual_volume = get_weekly_volume(chat_id)
+    except Exception as e:
+        logger.warning(f"[CHAT] Failed to get weekly volume: {e}")
+        actual_volume = 0.0
+
+    try:
+        weekly_decision_context = get_formatted_weekly_context(chat_id)
+    except Exception as e:
+        logger.warning(f"[CHAT] Failed to get weekly decision context: {e}")
+        weekly_decision_context = ""
+
+    # Fetch active memories only for non-fast intents to avoid expensive RAG calls for trivial chat
+    active_memories_text = ""
+    if intent != 'fast':
+        try:
+            memories = get_all_active_memories(chat_id)
+            memory_lines = [f"- [{m['category'].upper()}]: {m['fact']}" for m in memories]
+            active_memories_text = "\n".join(memory_lines) if memory_lines else "Chưa có ghi nhận đặc biệt."
+        except Exception as e:
+            logger.warning(f"[CHAT] Failed to fetch active memories: {e}")
+            active_memories_text = "Chưa có ghi nhận đặc biệt."
+
+    # Note: 'fast' intent will still use a slim system instruction to save tokens, but
+    # local facts are always injected so the AI never loses access to up-to-date user state.
     # 2. BUILD PROMPT (Lego Architecture)
     # Fast path uses core-only system prompt (identity + psychology, ~300 tokens).
     # Standard path uses full system prompt (zones, GCS rubric, tool discipline, ~2000 tokens).
@@ -377,7 +408,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
         )
 
-    if intent == "standard":
+    if intent != 'fast':
         shared_context = get_shared_context_block(
             datetime.now(tz).strftime('%A, %Y-%m-%d %H:%M:%S'), chat_id, phase_text, countdown_text,
             "ACWR đang tính (Dùng tool check_training_status nếu cần)",

@@ -257,9 +257,10 @@ class TestHandleTelegramChat(unittest.TestCase):
         try:
             from app.agents.coach.agent import handle_telegram_chat
             handle_telegram_chat("u1", "Chào buổi sáng!", _make_config())
-            # Fast path: should NOT call get_all_active_memories (full context skipped)
+            # Fast path: should NOT call get_all_active_memories (RAG skipped),
+            # but SHOULD fetch lightweight local facts (weekly volume).
             mocks["g_mems"].assert_not_called()
-            mocks["g_vol"].assert_not_called()
+            mocks["g_vol"].assert_called()
             mocks["send_tg"].assert_called()
         finally:
             self._stop_patches(ps)
