@@ -102,12 +102,23 @@ def score_articles(
                 ),
             )
 
-            response_text = response.text or ""
+            if response.text is None:
+                # Gemini returned empty/blocked — log finish reason for diagnosis
+                finish = None
+                try:
+                    finish = response.candidates[0].finish_reason if response.candidates else "no_candidates"
+                except Exception:
+                    finish = "unknown"
+                logger.warning(f"[NEWS-SCORER] Gemini returned None text (finish_reason={finish}), using defaults")
+                scored.extend(_default_scores(batch))
+                continue
+
+            response_text = response.text
 
             # Extract JSON from response (Gemini might add extra text)
             json_str = _extract_json(response_text)
             if not json_str:
-                logger.warning("[NEWS-SCORER] Could not extract JSON from Gemini response, using defaults")
+                logger.warning(f"[NEWS-SCORER] Could not extract JSON from Gemini response (preview: {response_text[:200]!r}), using defaults")
                 scored.extend(_default_scores(batch))
                 continue
 
