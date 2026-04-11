@@ -91,7 +91,39 @@ def send_telegram_msg(chat_id, text):
     ATTACHMENT_THRESHOLD = int(os.getenv('TELEGRAM_ATTACHMENT_THRESHOLD', '100000'))  # send as .txt if larger than this
 
     def post_json(url, payload):
-        return requests.post(url, json=payload)
+        # Debug: log payload length and preview (do not log token)
+        try:
+            txt = payload.get('text') if isinstance(payload, dict) else None
+            logger.debug(f"[TELEGRAM][POST_JSON] url={url}, chat_id={payload.get('chat_id')}, text_len={len(txt) if txt else 0}, head={repr(txt[:120]) if txt else None}")
+        except Exception:
+            pass
+        try:
+            resp = requests.post(url, json=payload)
+            try:
+                logger.debug(f"[TELEGRAM][POST_JSON] response_status={resp.status_code}, response_text={resp.text}")
+            except Exception:
+                logger.debug(f"[TELEGRAM][POST_JSON] response_status={resp.status_code} (no text)")
+            return resp
+        except Exception as e:
+            logger.error(f"[TELEGRAM] Connection error during post_json: {e}")
+            raise
+
+    def post_files(url, files, data):
+        # files is a dict suitable for requests.post(files=...)
+        try:
+            logger.debug(f"[TELEGRAM][POST_FILES] url={url}, chat_id={data.get('chat_id')}, files_keys={list(files.keys())}")
+        except Exception:
+            pass
+        try:
+            resp = requests.post(url, files=files, data=data)
+            try:
+                logger.debug(f"[TELEGRAM][POST_FILES] response_status={resp.status_code}, response_text={resp.text}")
+            except Exception:
+                logger.debug(f"[TELEGRAM][POST_FILES] response_status={resp.status_code} (no text)")
+            return resp
+        except Exception as e:
+            logger.error(f"[TELEGRAM] Connection error during post_files: {e}")
+            raise
 
     # If message is extremely large, send as a text file attachment instead
     if len(safe_text) > ATTACHMENT_THRESHOLD:
@@ -100,7 +132,7 @@ def send_telegram_msg(chat_id, text):
         files = {"document": ("report.txt", plain.encode("utf-8"))}
         data = {"chat_id": chat_id, "caption": "Full report attached as text file."}
         try:
-            resp = requests.post(doc_url, files=files, data=data)
+            resp = post_files(doc_url, files, data)
             if resp.status_code != 200:
                 logger.error(f"[TELEGRAM] Failed to send document: {resp.text}")
         except Exception as e:
