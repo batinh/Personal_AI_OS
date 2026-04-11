@@ -32,12 +32,14 @@
     },
     "news_agent": {
         "enabled": true,
-        "morning_time": "07:00",
-        "afternoon_time": "17:00",
+        "morning_time": "06:30",
+        "afternoon_time": "17:30",
+        "evening_time": "20:00",
         "telegram_chat_id": "",
         "max_articles_per_feed": 5,
         "watch_interval_minutes": 30,
         "alert_threshold": 7,
+        "shock_threshold": 9,
         "digest_threshold": 4,
         "topic_cooldown_hours": 2,
         "interest_profile": {

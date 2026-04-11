@@ -118,10 +118,11 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
         tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
         date_str = datetime.now(tz).strftime('%A, %d/%m/%Y')
         articles_text = _format_articles_text(briefing_articles)
+        _SESSION_LABELS = {"morning": "sáng", "afternoon": "chiều", "evening": "tối"}
         prompt = build_categorized_digest_prompt(
             {"general": briefing_articles},
             date_str,
-            session="sáng" if session == "morning" else "chiều"
+            session=_SESSION_LABELS.get(session, session)
         )
     else:
         # Check cache and score fresh articles
@@ -186,10 +187,11 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
 
         tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
         date_str = datetime.now(tz).strftime('%A, %d/%m/%Y')
+        _SESSION_LABELS = {"morning": "sáng", "afternoon": "chiều", "evening": "tối"}
         prompt = build_categorized_digest_prompt(
             categorized,
             date_str,
-            session="sáng" if session == "morning" else "chiều"
+            session=_SESSION_LABELS.get(session, session)
         )
 
     try:

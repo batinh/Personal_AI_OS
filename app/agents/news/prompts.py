@@ -33,6 +33,7 @@ _NEWS_SYSTEM_INSTRUCTION = """Bạn là News Curator, biên tập viên tin tứ
 [QUY TẮC FORMAT TELEGRAM (BẮT BUỘC)]
 - KHÔNG dùng Markdown (##, **, ```). Telegram chỉ hỗ trợ HTML.
 - Dùng <b>text</b> cho tiêu đề quan trọng.
+- Dùng <a href="URL">Đọc thêm</a> để liên kết nguồn cho mỗi tin (URL lấy từ dữ liệu đầu vào).
 - Dùng emoji phù hợp cho mỗi tin để dễ scan.
 - Giữ tổng độ dài dưới 3000 ký tự.
 - Mỗi tin cách nhau 1 dòng trống.
@@ -40,7 +41,7 @@ _NEWS_SYSTEM_INSTRUCTION = """Bạn là News Curator, biên tập viên tin tứ
 [KHÔNG ĐƯỢC LÀM]
 - Không thêm ý kiến cá nhân hoặc bình luận chính trị.
 - Không bịa thông tin không có trong nguồn.
-- Không đưa link URL vào bản tóm tắt.
+- Không tự bịa URL — chỉ dùng URL được cung cấp trong dữ liệu.
 - Không lặp lại nội dung giữa các tin."""
 
 # ==========================================
@@ -90,29 +91,47 @@ def build_afternoon_news_prompt(articles_text: str, date_str: str) -> str:
 
 
 # ==========================================
-# 🚨 BREAKING ALERT PROMPT
+# 🚨 BREAKING ALERT PROMPT (BATCH)
 # ==========================================
 
-_ALERT_TEMPLATE = """Hôm nay là {date_str}.
+_BATCH_ALERT_TEMPLATE = """Hôm nay là {date_str}.
 
-Có một tin tức quan trọng:
+Các tin tức nóng cần cảnh báo ngay:
 
-Tiêu đề: {title}
-Nguồn: {source}
-Tóm tắt: {summary}
+{articles_text}
 
-Hãy viết một thông báo cảnh báo ngắn gọn (1-2 dòng), dùng emoji phù hợp, không Markdown."""
+Hãy viết MỘT thông báo cảnh báo duy nhất, ngắn gọn:
+- Mỗi tin 1-2 câu, dùng <b>tiêu đề</b> và emoji phù hợp
+- Kèm <a href="URL">Đọc thêm</a> cho mỗi tin (URL lấy từ dữ liệu)
+- KHÔNG dùng Markdown, chỉ HTML
+- Tổng dưới 1500 ký tự"""
 
 
-def build_alert_prompt(title: str, source: str, summary: str, date_str: str) -> str:
+def build_batch_alert_prompt(articles: list, date_str: str) -> str:
     """
-    Build a breaking alert prompt for a single high-relevance article.
-    Uses .replace() to safely inject content (titles may contain {}).
+    Build a single breaking-alert prompt for one or more high-relevance articles.
+
+    Uses .replace() to inject content safely — article titles may contain {}.
+
+    Args:
+        articles: list of ScoredArticle objects
+        date_str: formatted date string
+
+    Returns:
+        Vietnamese prompt for Gemini.
     """
-    template = _ALERT_TEMPLATE.replace("{date_str}", date_str)
-    template = template.replace("{title}", title)
-    template = template.replace("{source}", source)
-    template = template.replace("{summary}", summary)
+    lines = []
+    for i, a in enumerate(articles, 1):
+        link = getattr(a, "link", "")
+        summary_short = getattr(a, "summary", "")[:200]
+        lines.append(
+            f"{i}. {a.title}\n"
+            f"   Nguồn: {a.source} | URL: {link}\n"
+            f"   Tóm tắt: {summary_short}"
+        )
+    articles_text = "\n\n".join(lines)
+    template = _BATCH_ALERT_TEMPLATE.replace("{date_str}", date_str)
+    template = template.replace("{articles_text}", articles_text)
     return template
 
 
@@ -127,13 +146,13 @@ _DIGEST_TEMPLATE = """Hôm nay là {date_str}.
 {categorized_content}
 
 Hãy tổng hợp lại theo định dạng:
-- Mỗi danh mục là một phần riêng với tiêu đề
-- Mỗi tin là 1-2 câu, ghi rõ nguồn
+- Mỗi danh mục là một phần riêng với tiêu đề <b>emoji DANH MỤC</b>
+- Mỗi tin là 1-2 câu, kèm <a href="URL">Đọc thêm</a> (URL lấy từ dữ liệu, không tự bịa)
 - Dùng emoji phù hợp cho mỗi danh mục
 - Tone khách quan, chuyên nghiệp
 - Tổng độ dài dưới 3000 ký tự
 
-KHÔNG dùng Markdown, chỉ dùng text thuần (HTML cho Telegram nếu cần)."""
+KHÔNG dùng Markdown, chỉ dùng HTML cho Telegram."""
 
 
 def build_categorized_digest_prompt(
@@ -147,7 +166,7 @@ def build_categorized_digest_prompt(
     Args:
         categorized_articles: {category: [ScoredArticle, ...], ...}
         date_str: formatted date string
-        session: "sáng" or "chiều"
+        session: "sáng", "chiều", or "tối"
 
     Returns:
         Vietnamese prompt for Gemini.
@@ -156,7 +175,10 @@ def build_categorized_digest_prompt(
     for category, articles in categorized_articles.items():
         lines.append(f"\n[{category}]")
         for a in articles:
-            lines.append(f"- ({a.source}) {a.title}: {a.summary[:150]}")
+            link = getattr(a, "link", "")
+            lines.append(
+                f"- ({a.source}) {a.title}: {a.summary[:150]}\n  URL: {link}"
+            )
 
     content = "\n".join(lines)
     template = _DIGEST_TEMPLATE.replace("{date_str}", date_str)

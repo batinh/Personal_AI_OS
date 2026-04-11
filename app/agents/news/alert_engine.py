@@ -2,24 +2,27 @@
 Alert Engine — event-driven news notifications.
 
 Runs every N minutes (configurable, default 30), scores new articles,
-sends breaking alerts when score >= threshold. Respects topic cool-down
-to prevent spam (max 3 alerts per category per cooldown window).
+sends ONE consolidated breaking alert when high-relevance articles are found.
+Respects topic cool-down to prevent spam (max 3 alerts per category per window).
+
+Quiet hours (22:00–06:00): only shock-level news (score >= shock_threshold) fires.
 
 Key flow:
 1. Fetch all feeds
 2. Filter out already-sent (24h) and already-alerted (recent)
 3. Check cache for pre-scored articles
 4. Batch-score remaining articles via Gemini
-5. For each article with score >= alert_threshold:
-   - Check cool-down: skip if max alerts already sent for this category
-   - Build alert message
-   - Send via Telegram
-   - Log alert + update sent articles table
+5. Collect all alert-worthy articles (respecting cooldown + quiet hours)
+6. Call Gemini once → send ONE consolidated Telegram message
+7. Log all alerted articles
 """
 import logging
 import os
 import pytz
 from datetime import datetime
+
+from google import genai
+from google.genai import types
 
 from app.core.notification import send_telegram_msg
 from app.core.user_context import get_primary_user_id
@@ -34,16 +37,23 @@ from app.core.database import (
 )
 from app.agents.news.feeds import fetch_all_feeds, Article
 from app.agents.news.scorer import score_articles, ScoredArticle
-from app.agents.news.prompts import build_alert_prompt
+from app.agents.news.prompts import build_batch_alert_prompt, build_news_system_instruction
 
 logger = logging.getLogger("AI_COACH")
+client = genai.Client()
 
 _MAX_TELEGRAM_CHARS = 4000
 
 
+def _is_quiet_hours(tz) -> bool:
+    """Return True if current local time is in quiet hours (22:00–06:00)."""
+    now = datetime.now(tz)
+    return now.hour >= 22 or now.hour < 6
+
+
 def run_news_watch(config: dict) -> None:
     """
-    Fetch fresh articles, score relevance, send breaking alerts.
+    Fetch fresh articles, score relevance, send ONE consolidated breaking alert.
 
     Called by scheduler task_news_watch() every N minutes (default 30).
 
@@ -51,10 +61,9 @@ def run_news_watch(config: dict) -> None:
     1. Fetch articles from all feeds
     2. Filter out recently-sent and recently-alerted
     3. Score articles (using cache for already-scored ones)
-    4. For each high-relevance article:
-       - Check topic cool-down (max 3 alerts per category per window)
-       - Send breaking alert if threshold met
-       - Log alert
+    4. Collect articles that pass threshold + cooldown checks
+    5. During quiet hours: apply shock_threshold filter (no alert for normal news)
+    6. Call Gemini once → send one consolidated Telegram message
     """
     news_cfg = config.get("news_agent", {})
     if not news_cfg.get("enabled", False):
@@ -75,6 +84,7 @@ def run_news_watch(config: dict) -> None:
     feeds = news_cfg.get("feeds", [])
     max_per_feed = int(news_cfg.get("max_articles_per_feed", 5))
     alert_threshold = int(news_cfg.get("alert_threshold", 7))
+    shock_threshold = int(news_cfg.get("shock_threshold", 9))
     cooldown_hours = int(news_cfg.get("topic_cooldown_hours", 2))
     interest_profile = news_cfg.get("interest_profile", {})
     # Always use flash-latest for batch scoring — cheaper, faster, more reliable JSON output
@@ -84,7 +94,14 @@ def run_news_watch(config: dict) -> None:
         logger.warning("[NEWS-WATCH] No interest profile configured. Skipping.")
         return
 
-    logger.info(f"[NEWS-WATCH] Starting watch cycle (threshold={alert_threshold}, cooldown={cooldown_hours}h)...")
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    is_quiet = _is_quiet_hours(tz)
+    effective_threshold = shock_threshold if is_quiet else alert_threshold
+
+    logger.info(
+        f"[NEWS-WATCH] Starting watch cycle "
+        f"(threshold={effective_threshold}, cooldown={cooldown_hours}h, quiet={is_quiet})..."
+    )
 
     # Step 1: Fetch all feeds
     all_articles = fetch_all_feeds(feeds, max_per_feed=max_per_feed)
@@ -115,7 +132,6 @@ def run_news_watch(config: dict) -> None:
 
     for article in fresh_articles:
         if article.link in cached_scores:
-            # Use cached score
             cached = cached_scores[article.link]
             scored = ScoredArticle(
                 title=article.title,
@@ -138,11 +154,9 @@ def run_news_watch(config: dict) -> None:
             newly_scored = score_articles(to_score, interest_profile, model_name)
             for scored in newly_scored:
                 scored_articles_map[scored.link] = scored
-                # Cache the score for future use
                 save_article_score(scored.link, scored.score, scored.category)
         except Exception as e:
             logger.error(f"[NEWS-WATCH] Error scoring articles: {e}")
-            # Fall back to treating all as low-score (neutral)
             for a in to_score:
                 scored_articles_map[a.link] = ScoredArticle(
                     title=a.title,
@@ -155,38 +169,59 @@ def run_news_watch(config: dict) -> None:
                     reason="Lỗi đánh giá"
                 )
 
-    # Step 5: Filter and send alerts for high-relevance articles
-    alerts_sent = 0
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    # Step 5: Collect alert-worthy articles
     date_str = datetime.now(tz).strftime('%A, %d/%m/%Y')
+    alert_articles = []
 
     for link, scored in scored_articles_map.items():
-        if scored.score >= alert_threshold:
-            # Check topic cool-down
-            alert_count_in_window = get_recent_alerts_by_category(
-                user_id, scored.category, hours=cooldown_hours
+        if scored.score < effective_threshold:
+            continue
+
+        alert_count_in_window = get_recent_alerts_by_category(
+            user_id, scored.category, hours=cooldown_hours
+        )
+        if alert_count_in_window >= 3:
+            logger.info(
+                f"[NEWS-WATCH] Skipping '{scored.title[:40]}' — cooldown "
+                f"({alert_count_in_window}/3 for {scored.category})"
             )
+            continue
 
-            if alert_count_in_window >= 3:
-                logger.info(
-                    f"[NEWS-WATCH] Skipping {link} due to cool-down "
-                    f"({alert_count_in_window}/3 alerts for {scored.category})"
-                )
-                continue
+        alert_articles.append(scored)
 
-            # Build and send alert
-            try:
-                alert_msg = build_alert_prompt(scored.title, scored.source, scored.summary, date_str)
-                send_telegram_msg(chat_id, alert_msg)
+    if not alert_articles:
+        logger.info("[NEWS-WATCH] Watch cycle complete. No alerts triggered.")
+        return
 
-                # Log alert and mark as sent
-                save_alert_log(user_id, link, scored.score, scored.category, "breaking")
-                save_sent_articles(user_id, [link], "alert")
+    # Step 6: One Gemini call → one Telegram message
+    try:
+        prompt = build_batch_alert_prompt(alert_articles, date_str)
+        system_inst = build_news_system_instruction()
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_inst,
+                max_output_tokens=800,
+            ),
+        )
+        alert_msg = response.text or "⚠️ Có tin tức nóng mới."
 
-                alerts_sent += 1
-                logger.info(f"[NEWS-WATCH] Sent alert for '{scored.title[:50]}...' (score={scored.score})")
+        if len(alert_msg) > _MAX_TELEGRAM_CHARS:
+            alert_msg = alert_msg[:_MAX_TELEGRAM_CHARS] + "..."
 
-            except Exception as e:
-                logger.error(f"[NEWS-WATCH] Error sending alert for {link}: {e}")
+        send_telegram_msg(chat_id, alert_msg)
 
-    logger.info(f"[NEWS-WATCH] Watch cycle complete. Sent {alerts_sent} breaking alert(s).")
+        # Step 7: Log all alerted articles
+        for scored in alert_articles:
+            save_alert_log(user_id, scored.link, scored.score, scored.category, "breaking")
+            save_sent_articles(user_id, [scored.link], "alert")
+
+        logger.info(
+            f"[NEWS-WATCH] Sent consolidated alert for {len(alert_articles)} article(s)."
+        )
+
+    except Exception as e:
+        logger.error(f"[NEWS-WATCH] Error sending batch alert: {e}")
+
+    logger.info("[NEWS-WATCH] Watch cycle complete.")

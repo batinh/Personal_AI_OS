@@ -1,0 +1,215 @@
+# Issue Tracker — Personal AI OS
+
+Track bugs, features, and implementation changes. Reported by user or AI.
+**Reporter:** `U` = User · `AI` = AI analysis · `U+AI` = both
+
+---
+
+## How to add an issue
+
+1. Pick the next ID from the open or closed table (`ISS-NNN`).
+2. Add a row to the Open table.
+3. Add a detail section at the bottom under the matching type heading.
+4. When done: move row to Closed, add `Commit` and `Closed` date.
+
+**Type:** `bug` · `feature` · `enhancement` · `refactor`
+**Priority:** `Critical` · `High` · `Medium` · `Low`
+
+---
+
+## Open
+
+| ID | Type | Title | Priority | Reporter | Date | Module |
+|----|------|-------|----------|----------|------|--------|
+| _(no open issues)_ | | | | | | |
+
+---
+
+## Closed
+
+| ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
+|----|------|-------|----------|----------|------------|--------|--------|--------|
+| [ISS-001](#iss-001--alert-prompt-leaks-raw-template-to-telegram) | bug | Alert prompt leaks raw template to Telegram | Critical | U+AI | 2026-04-11 | 2026-04-11 | `pending` | `alert_engine.py` |
+| [ISS-002](#iss-002--alert-engine-sends-one-message-per-article-spam) | bug | Alert engine sends one message per article (spam) | High | U+AI | 2026-04-11 | 2026-04-11 | `pending` | `alert_engine.py` |
+| [ISS-003](#iss-003--digest-messages-have-no-embedded-links) | enhancement | Digest messages have no embedded links | High | U | 2026-04-11 | 2026-04-11 | `pending` | `prompts.py`, `agent.py` |
+| [ISS-004](#iss-004--telegram-messages-always-routed-to-coach-no-news-agent-routing) | feature | Telegram messages always routed to coach — no news agent routing | High | U | 2026-04-11 | 2026-04-11 | `pending` | `webhooks.py` |
+| [ISS-005](#iss-005--news-schedule-not-fixed-at-0630--1730--2000) | feature | News schedule not fixed at 06:30 / 17:30 / 20:00 | Medium | U | 2026-04-11 | 2026-04-11 | `pending` | `scheduler.py` |
+| [ISS-006](#iss-006--no-feature-design-doc-convention-or-location-standard) | refactor | No feature design doc convention or location standard | Low | U | 2026-04-11 | 2026-04-11 | `pending` | `docs/` |
+| [ISS-F01](#iss-f01--news-scorer-returns-invalid-json) | bug | News scorer returns invalid JSON | High | AI | 2026-03-xx | 2026-03-xx | `fe8d12c` | `scorer.py` |
+| [ISS-F02](#iss-f02--reuters-rss-feed-dead) | bug | Reuters RSS feed dead / returns no articles | Medium | AI | 2026-03-xx | 2026-03-xx | `0b711ae` | `feeds.py` |
+| [ISS-F03](#iss-f03--relative-file-paths-break-inside-docker) | bug | Relative file paths break inside Docker | Critical | AI | 2026-03-xx | 2026-03-xx | `63864b8` | `config.py`, `database.py` |
+| [ISS-F04](#iss-f04--sqlite-wal-mode-not-set--markdown-in-telegram) | bug | SQLite WAL mode not set; Markdown rendering in Telegram | High | AI | 2026-03-xx | 2026-03-xx | `ec46ca2` | `database.py`, prompts |
+| [ISS-F05](#iss-f05--duplicate-memory-writes--primary-user-id-scatter) | bug | Duplicate memory writes; primary user ID resolved in multiple places | Medium | AI | 2026-03-xx | 2026-03-xx | `bddd3d1` | `database.py`, `user_context.py` |
+| [ISS-F06](#iss-f06--strava-sync-race-condition--wrong-timezone) | bug | Strava sync race condition; wrong timezone on activity timestamps | High | AI | 2026-03-xx | 2026-03-xx | `a474e78` | `webhooks.py`, `strava_client.py` |
+| [ISS-F07](#iss-f07--gemini-model-selector-missing-new-models-in-console-ui) | enhancement | Gemini model selector missing new models in console UI | Low | U | 2026-03-xx | 2026-03-xx | `0d0ccb8` | `console.html` |
+| [ISS-F08](#iss-f08--templateresponse-api-broke-after-starlette-upgrade) | bug | `TemplateResponse` API broke after Starlette upgrade | High | AI | 2026-03-xx | 2026-03-xx | `6ae9683` | `routers/*.py` |
+
+---
+
+## Detail: Open
+
+### ISS-001 — Alert prompt leaks raw template to Telegram
+
+**Type:** bug · **Priority:** Critical · **Reporter:** U+AI · **Date:** 2026-04-11
+**Module:** `app/agents/news/alert_engine.py:179`
+
+**Symptom:**
+User receives a Telegram message containing `"Hãy viết một thông báo cảnh báo ngắn gọn (1-2 dòng), dùng emoji phù hợp, không Markdown."` — the raw prompt template, not an AI-generated alert.
+
+**Root cause:**
+`run_news_watch()` calls `build_alert_prompt()` which returns a **prompt string** intended for Gemini.
+The result is passed **directly** to `send_telegram_msg()` without going through Gemini first.
+
+```python
+# alert_engine.py:179 — BUG: sends prompt, not AI response
+alert_msg = build_alert_prompt(scored.title, scored.source, scored.summary, date_str)
+send_telegram_msg(chat_id, alert_msg)   # ← raw prompt goes to user
+```
+
+**Fix plan:** Batch all alert-worthy articles, call Gemini once, send the AI response. See ISS-002.
+
+---
+
+### ISS-002 — Alert engine sends one message per article (spam)
+
+**Type:** bug · **Priority:** High · **Reporter:** U+AI · **Date:** 2026-04-11
+**Module:** `app/agents/news/alert_engine.py`
+
+**Symptom:** When multiple articles pass `alert_threshold` in one watch cycle the user gets N separate Telegram messages within seconds.
+
+**Root cause:** `send_telegram_msg()` is called inside the per-article loop with no batching step.
+
+```python
+# alert_engine.py:163 — BUG: fires once per article
+for link, scored in scored_articles_map.items():
+    if scored.score >= alert_threshold:
+        send_telegram_msg(chat_id, alert_msg)   # ← N times
+```
+
+**Fix plan:** Collect all passing articles → one `build_batch_alert_prompt()` → one Gemini call → one `send_telegram_msg()`. Fixes ISS-001 at the same time.
+
+---
+
+### ISS-003 — Digest messages have no embedded links
+
+**Type:** enhancement · **Priority:** High · **Reporter:** U · **Date:** 2026-04-11
+**Module:** `app/agents/news/prompts.py`, `app/agents/news/agent.py`
+
+**Symptom:** Morning/afternoon digest Telegram messages contain article summaries but no clickable links to sources.
+
+**Root cause:** `_NEWS_SYSTEM_INSTRUCTION` explicitly says _"Không đưa link URL vào bản tóm tắt"_. Article links are available in the data fed to the prompt but Gemini is instructed to omit them.
+
+**Fix plan:**
+1. Remove the no-link rule from `_NEWS_SYSTEM_INSTRUCTION`.
+2. Add instruction to wrap each item title in `<a href="URL">title</a>` HTML.
+3. Pass `article.link` through `build_categorized_digest_prompt()` alongside title/summary.
+
+---
+
+### ISS-004 — Telegram messages always routed to coach — no news agent routing
+
+**Type:** feature · **Priority:** High · **Reporter:** U · **Date:** 2026-04-11
+**Module:** `app/routers/webhooks.py`
+
+**Symptom:** Any free-text message in Telegram (not a `/command`) goes to `handle_telegram_chat` (coach). There is no way to address the news agent conversationally.
+
+**Fix plan:**
+1. New `app/services/telegram_router.py` — `route_message(text) -> "coach" | "news"` based on `@news` / `@tin` prefix.
+2. In `webhooks.py` step 4, call router before dispatching.
+3. News-routed messages go to new `handle_news_chat()` in `telegram_handler.py`.
+
+---
+
+### ISS-005 — News schedule not fixed at 06:30 / 17:30 / 20:00
+
+**Type:** feature · **Priority:** Medium · **Reporter:** U · **Date:** 2026-04-11
+**Module:** `app/services/scheduler.py`, `config.example.json`
+
+**Symptom:** Default schedule is `morning_time=07:00`, `afternoon_time=17:00`. No evening briefing. No quiet-hours enforcement for breaking alerts.
+
+**Fix plan:**
+1. Change defaults to `06:30` / `17:30`.
+2. Add `task_evening_news()` + `evening_time: "20:00"` in config.
+3. Add `shock_threshold` (default `9`): breaking alerts only fire outside scheduled windows when `score >= shock_threshold`.
+4. Quiet hours 22:00–06:00 — alert engine skips sending entirely.
+
+---
+
+### ISS-006 — No feature design doc convention or location standard
+
+**Type:** refactor · **Priority:** Low · **Reporter:** U · **Date:** 2026-04-11
+**Module:** `docs/`
+
+**Symptom:** New features have no designated place for design documents. Some designs exist inline in `architecture.md`, some in `changelog.md`, some nowhere.
+
+**Fix plan:**
+1. Create `docs/features/` directory.
+2. Convention: one file per feature, named `docs/features/<slug>.md`, using `feature_design_template.md` structure.
+3. Add entry to CLAUDE.md File Map.
+
+---
+
+## Detail: Closed
+
+### ISS-F01 — News scorer returns invalid JSON
+
+**Type:** bug · **Priority:** High · **Fixed:** `fe8d12c` · **Reporter:** AI
+**Root cause:** Gemini flash occasionally returns JSON in markdown code fences or with trailing commas. `_extract_json()` had no fallback.
+**Fix:** Forced `response_mime_type="application/json"`; added regex-based fallback parsing in `scorer.py`.
+
+---
+
+### ISS-F02 — Reuters RSS feed dead
+
+**Type:** bug · **Priority:** Medium · **Fixed:** `0b711ae` · **Reporter:** AI
+**Root cause:** Reuters retired the RSS endpoint in `config.example.json` — HTTP 404.
+**Fix:** Replaced with working alternative feed URL.
+
+---
+
+### ISS-F03 — Relative file paths break inside Docker
+
+**Type:** bug · **Priority:** Critical · **Fixed:** `63864b8` · **Reporter:** AI
+**Root cause:** `config.py` and `database.py` used `./data/...` paths. Docker working directory differs from repo root → `FileNotFoundError` on startup.
+**Fix:** All paths use `Path(__file__).resolve().parent...`. Now a Non-obvious Rule in `CLAUDE.md`.
+
+---
+
+### ISS-F04 — SQLite WAL mode not set; Markdown in Telegram
+
+**Type:** bug · **Priority:** High · **Fixed:** `ec46ca2` · **Reporter:** AI
+**Root cause (WAL):** `get_db_connection()` opened connections without `PRAGMA journal_mode=WAL` — write contention under concurrent scheduler jobs.
+**Root cause (Markdown):** Prompts instructed Gemini to use `**bold**` / `##`. Telegram renders plain text by default; raw symbols appeared in messages.
+**Fix:** `PRAGMA journal_mode=WAL` added to every connection; all prompts switched to HTML-only (`<b>`, `<i>`).
+
+---
+
+### ISS-F05 — Duplicate memory writes; primary user ID scatter
+
+**Type:** bug · **Priority:** Medium · **Fixed:** `bddd3d1` · **Reporter:** AI
+**Root cause:** Memory extraction triggered from multiple call sites without dedup. `TELEGRAM_CHAT_ID` read via `os.getenv()` directly in many modules.
+**Fix:** Dedup check in `rag_memory.py`; centralised in `app/core/user_context.get_primary_user_id()`.
+
+---
+
+### ISS-F06 — Strava sync race condition; wrong timezone on timestamps
+
+**Type:** bug · **Priority:** High · **Fixed:** `a474e78` · **Reporter:** AI
+**Root cause:** Webhook fired immediately on `create` event before Strava finished processing — incomplete data. Timestamps stored as UTC, displayed as local without conversion.
+**Fix:** Full activity fetch with retry; all timestamps in `Asia/Ho_Chi_Minh` via `pytz`.
+
+---
+
+### ISS-F07 — Gemini model selector missing new models in console UI
+
+**Type:** enhancement · **Priority:** Low · **Fixed:** `0d0ccb8` · **Reporter:** U
+**Root cause:** `console.html` had a hardcoded `<select>` with stale model IDs.
+**Fix:** Added `gemini-2.0-flash`, `gemini-flash-latest` to the dropdown.
+
+---
+
+### ISS-F08 — TemplateResponse API broke after Starlette upgrade
+
+**Type:** bug · **Priority:** High · **Fixed:** `6ae9683` · **Reporter:** AI
+**Root cause:** Starlette 1.0 changed `TemplateResponse(name, context)` → `TemplateResponse(request, name, context)`. All console/audit routes raised `TypeError`.
+**Fix:** Updated all `TemplateResponse` calls to include `request` as first argument.

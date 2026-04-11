@@ -90,6 +90,13 @@ def task_afternoon_news():
     generate_news_briefing(config, session="afternoon")
 
 
+def task_evening_news():
+    """Evening news update via RSS + Gemini. Must be regular def (BackgroundScheduler thread pool)."""
+    logger.info("[SCHEDULER] Triggering evening news briefing...")
+    config = load_config()
+    generate_news_briefing(config, session="evening")
+
+
 # ==========================================
 # 📍 CONTINUOUS NEWS WATCH (ALERT ENGINE)
 # ==========================================
@@ -196,21 +203,27 @@ def setup_jobs():
     news_cfg = config.get("news_agent", {})
     if news_cfg.get("enabled", False):
         try:
-            nh, nm = map(int, news_cfg.get("morning_time", "07:00").split(":"))
-            ah, am = map(int, news_cfg.get("afternoon_time", "17:00").split(":"))
+            nh, nm = map(int, news_cfg.get("morning_time", "06:30").split(":"))
+            ah, am = map(int, news_cfg.get("afternoon_time", "17:30").split(":"))
+            eh, em = map(int, news_cfg.get("evening_time", "20:00").split(":"))
         except Exception:
-            nh, nm = 7, 0
-            ah, am = 17, 0
+            nh, nm = 6, 30
+            ah, am = 17, 30
+            eh, em = 20, 0
 
-        # Add scheduled briefing jobs (morning + afternoon)
+        # Add scheduled briefing jobs (morning + afternoon + evening)
         scheduler.add_job(task_morning_news, CronTrigger(hour=nh, minute=nm, timezone=TZ_VN), id='news_morning', replace_existing=True)
         scheduler.add_job(task_afternoon_news, CronTrigger(hour=ah, minute=am, timezone=TZ_VN), id='news_afternoon', replace_existing=True)
+        scheduler.add_job(task_evening_news, CronTrigger(hour=eh, minute=em, timezone=TZ_VN), id='news_evening', replace_existing=True)
 
         # Add continuous news watch job (interval-based for breaking alerts)
         watch_interval = int(news_cfg.get("watch_interval_minutes", 30))
         scheduler.add_job(task_news_watch, IntervalTrigger(minutes=watch_interval, timezone=TZ_VN), id='news_watch', replace_existing=True)
 
-        logger.info(f"[SCHEDULER] News jobs loaded: Morning({nh}:{nm:02d}), Afternoon({ah}:{am:02d}), Watch(every {watch_interval}m)")
+        logger.info(
+            f"[SCHEDULER] News jobs loaded: Morning({nh}:{nm:02d}), "
+            f"Afternoon({ah}:{am:02d}), Evening({eh}:{em:02d}), Watch(every {watch_interval}m)"
+        )
 
     logger.info(f"[SCHEDULER] Jobs loaded: Briefing({bh}:{bm}), Backup({bkh}:{bkm}), Harvest({harv_hours}h:{harv_min}m), Reflection(Sun 20:00)")
 

@@ -1,24 +1,32 @@
 """
-News Agent — Telegram command handler.
+News Agent — Telegram command and chat handler.
 
 Handles /news [morning|afternoon|watch|help] commands from Telegram.
-Routes to the appropriate news agent flow.
+Also handles free-text messages routed here via @news / @tin prefix.
 
 Zone 3: function names/logic = English, user-facing messages = Vietnamese.
 """
 import logging
 
+from google import genai
+from google.genai import types
+
 from app.core.notification import send_telegram_msg
+from app.agents.news.prompts import build_news_system_instruction
 
 logger = logging.getLogger("AI_COACH")
+client = genai.Client()
 
 _HELP_MSG = (
     "📰 <b>Lệnh tin tức:</b>\n\n"
     "• <code>/news</code> — Điểm tin buổi sáng ngay bây giờ\n"
     "• <code>/news morning</code> — Điểm tin buổi sáng\n"
     "• <code>/news afternoon</code> — Điểm tin buổi chiều\n"
+    "• <code>/news evening</code> — Điểm tin buổi tối\n"
     "• <code>/news watch</code> — Quét và gửi tin nóng ngay lập tức\n"
-    "• <code>/news help</code> — Hiển thị trợ giúp này"
+    "• <code>/news help</code> — Hiển thị trợ giúp này\n\n"
+    "💬 <b>Chat với News Agent:</b>\n"
+    "Gõ <code>@news câu hỏi</code> hoặc <code>@tin câu hỏi</code> để hỏi về tin tức."
 )
 
 _DISABLED_MSG = (
@@ -29,10 +37,11 @@ _DISABLED_MSG = (
 _FLOW_LABELS: dict[str, str] = {
     "morning": "buổi sáng",
     "afternoon": "buổi chiều",
+    "evening": "buổi tối",
     "watch": "quét tin nóng",
 }
 
-_VALID_FLOWS = frozenset({"morning", "afternoon", "watch", "help"})
+_VALID_FLOWS = frozenset({"morning", "afternoon", "evening", "watch", "help"})
 
 
 def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
@@ -86,3 +95,46 @@ def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
             chat_id,
             f"❌ Lỗi khi lấy tin {label}. Xem log để biết thêm chi tiết."
         )
+
+
+def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
+    """
+    Handle a free-text message routed to the news agent (via @news / @tin prefix).
+
+    Responds conversationally using the news agent persona.
+    Does not have live article context — answers general news-related questions.
+
+    Args:
+        chat_id: Telegram chat ID to reply to.
+        text: user message with the routing prefix already stripped.
+        config: loaded config dict from load_config().
+    """
+    news_cfg = config.get("news_agent", {})
+
+    if not news_cfg.get("enabled", False):
+        send_telegram_msg(chat_id, _DISABLED_MSG)
+        return
+
+    if not text:
+        send_telegram_msg(chat_id, _HELP_MSG)
+        return
+
+    model_name = config.get("model_name", "models/gemini-flash-latest")
+    logger.info(f"[NEWS-CHAT] Handling chat message for chat_id={chat_id}: '{text[:60]}'")
+
+    try:
+        system_inst = build_news_system_instruction()
+        response = client.models.generate_content(
+            model=model_name,
+            contents=text,
+            config=types.GenerateContentConfig(
+                system_instruction=system_inst,
+                max_output_tokens=1000,
+            ),
+        )
+        reply = response.text or "⚠️ Không thể trả lời lúc này."
+        send_telegram_msg(chat_id, reply)
+        logger.info(f"[NEWS-CHAT] Sent reply for chat_id={chat_id}")
+    except Exception as e:
+        logger.error(f"[NEWS-CHAT] Error: {e}")
+        send_telegram_msg(chat_id, "❌ Lỗi khi xử lý câu hỏi. Vui lòng thử lại.")

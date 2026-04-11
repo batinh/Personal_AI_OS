@@ -193,8 +193,14 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
             background_tasks.add_task(handle_news_command, str(chat_id), args, config)
             return {"status": "ok"}
 
-        # 4. If not a system command, route to AI Chat
+        # 4. Route free-text to the correct agent (@news/@tin → news, default → coach)
         config = load_config()
-        background_tasks.add_task(handle_telegram_chat, str(chat_id), text, config)
+        from app.services.telegram_router import route_message
+        agent, cleaned_text = route_message(text)
+        if agent == "news":
+            from app.agents.news.telegram_handler import handle_news_chat
+            background_tasks.add_task(handle_news_chat, str(chat_id), cleaned_text, config)
+        else:
+            background_tasks.add_task(handle_telegram_chat, str(chat_id), text, config)
         
     return {"status": "ok"}
