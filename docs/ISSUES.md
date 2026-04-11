@@ -29,12 +29,12 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
 |----|------|-------|----------|----------|------------|--------|--------|--------|
-| [ISS-001](#iss-001--alert-prompt-leaks-raw-template-to-telegram) | bug | Alert prompt leaks raw template to Telegram | Critical | U+AI | 2026-04-11 | 2026-04-11 | `pending` | `alert_engine.py` |
-| [ISS-002](#iss-002--alert-engine-sends-one-message-per-article-spam) | bug | Alert engine sends one message per article (spam) | High | U+AI | 2026-04-11 | 2026-04-11 | `pending` | `alert_engine.py` |
-| [ISS-003](#iss-003--digest-messages-have-no-embedded-links) | enhancement | Digest messages have no embedded links | High | U | 2026-04-11 | 2026-04-11 | `pending` | `prompts.py`, `agent.py` |
-| [ISS-004](#iss-004--telegram-messages-always-routed-to-coach-no-news-agent-routing) | feature | Telegram messages always routed to coach — no news agent routing | High | U | 2026-04-11 | 2026-04-11 | `pending` | `webhooks.py` |
-| [ISS-005](#iss-005--news-schedule-not-fixed-at-0630--1730--2000) | feature | News schedule not fixed at 06:30 / 17:30 / 20:00 | Medium | U | 2026-04-11 | 2026-04-11 | `pending` | `scheduler.py` |
-| [ISS-006](#iss-006--no-feature-design-doc-convention-or-location-standard) | refactor | No feature design doc convention or location standard | Low | U | 2026-04-11 | 2026-04-11 | `pending` | `docs/` |
+| [ISS-001](#iss-001--alert-prompt-leaks-raw-template-to-telegram) | bug | Alert prompt leaks raw template to Telegram | Critical | U+AI | 2026-04-11 | 2026-04-11 | `47c63c7` | `alert_engine.py` |
+| [ISS-002](#iss-002--alert-engine-sends-one-message-per-article-spam) | bug | Alert engine sends one message per article (spam) | High | U+AI | 2026-04-11 | 2026-04-11 | `47c63c7` | `alert_engine.py` |
+| [ISS-003](#iss-003--digest-messages-have-no-embedded-links) | enhancement | Digest messages have no embedded links | High | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `prompts.py`, `agent.py` |
+| [ISS-004](#iss-004--telegram-messages-always-routed-to-coach-no-news-agent-routing) | feature | Telegram messages always routed to coach — no news agent routing | High | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `webhooks.py` |
+| [ISS-005](#iss-005--news-schedule-not-fixed-at-0630--1730--2000) | feature | News schedule not fixed at 06:30 / 17:30 / 20:00 | Medium | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `scheduler.py` |
+| [ISS-006](#iss-006--no-feature-design-doc-convention-or-location-standard) | refactor | No feature design doc convention or location standard | Low | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `docs/` |
 | [ISS-F01](#iss-f01--news-scorer-returns-invalid-json) | bug | News scorer returns invalid JSON | High | AI | 2026-03-xx | 2026-03-xx | `fe8d12c` | `scorer.py` |
 | [ISS-F02](#iss-f02--reuters-rss-feed-dead) | bug | Reuters RSS feed dead / returns no articles | Medium | AI | 2026-03-xx | 2026-03-xx | `0b711ae` | `feeds.py` |
 | [ISS-F03](#iss-f03--relative-file-paths-break-inside-docker) | bug | Relative file paths break inside Docker | Critical | AI | 2026-03-xx | 2026-03-xx | `63864b8` | `config.py`, `database.py` |
