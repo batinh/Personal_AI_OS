@@ -63,7 +63,7 @@ Tests must pass before every push:
 
 ```bash
 python -m pytest tests/ -q
-# Expected: 329 passed, 0 failed
+# Expected: 436 passed, 0 failed
 ```
 
 ### TDD — Required for new features
@@ -81,6 +81,21 @@ python -m pytest tests/ -q
 
 ---
 
+## Feature Design Doc Convention
+
+Every new feature touching ≥2 files must have a design doc created **before** writing code:
+
+1. Copy `docs/feature_design_template.md` into `docs/features/{feature-slug}.md`
+2. Slug: lowercase English, hyphens (e.g. `news-agent-overhaul`)
+3. Link the doc from the issue in `docs/ISSUES.md`
+
+```bash
+# Example
+cp docs/feature_design_template.md docs/features/my-new-feature.md
+```
+
+---
+
 ## Pre-Commit Checklist
 
 Run mentally against [pragmatic_review_checklist.md](./pragmatic_review_checklist.md) before every commit:
@@ -90,7 +105,7 @@ Run mentally against [pragmatic_review_checklist.md](./pragmatic_review_checklis
 - [ ] `try/except` around all external calls (Gemini, Telegram, Strava)
 - [ ] `WHERE user_id = ?` in every SQL query
 - [ ] `.replace()` not f-strings for injecting external content into prompts
-- [ ] `python -m pytest tests/ -q` → 329 passed, 0 failed
+- [ ] `python -m pytest tests/ -q` → 436 passed, 0 failed
 
 ---
 

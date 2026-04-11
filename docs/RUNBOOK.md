@@ -234,6 +234,71 @@ docker compose up -d
 
 ---
 
+## News Agent Operations
+
+### Automatic schedule
+
+| Time | Session | Trigger |
+|------|---------|---------|
+| 06:30 | Morning digest | Cron `task_morning_news` |
+| 17:30 | Afternoon digest | Cron `task_afternoon_news` |
+| 20:00 | Evening digest | Cron `task_evening_news` |
+| Every 30 min | Breaking alert watch | Interval `task_news_watch` |
+
+Quiet hours (22:00–06:00): alert engine only sends shock-level news (score ≥ `shock_threshold`, default 9).
+
+### Manual triggers via Telegram
+
+```
+/news            → morning digest now
+/news morning    → morning digest
+/news afternoon  → afternoon digest
+/news evening    → evening digest
+/news watch      → breaking alert scan now
+/news help       → show help + schedule
+@news <query>    → chat with news agent
+@tin <query>     → same as @news
+```
+
+### Configuration (`data/config.json`)
+
+```json
+"news_agent": {
+  "enabled": true,
+  "morning_time": "06:30",
+  "afternoon_time": "17:30",
+  "evening_time": "20:00",
+  "watch_interval_minutes": 30,
+  "alert_threshold": 7,       // score >= this → breaking alert
+  "shock_threshold": 9,       // score >= this → alert during quiet hours
+  "digest_threshold": 4,      // score >= this → included in digest
+  "topic_cooldown_hours": 2   // max 3 alerts per category per window
+}
+```
+
+### Troubleshooting news agent
+
+**Digest not arriving at scheduled time:**
+```bash
+docker logs airunningcoach --tail 100 | grep -i "NEWS\|SCHEDULER"
+```
+
+**No articles scored / feed errors:**
+```bash
+docker logs airunningcoach | grep -i "NEWS-WATCH\|NEWS-SCORER\|feed"
+```
+
+**Too many alerts / spam:**
+- Check `alert_threshold` (raise to 8 to reduce)
+- Check `topic_cooldown_hours` (raise to 4 to cool down faster)
+- Check `shock_threshold` vs `alert_threshold` gap
+
+**News agent disabled message:**
+- Verify `news_agent.enabled: true` in `data/config.json`
+- Reload config via `/admin` → "Reload scheduler"
+
+---
+
 ## Container Reference
 
 | Container | Image | Port | Purpose |
