@@ -7,7 +7,7 @@ Covers: sanitize_md_to_tg_html, send_telegram_msg (fallback), send_typing_action
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.core.notification import sanitize_md_to_tg_html, send_telegram_msg, send_typing_action
+from app.core.notification import sanitize_md_to_tg_html, send_telegram_msg, send_typing_action, _strip_html
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -77,6 +77,34 @@ class TestSanitizeMdToTgHtml(unittest.TestCase):
         self.assertIn("<b>Kết quả</b>", result)
         self.assertIn("• Km:", result)
 
+    def test_anchor_link_passes_through_intact(self):
+        # <a href> must survive — previously the old escape-then-restore approach destroyed links
+        text = 'Xem chi tiết <a href="https://vnexpress.net/abc">Đọc thêm</a>'
+        result = sanitize_md_to_tg_html(text)
+        self.assertIn('<a href="https://vnexpress.net/abc">', result)
+        self.assertIn('</a>', result)
+        self.assertIn('Đọc thêm', result)
+
+    def test_unclosed_b_tag_is_balanced(self):
+        # Gemini sometimes generates <b>title without closing </b>
+        result = sanitize_md_to_tg_html("<b>Breaking news — no close tag")
+        self.assertIn("<b>", result)
+        self.assertEqual(result.count("<b>"), result.count("</b>"))
+
+    def test_special_chars_in_text_outside_tags_are_escaped(self):
+        # < and > in plain text must be escaped; tags must be kept
+        text = 'HR < 150 bpm và <b>cảnh báo</b>'
+        result = sanitize_md_to_tg_html(text)
+        self.assertIn("&lt;", result)
+        self.assertIn("<b>cảnh báo</b>", result)
+
+    def test_strip_html_removes_tags_and_unescapes(self):
+        result = _strip_html("<b>Tin nóng</b>: giá &amp; thị trường &lt;tăng&gt;")
+        self.assertNotIn("<b>", result)
+        self.assertNotIn("&amp;", result)
+        self.assertIn("Tin nóng", result)
+        self.assertIn("&", result)  # unescaped
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. send_telegram_msg – Mock HTTP
@@ -119,6 +147,28 @@ class TestSendTelegramMsg(unittest.TestCase):
         # Second call must NOT have parse_mode
         second_payload = mock_post.call_args_list[1][1]["json"]
         self.assertNotIn("parse_mode", second_payload)
+
+    @patch("app.core.notification.requests.post")
+    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token"})
+    def test_fallback_text_has_no_html_tags(self, mock_post):
+        """Fallback plain text must not contain raw HTML tags (user sees clean text)."""
+        bad_response = MagicMock()
+        bad_response.status_code = 400
+        bad_response.text = "Bad Request: can't parse entities"
+
+        good_response = MagicMock()
+        good_response.status_code = 200
+        good_response.text = "OK"
+
+        mock_post.side_effect = [bad_response, good_response]
+
+        send_telegram_msg("123456", "<b>Tin nóng</b> — thị trường biến động")
+
+        second_payload = mock_post.call_args_list[1][1]["json"]
+        fallback_text = second_payload["text"]
+        self.assertNotIn("<b>", fallback_text)
+        self.assertNotIn("</b>", fallback_text)
+        self.assertIn("Tin nóng", fallback_text)
 
     @patch("app.core.notification.requests.post")
     def test_no_token_skips_request(self, mock_post):

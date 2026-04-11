@@ -12,6 +12,35 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 Before commit: `docs/pragmatic_review_checklist.md`. New feature: `docs/feature_design_template.md`. Bug or feature: `docs/ISSUES.md`.
 
+## Dev → Test → Deploy Workflow
+Every code change must pass this gate before deploying to T440:
+
+```
+1. SMOKE  python -m pytest tests/test_smoke.py -v
+          Catches ImportError and missing symbols before any logic runs.
+          Run this first — fastest feedback (< 2s).
+
+2. UNIT   python -m pytest tests/ -q
+          Full suite: unit + integration tests. 0 failures required.
+
+3. DEPLOY bash scripts/pre-deploy-check.sh
+          Runs: pytest suite + config loads + docker compose syntax.
+
+4. T440   bash scripts/deploy-t440.sh
+          git pull + docker rebuild + health check (90s timeout) +
+          E2E curl smoke tests (/health, /console, /admin, /webhook,
+          scheduler running, no errors in last 50 log lines).
+```
+
+**When to add a smoke test**: whenever a new public symbol is exported from a module
+(new function in `prompts.py`, new class in a service, new handler). Add an import
+assertion in `tests/test_smoke.py` under the matching class.
+
+**Common failure patterns**:
+- `ImportError` on smoke → function added to `agent.py` import but not implemented in `prompts.py`
+- `pre-deploy-check` fails config → missing key in `config.example.json` or `.env`
+- `deploy-t440` health timeout → container crash, check: `docker logs airunningcoach --tail 50`
+
 ## Feature Design Doc Convention
 - **Every new feature** (≥2 files changed): create `docs/features/{feature-slug}.md` using `docs/feature_design_template.md`
 - **Slug**: lowercase English, hyphens — e.g. `news-agent-overhaul`, `telegram-routing`
