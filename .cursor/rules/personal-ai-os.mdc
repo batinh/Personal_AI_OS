@@ -1,0 +1,49 @@
+---
+description: Personal AI OS (Coach Dyno) — gates, language zones, hot paths
+alwaysApply: true
+---
+
+# Personal AI OS — Cursor rules
+
+Full detail: **CLAUDE.md** and **AGENTS.md**.
+
+## Pre-commit / deploy gate
+
+1. `python -m pytest tests/test_smoke.py -v` (fast import smoke)
+2. `python -m pytest tests/ -q` (0 failures)
+3. Before T440 deploy: `bash scripts/pre-deploy-check.sh`
+
+New public symbols → add import assertion in `tests/test_smoke.py`.
+
+## Language zones (strict)
+
+| Zone | Where | Language |
+|------|--------|----------|
+| 1 | Code, DB, logs, git commits, docstrings | English |
+| 2 | AI output to user (Telegram / Strava / email) | Vietnamese |
+| 3 | Prompt builders | Python logic English; injected user-facing strings Vietnamese |
+
+## Architecture shortcuts
+
+- Coach: `app/agents/coach/agent.py`, `app/agents/coach/flows/`, `prompts.py`
+- Webhooks / Strava: `app/routers/webhooks.py`, `app/agents/coach/strava_client.py`
+- DB: `app/core/database.py` — **every table has `user_id`**; use `row["col"]` not `row[0]` (sqlite3.Row)
+- Scheduler (`app/services/scheduler.py`): job callables use **`def`**, not `async def` (thread pool)
+- Config: `app/core/config.py`, `config.example.json`; runtime `data/config.json` is gitignored
+- RAG: `app/services/rag_memory.py`
+
+## Non-negotiables
+
+- Runtime paths: `Path(__file__).resolve().parent...` — not fragile cwd-relative paths in Docker
+- Prompts with user `{}` data: **`.replace()`**, not f-strings (avoid `KeyError`)
+- `@patch` target: module **where the name is imported**, not where defined
+- Logging: `logger.info("[TAG] message")` e.g. `[SCHEDULER]`, `[DB_ERROR]`
+- Git commits: `type: description` in English
+- Do not add a second README; update **README.md** in place
+- Bugs/features: **docs/ISSUES.md** (open table + detail at bottom)
+
+## Product docs
+
+- Coaching constants: `docs/coaching_constants.md`
+- DB design: `docs/database_design.md`
+- Feature template: `docs/feature_design_template.md`

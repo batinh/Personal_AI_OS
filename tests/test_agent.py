@@ -286,6 +286,37 @@ class TestHandleTelegramChat(unittest.TestCase):
         self.assertEqual(_classify_intent(long_msg), "standard")
 
 
+class TestPastContextKeywordMatching(unittest.TestCase):
+    """Fold + keyword list for past/memory/recap (VI có dấu, không dấu, EN)."""
+
+    def test_fold_vietnamese_ascii(self):
+        from app.agents.coach.agent import _fold_vietnamese_ascii
+        self.assertEqual(_fold_vietnamese_ascii("Tuần trước"), "tuan truoc")
+        self.assertEqual(_fold_vietnamese_ascii("HÔM QUA"), "hom qua")
+        self.assertEqual(_fold_vietnamese_ascii("ký ức"), "ky uc")
+
+    def test_past_keywords_match_vietnamese_no_diacritics(self):
+        from app.agents.coach.agent import _text_matches_keyword_list, _PAST_CONTEXT_KEYWORDS
+        self.assertTrue(_text_matches_keyword_list("tuan truoc chay bao nhieu km", _PAST_CONTEXT_KEYWORDS))
+        self.assertTrue(_text_matches_keyword_list("hom qua minh chay the nao", _PAST_CONTEXT_KEYWORDS))
+        self.assertTrue(_text_matches_keyword_list("tong ket tuan nay", _PAST_CONTEXT_KEYWORDS))
+
+    def test_past_keywords_match_vietnamese_with_diacritics(self):
+        from app.agents.coach.agent import _text_matches_keyword_list, _PAST_CONTEXT_KEYWORDS
+        self.assertTrue(_text_matches_keyword_list("Tổng kết tuần vừa rồi", _PAST_CONTEXT_KEYWORDS))
+        self.assertTrue(_text_matches_keyword_list("Nhớ lại bài chạy hôm qua", _PAST_CONTEXT_KEYWORDS))
+
+    def test_past_keywords_match_english(self):
+        from app.agents.coach.agent import _text_matches_keyword_list, _PAST_CONTEXT_KEYWORDS
+        self.assertTrue(_text_matches_keyword_list("What did I run last week?", _PAST_CONTEXT_KEYWORDS))
+        self.assertTrue(_text_matches_keyword_list("weekly recap please", _PAST_CONTEXT_KEYWORDS))
+
+    def test_past_keywords_no_false_positive_on_preview(self):
+        from app.agents.coach.agent import _text_matches_keyword_list, _PAST_CONTEXT_KEYWORDS
+        # Removed bare "review" to avoid matching "preview"
+        self.assertFalse(_text_matches_keyword_list("preview the plan", _PAST_CONTEXT_KEYWORDS))
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. generate_morning_briefing
 # ══════════════════════════════════════════════════════════════════════════════

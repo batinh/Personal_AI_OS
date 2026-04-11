@@ -534,6 +534,15 @@ The current architecture is single-tenant (one `TELEGRAM_CHAT_ID` per deployment
 
 This is a personal project but contributions are welcome.
 
+### AI assistants (Claude Code & Cursor)
+
+| Tool | Where to read |
+|------|----------------|
+| **Claude Code** | [CLAUDE.md](CLAUDE.md), [.claudeignore](.claudeignore) |
+| **Cursor** | [AGENTS.md](AGENTS.md), [.cursor/rules/personal-ai-os.mdc](.cursor/rules/personal-ai-os.mdc), [.cursorignore](.cursorignore) |
+
+`CLAUDE.md` is the canonical playbook; `AGENTS.md` points Cursor at the same gates and conventions. Keep **`.cursorignore`** aligned with **`.claudeignore`** when you add ignore patterns.
+
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/my-feature`)
 3. Follow the [zone conventions](./Rules.txt):

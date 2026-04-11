@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+**Cursor:** see also **AGENTS.md** and **`.cursor/rules/personal-ai-os.mdc`** for the same conventions in Cursor.
+
 ## Commands
 ```bash
 python -m pytest tests/ -q                      # full suite (gate before commit — 0 failures)

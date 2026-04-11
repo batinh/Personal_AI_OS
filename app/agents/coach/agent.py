@@ -2,6 +2,7 @@ import os
 import json
 import re
 import logging
+import unicodedata
 import pytz
 import uuid
 import time
@@ -124,6 +125,122 @@ def _classify_intent(text: str) -> str:
     if any(kw in text_lower for kw in _STANDARD_KEYWORDS):
         return "standard"
     return "fast"
+
+
+def _fold_vietnamese_ascii(text: str) -> str:
+    """Lowercase and strip Vietnamese (and similar) combining marks for keyword matching."""
+    if not text:
+        return ""
+    nfd = unicodedata.normalize("NFD", text.lower())
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def _text_matches_keyword_list(text: str, keywords: tuple) -> bool:
+    """Match in original lowercase and in diacritic-folded form (covers VI no-dấu + EN)."""
+    lowered = text.lower() if isinstance(text, str) else ""
+    folded = _fold_vietnamese_ascii(lowered)
+    for kw in keywords:
+        if not kw or not isinstance(kw, str):
+            continue
+        kl = kw.lower()
+        if kl in lowered:
+            return True
+        kf = _fold_vietnamese_ascii(kl)
+        if kf and kf in folded:
+            return True
+    return False
+
+
+# Force 'standard' intent when user clearly asks about history, memory, weekly recap, past runs.
+# Includes: Vietnamese (có dấu), VI gõ không dấu (via _fold), English phrases.
+_PAST_CONTEXT_KEYWORDS = (
+    # Vietnamese — time / recap
+    "tuần trước",
+    "tuần này",
+    "tuần vừa rồi",
+    "tuần qua",
+    "tuần rồi",
+    "hôm qua",
+    "hôm kia",
+    "mấy hôm",
+    "mấy ngày",
+    "gần đây",
+    "vừa rồi",
+    "cuối tuần",
+    "chủ nhật vừa",
+    "thứ hai vừa",
+    "thứ 7 vừa",
+    "quá khứ",
+    "trước đây",
+    "lần trước",
+    "lịch sử",
+    "tổng kết",
+    "nhớ lại",
+    "ký ức",
+    "kí ức",
+    "trí nhớ",
+    "tra cứu",
+    "đối chiếu",
+    "thống kê",
+    "bài chạy",
+    "bài tập",
+    "các bài",
+    "những bài",
+    "hoạt động gần",
+    "đã chạy",
+    "vừa chạy",
+    "chạy xong",
+    "km tuần",
+    "số km",
+    "khối lượng tuần",
+    # Explicit VI no-dấu / typo-prone (fold also covers most; these catch edge cases)
+    "tuan truoc",
+    "tuan nay",
+    "tuan qua",
+    "hom qua",
+    "qua khu",
+    "ky uc",
+    "tong ket",
+    "lich su",
+    "bai chay",
+    "lan truoc",
+    "gan day",
+    "nho lai",
+    "tra cuu",
+    # English
+    "last week",
+    "last run",
+    "last workout",
+    "previous run",
+    "previous week",
+    "past week",
+    "this week",
+    "training history",
+    "workout history",
+    "running history",
+    "activity history",
+    "weekly recap",
+    "week review",
+    "weekly summary",
+    "look back",
+    "recap",
+    "reflection",
+    "week review",
+    "weekly review",
+    "what did i run",
+    "how many km",
+    "how much did i run",
+    "total mileage",
+    "weekly volume",
+    "recent runs",
+    "past runs",
+    "my runs",
+    "earlier",
+    "days ago",
+    "long term memory",
+    "search memory",
+    "remember when",
+)
 
 # --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str, meta_data: dict, config: dict):
@@ -358,16 +475,11 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     intent = _classify_intent(text)
     logger.info(f"[CHAT] Intent classified as '{intent}' for message: '{text[:50]}'")
 
-    # Heuristic override: if the user mentions past/week/memory keywords, force 'standard' intent
-    past_keywords = [
-        'tuần', 'hôm qua', 'quá khứ', 'review', 'tổng kết', 'reflection', 'nhớ', 'ký ức',
-        'memory', 'past', 'đã hoàn thành', 'đã', 'xong', 'kết quả'
-    ]
-    lowered = text.lower() if isinstance(text, str) else ''
-    if any(k in lowered for k in past_keywords):
-        if intent != 'standard':
-            logger.info(f"[CHAT] Forcing intent 'standard' due to past-related keyword match.")
-        intent = 'standard'
+    # Heuristic override: past / memory / weekly recap → full context (standard intent)
+    if _text_matches_keyword_list(text, _PAST_CONTEXT_KEYWORDS):
+        if intent != "standard":
+            logger.info("[CHAT] Forcing intent 'standard' due to past-context keyword match.")
+        intent = "standard"
 
     # Always compute local context (weekly volume, decision context, active memories).
     # These are local facts and must not be skipped even for 'fast' conversational intents —

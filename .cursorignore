@@ -1,0 +1,15 @@
+# Cursor indexing ignore — keep in sync with .claudeignore where sensible
+data/
+logs/
+htmlcov/
+__pycache__/
+*.log
+*.db
+*.sqlite
+*.pyc
+*.pyo
+.env
+.env.*
+*.egg-info/
+.pytest_cache/
+.coverage
