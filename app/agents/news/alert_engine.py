@@ -45,10 +45,17 @@ client = genai.Client()
 _MAX_TELEGRAM_CHARS = 4000
 
 
-def _is_quiet_hours(tz) -> bool:
-    """Return True if current local time is in quiet hours (22:00–06:00)."""
+def _is_quiet_hours(tz, start_hour: int = 22, end_hour: int = 6) -> bool:
+    """Return True if current local time is in quiet hours between [start_hour..end_hour).
+
+    Handles windows that wrap midnight (e.g., 22 -> 6).
+    """
     now = datetime.now(tz)
-    return now.hour >= 22 or now.hour < 6
+    h = now.hour
+    if start_hour <= end_hour:
+        return start_hour <= h < end_hour
+    # wraps midnight
+    return h >= start_hour or h < end_hour
 
 
 def run_news_watch(config: dict) -> None:
@@ -95,7 +102,11 @@ def run_news_watch(config: dict) -> None:
         return
 
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
-    is_quiet = _is_quiet_hours(tz)
+    # Allow override via config: quiet_start and quiet_end hours (0-23)
+    quiet_start = int(news_cfg.get("quiet_start_hour", 22))
+    quiet_end = int(news_cfg.get("quiet_end_hour", 6))
+    is_quiet = _is_quiet_hours(tz, start_hour=quiet_start, end_hour=quiet_end)
+    logger.info(f"[NEWS-WATCH] Resolved TZ={tz} Quiet window={quiet_start}->{quiet_end}, is_quiet={is_quiet}")
     effective_threshold = shock_threshold if is_quiet else alert_threshold
 
     logger.info(

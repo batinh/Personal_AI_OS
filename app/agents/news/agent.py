@@ -117,13 +117,20 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
         logger.warning("[NEWS] No interest profile configured. Using basic briefing.")
         tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
         date_str = datetime.now(tz).strftime('%A, %d/%m/%Y')
-        articles_text = _format_articles_text(briefing_articles)
+        # Build articles_text explicitly so each article includes title, summary, and link
+        lines = []
+        for a in briefing_articles:
+            lines.append(f"- ({a.source}) {a.title}\n  {a.summary}\n  URL: {a.link}")
+        articles_text = "\n\n".join(lines)
         _SESSION_LABELS = {"morning": "sáng", "afternoon": "chiều", "evening": "tối"}
-        prompt = build_categorized_digest_prompt(
-            {"general": briefing_articles},
-            date_str,
-            session=_SESSION_LABELS.get(session, session)
-        )
+        # Use the simpler morning/afternoon template which expects articles_text
+        if session == 'morning':
+            prompt = build_morning_news_prompt(articles_text, date_str)
+        elif session == 'afternoon':
+            prompt = build_afternoon_news_prompt(articles_text, date_str)
+        else:
+            # Fallback to categorized prompt for evening/others
+            prompt = build_categorized_digest_prompt({"general": briefing_articles}, date_str, session=_SESSION_LABELS.get(session, session))
     else:
         # Check cache and score fresh articles
         cached_scores = get_cached_scores([a.link for a in briefing_articles])
@@ -196,6 +203,8 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
 
     try:
         system_inst = build_news_system_instruction()
+        # Debug: log prompt head and length (avoid logging full articles with potential PII)
+        logger.debug(f"[NEWS] Prompt length={len(prompt)} chars. Prompt head: {prompt[:500]!r}")
         response = client.models.generate_content(
             model=generation_model,
             contents=prompt,
@@ -210,6 +219,8 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
         if len(reply) > _MAX_TELEGRAM_CHARS:
             reply = reply[:_MAX_TELEGRAM_CHARS] + "..."
 
+        # Debug: log reply head and length
+        logger.debug(f"[NEWS] Reply length={len(reply)} chars. Reply head: {reply[:400]!r}")
         send_telegram_msg(chat_id, reply)
         save_sent_articles(user_id, [a.link for a in briefing_articles], session)
         logger.info(f"[NEWS] Sent {session} digest to chat_id={chat_id} ({len(briefing_articles)} articles)")

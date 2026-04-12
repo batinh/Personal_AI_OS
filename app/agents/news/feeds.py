@@ -40,13 +40,29 @@ def fetch_feed(url: str, name: str, max_articles: int, timeout: int = _DEFAULT_T
         feed = feedparser.parse(response.content)
         articles = []
         for entry in feed.entries[:max_articles]:
+            # Prefer 'summary', then 'description', then 'content' (if available)
             summary = entry.get("summary", entry.get("description", ""))
-            # Strip HTML tags that sometimes appear in RSS summaries
-            summary = summary[:_SUMMARY_MAX_LEN]
+            if not summary:
+                content = entry.get("content") or []
+                if isinstance(content, list) and content:
+                    # content is often a list of dicts with 'value'
+                    first = content[0]
+                    if isinstance(first, dict):
+                        summary = first.get("value", "")
+            # Strip/limit length
+            summary = (summary or "").strip()[:_SUMMARY_MAX_LEN]
+
+            link = entry.get("link", "") or entry.get("id", "")
+
+            # Skip articles that have neither link nor any summary to avoid empty digests
+            if not link or not summary:
+                logger.debug(f"[NEWS] Dropping article from feed {name} due to missing link/summary: title='{entry.get('title','')[:60]}'")
+                continue
+
             articles.append(Article(
                 title=entry.get("title", "").strip(),
                 summary=summary.strip(),
-                link=entry.get("link", ""),
+                link=link,
                 source=name,
                 published=entry.get("published", ""),
             ))
