@@ -254,7 +254,7 @@ class TestSetupJobs(unittest.TestCase):
                    if "id" in call[1]]
         self.assertIn("news_morning", job_ids)
         self.assertIn("news_afternoon", job_ids)
-        self.assertIn("news_watch", job_ids)
+        self.assertIn("news_evening", job_ids)
 
     def test_core_jobs_always_added(self):
         cfg = _make_config(news_enabled=False)
@@ -279,8 +279,8 @@ class TestSetupJobs(unittest.TestCase):
     def test_total_jobs_with_news_enabled(self):
         cfg = _make_config(news_enabled=True)
         mock_sched = self._run_setup(cfg)
-        # 6 core + 4 news (morning, afternoon, evening, watch) = 10
-        self.assertEqual(mock_sched.add_job.call_count, 10)
+        # 6 core + 3 news (morning, afternoon, evening) = 9
+        self.assertEqual(mock_sched.add_job.call_count, 9)
 
     def test_total_jobs_without_news(self):
         cfg = _make_config(news_enabled=False)

@@ -205,30 +205,14 @@ def init_db():
         ON news_sent_articles (user_id, article_link)
     ''')
 
-    # [NEWS AGENT] Table: news_alert_log (track breaking alerts)
+    # [NEWS AGENT] Table: news_agent_state (persistent key-value memory for news agent)
     c.execute('''
-        CREATE TABLE IF NOT EXISTS news_alert_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+        CREATE TABLE IF NOT EXISTS news_agent_state (
             user_id TEXT NOT NULL,
-            article_link TEXT NOT NULL,
-            score INTEGER,
-            category TEXT,
-            alert_type TEXT,
-            alerted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_news_alert_user
-        ON news_alert_log (user_id, alerted_at)
-    ''')
-
-    # [NEWS AGENT] Table: news_article_scores (cache relevance scores)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS news_article_scores (
-            article_link TEXT PRIMARY KEY,
-            score INTEGER,
-            category TEXT,
-            scored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, key)
         )
     ''')
 
@@ -967,180 +951,38 @@ def archive_memory(user_id: str, memory_id: str) -> bool:
 
 
 # ==========================================
-# NEWS AGENT — DEDUPLICATION
+# NEWS AGENT — PERSISTENT STATE / MEMORY
 # ==========================================
 
-def save_sent_articles(user_id: str, links: list, session: str) -> None:
-    """
-    Record article links that were sent in a news briefing session.
-    Used to prevent the same article appearing in both morning and afternoon briefings.
-    """
-    if not links:
-        return
-    with get_db() as conn:
-        conn.executemany(
-            "INSERT INTO news_sent_articles (user_id, article_link, session) VALUES (?, ?, ?)",
-            [(str(user_id), link, session) for link in links]
-        )
-    logger.info(f"[DB] Saved {len(links)} sent article links for user {user_id} ({session})")
-
-
-def get_recent_sent_links(user_id: str, hours: int = 24) -> set:
-    """
-    Return set of article links already sent to this user in the last N hours.
-    Used for deduplication between morning and afternoon briefings.
-    """
-    with get_db() as conn:
-        rows = conn.execute(
-            """
-            SELECT article_link FROM news_sent_articles
-            WHERE user_id = ?
-              AND sent_at >= datetime('now', ? || ' hours')
-            """,
-            (str(user_id), f"-{hours}")
-        ).fetchall()
-    return {row["article_link"] for row in rows}
-
-
-def save_alert_log(user_id: str, article_link: str, score: int, category: str, alert_type: str) -> None:
-    """
-    Log a breaking alert for an article.
-
-    Args:
-        user_id: User ID
-        article_link: Article URL
-        score: Relevance score (0-10)
-        category: Category (technology, sports_running, it_workforce, economics_politics, general)
-        alert_type: Type of alert (e.g., "breaking", "trending")
-    """
+def get_news_state(user_id: str, key: str) -> Optional[str]:
+    """Return value for a news agent state key, or None if not set."""
     try:
         with get_db() as conn:
-            conn.execute(
-                """
-                INSERT INTO news_alert_log (user_id, article_link, score, category, alert_type)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (str(user_id), article_link, score, category, alert_type)
-            )
-        logger.info(f"[DB] Saved alert log for {article_link} (score={score})")
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to save alert log: {e}")
-
-
-def get_recent_alert_links(user_id: str, hours: int = 24) -> set:
-    """
-    Return set of article links already alerted in the last N hours.
-    Used to prevent duplicate breaking alerts.
-
-    Args:
-        user_id: User ID
-        hours: Look-back window
-
-    Returns:
-        Set of article links already alerted
-    """
-    try:
-        with get_db() as conn:
-            rows = conn.execute(
-                """
-                SELECT DISTINCT article_link FROM news_alert_log
-                WHERE user_id = ?
-                  AND alerted_at >= datetime('now', ? || ' hours')
-                """,
-                (str(user_id), f"-{hours}")
-            ).fetchall()
-        return {row["article_link"] for row in rows}
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to get recent alert links: {e}")
-        return set()
-
-
-def get_recent_alerts_by_category(user_id: str, category: str, hours: int = 2) -> int:
-    """
-    Count alerts sent for a category in the last N hours.
-    Used for topic cool-down (max 3 alerts per category per cooldown window).
-
-    Args:
-        user_id: User ID
-        category: Category name
-        hours: Look-back window (default 2 hours)
-
-    Returns:
-        Count of alerts in the window
-    """
-    try:
-        with get_db() as conn:
-            result = conn.execute(
-                """
-                SELECT COUNT(*) as count FROM news_alert_log
-                WHERE user_id = ?
-                  AND category = ?
-                  AND alerted_at >= datetime('now', ? || ' hours')
-                """,
-                (str(user_id), category, f"-{hours}")
+            row = conn.execute(
+                "SELECT value FROM news_agent_state WHERE user_id = ? AND key = ?",
+                (str(user_id), key)
             ).fetchone()
-        return result["count"] if result else 0
+        return row["value"] if row else None
     except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to count alerts by category: {e}")
-        return 0
+        logger.error(f"[DB_ERROR] Failed to get news state {key}: {e}")
+        return None
 
 
-def save_article_score(link: str, score: int, category: str) -> None:
-    """
-    Cache article relevance score to avoid re-scoring.
-
-    Args:
-        link: Article URL (primary key)
-        score: Relevance score (0-10)
-        category: Category assigned by scorer
-    """
+def set_news_state(user_id: str, key: str, value: str) -> None:
+    """Upsert a news agent state key-value pair."""
     try:
         with get_db() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO news_article_scores (article_link, score, category, scored_at)
+                INSERT INTO news_agent_state (user_id, key, value, updated_at)
                 VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
                 """,
-                (link, score, category)
+                (str(user_id), key, value)
             )
-        logger.debug(f"[DB] Cached score for {link} (score={score})")
+        logger.debug(f"[DB] Set news state {key} for user {user_id}")
     except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to save article score: {e}")
-
-
-def get_cached_scores(links: list[str]) -> dict:
-    """
-    Retrieve cached scores for a batch of articles.
-
-    Args:
-        links: List of article URLs
-
-    Returns:
-        Dict mapping link → {score, category} for cached articles.
-        Missing articles are not included in result.
-    """
-    if not links:
-        return {}
-
-    try:
-        with get_db() as conn:
-            placeholders = ",".join("?" * len(links))
-            query = f"""
-                SELECT article_link, score, category
-                FROM news_article_scores
-                WHERE article_link IN ({placeholders})
-            """
-            rows = conn.execute(query, links).fetchall()
-
-        result = {}
-        for row in rows:
-            result[row["article_link"]] = {
-                "score": row["score"],
-                "category": row["category"]
-            }
-        return result
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to get cached scores: {e}")
+        logger.error(f"[DB_ERROR] Failed to set news state {key}: {e}")
 
 
 # ==========================================

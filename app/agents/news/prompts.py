@@ -1,187 +1,184 @@
 """
-Prompt builders for the News Agent.
+Prompt builders for the News Agent (LLM-native architecture).
 
 Zone 3 boundary rule (per CLAUDE.md):
 - Python logic and variable names: English
 - Injected f-string content / user-facing templates: Vietnamese
 
-Security note: use .replace() instead of f-strings to inject article content.
-RSS article titles/summaries may contain literal {} characters (e.g. GDP growth {2.5%}),
-which would cause KeyError with str.format() or f-strings.
-
 Architecture:
-- build_news_system_instruction() → Gemini system_instruction parameter (agent identity)
-- build_morning_news_prompt() / build_afternoon_news_prompt() → user content (task + data)
+- build_news_system_instruction() → Gemini system_instruction (agent identity)
+- build_session_prompt()          → single call with google_search grounding
+- build_memory_extraction_prompt()→ extract preference signals from chat
 """
 
 # ==========================================
-# 🏛️ SYSTEM INSTRUCTION (News Agent Identity)
+# SYSTEM INSTRUCTION (News Agent Identity)
 # ==========================================
 
-_NEWS_SYSTEM_INSTRUCTION = """Bạn là News Curator, biên tập viên tin tức AI chuyên nghiệp.
+_NEWS_SYSTEM_INSTRUCTION = """Bạn là News Curator, trợ lý tin tức AI chuyên nghiệp.
 
 [VAI TRÒ]
-- Tổng hợp và tóm tắt tin tức từ nhiều nguồn tiếng Việt và quốc tế.
-- Chọn lọc tin quan trọng, loại bỏ tin trùng lặp hoặc kém chất lượng.
-- Trình bày ngắn gọn, dễ đọc trên Telegram.
+- Dùng google_search để tìm tin tức thực tế trong vòng 48 giờ qua.
+- Chỉ đưa tin có nguồn thật từ kết quả google_search — TUYỆT ĐỐI không dùng kiến thức lưu sẵn để bịa tin hoặc bịa URL.
+- Nếu google_search không trả về kết quả nào phù hợp, hãy nói thẳng "Không tìm thấy tin mới trong 48 giờ qua về chủ đề này."
 
-[PHONG CÁCH]
-- Tone: Khách quan, chuyên nghiệp, không thiên vị.
-- Ngôn ngữ: Tiếng Việt tự nhiên, tránh dịch máy.
-- Mỗi tin: 1-2 câu tóm tắt, đi thẳng vào trọng tâm.
+[NGUYÊN TẮC URL]
+- Chỉ kèm link nếu URL đó có trong kết quả google_search. KHÔNG tự tạo URL.
+- Nếu không có URL thực → bỏ hoàn toàn phần "Đọc thêm", không để link rỗng.
 
-[QUY TẮC FORMAT TELEGRAM (BẮT BUỘC)]
-- KHÔNG dùng Markdown (##, **, ```). Telegram chỉ hỗ trợ HTML.
-- Dùng <b>text</b> cho tiêu đề quan trọng.
-- Dùng <a href="URL">Đọc thêm</a> để liên kết nguồn cho mỗi tin (URL lấy từ dữ liệu đầu vào).
-- Dùng emoji phù hợp cho mỗi tin để dễ scan.
-- Giữ tổng độ dài dưới 3000 ký tự.
+[FORMAT MỖI TIN]
+emoji <b>Tiêu đề</b> <i>(DD/MM)</i>
+Tóm tắt 1-2 câu ngắn gọn.
+<a href="URL_THỰC">Đọc thêm</a>   ← chỉ có nếu có URL thực
+
+[FORMAT CHUNG (BẮT BUỘC)]
+- KHÔNG dùng Markdown (##, **, ``` v.v.). Telegram chỉ hỗ trợ HTML.
 - Mỗi tin cách nhau 1 dòng trống.
+- Tổng độ dài dưới 3500 ký tự."""
 
-[KHÔNG ĐƯỢC LÀM]
-- Không thêm ý kiến cá nhân hoặc bình luận chính trị.
-- Không bịa thông tin không có trong nguồn.
-- Không tự bịa URL — chỉ dùng URL được cung cấp trong dữ liệu.
-- Không lặp lại nội dung giữa các tin."""
 
 # ==========================================
-# 📝 USER PROMPTS (Task + Data)
+# SESSION PROMPTS (morning / afternoon / evening)
 # ==========================================
 
-_MORNING_TEMPLATE = """Hôm nay là {date_str}.
+_MORNING_TEMPLATE = """Hôm nay là {date_str}. Tìm tin mới nhất trong 24 giờ qua (ưu tiên) hoặc tối đa 48 giờ.
 
-Dưới đây là các tin tức mới nhất:
+{interest_section}
+{memory_section}
+Dùng google_search để tìm và tổng hợp <b>3-5 tin quan trọng nhất</b> buổi sáng theo chủ đề trên.
+Mỗi tin phải có ngày đăng thực tế (DD/MM) lấy từ kết quả tìm kiếm.
 
-{articles_text}
+Bắt đầu bằng tiêu đề: 📰 <b>TIN TỨC BUỔI SÁNG — {date_str}</b>
+Tone: Ngắn gọn, rõ ràng để bắt đầu ngày mới."""
 
-Hãy tóm tắt 3-5 tin quan trọng nhất theo format:
-📰 TIN TỨC BUỔI SÁNG
+_AFTERNOON_TEMPLATE = """Hôm nay là {date_str}. Tìm tin mới nhất trong 24 giờ qua (ưu tiên) hoặc tối đa 48 giờ.
 
-Tone: Ngắn gọn, rõ ràng, tích cực để bắt đầu ngày mới."""
+{interest_section}
+{memory_section}
+Dùng google_search để tìm và tổng hợp <b>3-5 tin nổi bật nhất</b> buổi chiều theo chủ đề trên.
+Mỗi tin phải có ngày đăng thực tế (DD/MM) lấy từ kết quả tìm kiếm.
 
-_AFTERNOON_TEMPLATE = """Hôm nay là {date_str}.
+Bắt đầu bằng tiêu đề: 🌆 <b>CẬP NHẬT CHIỀU — {date_str}</b>
+Tone: Phân tích, trung lập."""
 
-Cập nhật tin tức buổi chiều:
+_EVENING_TEMPLATE = """Hôm nay là {date_str}. Tìm tin mới nhất trong 24 giờ qua (ưu tiên) hoặc tối đa 48 giờ.
 
-{articles_text}
+{interest_section}
+{memory_section}
+Dùng google_search để tìm và tổng hợp <b>3-5 tin đáng chú ý nhất</b> trong ngày hôm nay theo chủ đề trên.
+Mỗi tin phải có ngày đăng thực tế (DD/MM) lấy từ kết quả tìm kiếm.
 
-Hãy tóm tắt 3-5 tin nổi bật nhất theo format:
-🌆 CẬP NHẬT CHIỀU
+Bắt đầu bằng tiêu đề: 🌙 <b>ĐIỂM TIN CUỐI NGÀY — {date_str}</b>
+Tone: Tổng quan, nhìn lại ngày."""
 
-Tone: Phân tích, trung lập, nhìn nhận đa chiều."""
+_SESSION_TEMPLATES = {
+    "morning": _MORNING_TEMPLATE,
+    "afternoon": _AFTERNOON_TEMPLATE,
+    "evening": _EVENING_TEMPLATE,
+}
 
+
+def _build_interest_section(interest_profile: dict) -> str:
+    """Format the interest profile dict into a Vietnamese instruction block.
+
+    Accepts both the new flat format {domain: weight} and the legacy nested
+    format {domain: {weight: N, keywords: [...]}} so production configs that
+    haven't been re-saved yet don't crash.
+    """
+    if not interest_profile:
+        return "Chủ đề quan tâm: công nghệ, IT, kinh tế, chạy bộ thể thao.\n"
+
+    def _extract_weight(v) -> int:
+        if isinstance(v, dict):
+            return int(v.get("weight", 5))
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 5
+
+    lines = ["Chủ đề và mức độ quan tâm (1-10):"]
+    for domain, raw_weight in sorted(interest_profile.items(), key=lambda x: -_extract_weight(x[1])):
+        weight = _extract_weight(raw_weight)
+        lines.append(f"  • {domain}: {weight}/10")
+    return "\n".join(lines) + "\n"
+
+
+def _build_memory_section(memory: dict) -> str:
+    """Format loaded memory into a personalization hint block."""
+    parts = []
+    if memory.get("liked_topics"):
+        liked = ", ".join(memory["liked_topics"][:10])
+        parts.append(f"Muốn đọc thêm về: {liked}")
+    if memory.get("disliked_topics"):
+        disliked = ", ".join(memory["disliked_topics"][:10])
+        parts.append(f"Ít quan tâm hơn: {disliked}")
+    if memory.get("extra_notes"):
+        parts.append(f"Ghi chú cá nhân: {memory['extra_notes'][:200]}")
+
+    if not parts:
+        return ""
+    return "Sở thích học được:\n" + "\n".join(f"  - {p}" for p in parts) + "\n"
+
+
+def build_session_prompt(session: str, interest_profile: dict, date_str: str, memory: dict) -> str:
+    """
+    Build the user-turn prompt for a scheduled news briefing.
+
+    Args:
+        session         : "morning" | "afternoon" | "evening"
+        interest_profile: {domain: weight} dict from config
+        date_str        : formatted date string (e.g. "12/04/2026")
+        memory          : loaded news memory dict from load_news_memory()
+
+    Returns:
+        Vietnamese prompt string for Gemini (with google_search grounding active).
+    """
+    template = _SESSION_TEMPLATES.get(session, _MORNING_TEMPLATE)
+    interest_section = _build_interest_section(interest_profile)
+    memory_section = _build_memory_section(memory)
+
+    return (
+        template
+        .replace("{date_str}", date_str)
+        .replace("{interest_section}", interest_section)
+        .replace("{memory_section}", memory_section)
+    )
+
+
+# ==========================================
+# MEMORY EXTRACTION PROMPT
+# ==========================================
+
+_MEMORY_EXTRACTION_TEMPLATE = """Đọc đoạn hội thoại sau giữa người dùng và trợ lý tin tức:
+
+---
+{chat_text}
+---
+
+Trích xuất các tín hiệu sở thích tin tức của người dùng (nếu có):
+- Chủ đề họ muốn đọc thêm
+- Chủ đề họ muốn đọc ít hơn
+- Ghi chú về phong cách hoặc yêu cầu đặc biệt
+
+Trả về JSON object với format sau (bỏ trống nếu không có tín hiệu):
+{
+  "liked": ["topic1", "topic2"],
+  "disliked": ["topic3"],
+  "notes": "any free-text preference"
+}
+
+Chỉ trả về JSON, không giải thích thêm."""
+
+
+def build_memory_extraction_prompt(chat_text: str) -> str:
+    """Build the prompt to extract preference signals from a conversation turn."""
+    return _MEMORY_EXTRACTION_TEMPLATE.replace("{chat_text}", chat_text[:3000])
+
+
+# ==========================================
+# PUBLIC API (kept for smoke test compatibility)
+# ==========================================
 
 def build_news_system_instruction() -> str:
-    """Build the system instruction for the News Agent persona.
-
-    This is passed to Gemini's system_instruction parameter, separate from user content.
-    The news agent has its own identity — it is NOT the Coach Dyno running coach.
-    """
+    """Return the system instruction for the News Agent Gemini persona."""
     return _NEWS_SYSTEM_INSTRUCTION
-
-
-def build_morning_news_prompt(articles_text: str, date_str: str) -> str:
-    """Build the morning news summary prompt. Uses .replace() to safely inject content."""
-    return _MORNING_TEMPLATE.replace("{date_str}", date_str).replace("{articles_text}", articles_text)
-
-
-def build_afternoon_news_prompt(articles_text: str, date_str: str) -> str:
-    """Build the afternoon news update prompt. Uses .replace() to safely inject content."""
-    return _AFTERNOON_TEMPLATE.replace("{date_str}", date_str).replace("{articles_text}", articles_text)
-
-
-# ==========================================
-# 🚨 BREAKING ALERT PROMPT (BATCH)
-# ==========================================
-
-_BATCH_ALERT_TEMPLATE = """Hôm nay là {date_str}.
-
-Các tin tức nóng cần cảnh báo ngay:
-
-{articles_text}
-
-Hãy viết MỘT thông báo cảnh báo duy nhất, ngắn gọn:
-- Mỗi tin 1-2 câu, dùng <b>tiêu đề</b> và emoji phù hợp
-- Kèm <a href="URL">Đọc thêm</a> cho mỗi tin (URL lấy từ dữ liệu)
-- KHÔNG dùng Markdown, chỉ HTML
-- Tổng dưới 1500 ký tự"""
-
-
-def build_batch_alert_prompt(articles: list, date_str: str) -> str:
-    """
-    Build a single breaking-alert prompt for one or more high-relevance articles.
-
-    Uses .replace() to inject content safely — article titles may contain {}.
-
-    Args:
-        articles: list of ScoredArticle objects
-        date_str: formatted date string
-
-    Returns:
-        Vietnamese prompt for Gemini.
-    """
-    lines = []
-    for i, a in enumerate(articles, 1):
-        link = getattr(a, "link", "")
-        summary_short = getattr(a, "summary", "")[:200]
-        lines.append(
-            f"{i}. {a.title}\n"
-            f"   Nguồn: {a.source} | URL: {link}\n"
-            f"   Tóm tắt: {summary_short}"
-        )
-    articles_text = "\n\n".join(lines)
-    template = _BATCH_ALERT_TEMPLATE.replace("{date_str}", date_str)
-    template = template.replace("{articles_text}", articles_text)
-    return template
-
-
-# ==========================================
-# 📊 CATEGORIZED DIGEST PROMPT
-# ==========================================
-
-_DIGEST_TEMPLATE = """Hôm nay là {date_str}.
-
-Đây là bản tóm tắt tin tức {session} được phân loại:
-
-{categorized_content}
-
-Hãy tổng hợp lại theo định dạng:
-- Mỗi danh mục là một phần riêng với tiêu đề <b>emoji DANH MỤC</b>
-- Mỗi tin là 1-2 câu, kèm <a href="URL">Đọc thêm</a> (URL lấy từ dữ liệu, không tự bịa)
-- Dùng emoji phù hợp cho mỗi danh mục
-- Tone khách quan, chuyên nghiệp
-- Tổng độ dài dưới 3000 ký tự
-
-KHÔNG dùng Markdown, chỉ dùng HTML cho Telegram."""
-
-
-def build_categorized_digest_prompt(
-    categorized_articles: dict,
-    date_str: str,
-    session: str = "sáng"
-) -> str:
-    """
-    Build a digest prompt for scored articles grouped by category.
-
-    Args:
-        categorized_articles: {category: [ScoredArticle, ...], ...}
-        date_str: formatted date string
-        session: "sáng", "chiều", or "tối"
-
-    Returns:
-        Vietnamese prompt for Gemini.
-    """
-    lines = []
-    for category, articles in categorized_articles.items():
-        lines.append(f"\n[{category}]")
-        for a in articles:
-            link = getattr(a, "link", "")
-            lines.append(
-                f"- ({a.source}) {a.title}: {a.summary[:150]}\n  URL: {link}"
-            )
-
-    content = "\n".join(lines)
-    template = _DIGEST_TEMPLATE.replace("{date_str}", date_str)
-    template = template.replace("{session}", session)
-    template = template.replace("{categorized_content}", content)
-    return template

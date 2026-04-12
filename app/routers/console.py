@@ -188,23 +188,17 @@ async def console_save_news(
 
     # --- Basic toggles & scalars ---
     news_cfg["enabled"] = form.get("news_enabled") == "on"
-    news_cfg["morning_time"] = form.get("morning_time", "07:00").strip()
-    news_cfg["afternoon_time"] = form.get("afternoon_time", "17:00").strip()
-    news_cfg["watch_interval_minutes"] = _parse_int(form.get("watch_interval_minutes"), 30)
-    news_cfg["alert_threshold"] = _parse_int(form.get("alert_threshold"), 7)
-    news_cfg["digest_threshold"] = _parse_int(form.get("digest_threshold"), 4)
-    news_cfg["topic_cooldown_hours"] = _parse_int(form.get("topic_cooldown_hours"), 2)
-    news_cfg["max_articles_per_feed"] = _parse_int(form.get("max_articles_per_feed"), 5)
+    news_cfg["news_model"] = form.get("news_model", "models/gemini-flash-latest").strip() or "models/gemini-flash-latest"
+    news_cfg["morning_time"] = form.get("morning_time", "06:30").strip()
+    news_cfg["afternoon_time"] = form.get("afternoon_time", "17:30").strip()
+    news_cfg["evening_time"] = form.get("evening_time", "20:00").strip()
     news_cfg["telegram_chat_id"] = form.get("news_telegram_chat_id", "").strip()
 
-    # --- Feeds (serialized as JSON by client-side JS) ---
-    feeds_json = form.get("feeds_json", "[]")
-    try:
-        feeds = json.loads(feeds_json)
-        if isinstance(feeds, list):
-            news_cfg["feeds"] = feeds
-    except (json.JSONDecodeError, ValueError):
-        logger.warning("[CONSOLE] Invalid feeds_json submitted — keeping existing feeds.")
+    # Remove deprecated RSS-era keys if present
+    for old_key in ("watch_interval_minutes", "alert_threshold", "digest_threshold",
+                    "topic_cooldown_hours", "max_articles_per_feed", "feeds",
+                    "shock_threshold"):
+        news_cfg.pop(old_key, None)
 
     # --- Interest profile (serialized as JSON by client-side JS) ---
     profile_json = form.get("interest_profile_json", "{}")

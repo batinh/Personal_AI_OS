@@ -76,11 +76,11 @@ class TestNewsAgentImports(unittest.TestCase):
     def test_news_prompts_importable(self):
         from app.agents.news.prompts import build_news_system_instruction  # noqa: F401
 
-    def test_alert_engine_importable(self):
-        from app.agents.news.alert_engine import run_news_watch  # noqa: F401
+    def test_session_prompt_importable(self):
+        from app.agents.news.prompts import build_session_prompt  # noqa: F401
 
-    def test_scorer_importable(self):
-        from app.agents.news.scorer import score_articles  # noqa: F401
+    def test_news_memory_importable(self):
+        from app.agents.news.memory import load_news_memory  # noqa: F401
 
     def test_telegram_handler_importable(self):
         from app.agents.news.telegram_handler import handle_news_command  # noqa: F401
