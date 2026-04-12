@@ -46,6 +46,10 @@ backups/
 full_system_context.txt
 available_models_*.json
 
+# --- Test artifacts ---
+.coverage
+reports/
+
 # --- Local utility scripts ---
 get_full_context.py
 
