@@ -46,8 +46,8 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 | [ISS-F06](#iss-f06--strava-sync-race-condition--wrong-timezone) | bug | Strava sync race condition; wrong timezone on activity timestamps | High | AI | 2026-03-xx | 2026-03-xx | `a474e78` | `webhooks.py`, `strava_client.py` |
 | [ISS-F07](#iss-f07--gemini-model-selector-missing-new-models-in-console-ui) | enhancement | Gemini model selector missing new models in console UI | Low | U | 2026-03-xx | 2026-03-xx | `0d0ccb8` | `console.html` |
 | [ISS-F08](#iss-f08--templateresponse-api-broke-after-starlette-upgrade) | bug | `TemplateResponse` API broke after Starlette upgrade | High | AI | 2026-03-xx | 2026-03-xx | `6ae9683` | `routers/*.py` |
-| [ISS-010](#iss-010--url-cross-contamination-in-news-briefing) | bug | URL cross-contamination — wrong links on news articles | High | U+AI | 2026-04-14 | 2026-04-14 | `TBD` | `app/agents/news/agent.py`, `prompts.py` |
-| [ISS-011](#iss-011--on-demand-news-query-via-news-query) | feature | On-demand news query via `@news <query>` | Medium | U | 2026-04-14 | 2026-04-14 | `TBD` | `app/agents/news/agent.py`, `telegram_handler.py` |
+| [ISS-010](#iss-010--url-cross-contamination-in-news-briefing) | bug | URL cross-contamination — wrong links on news articles | High | U+AI | 2026-04-14 | 2026-04-14 | `2d31b53` | `app/agents/news/agent.py`, `prompts.py` |
+| [ISS-011](#iss-011--on-demand-news-query-via-news-query) | feature | On-demand news query via `@news <query>` | Medium | U | 2026-04-14 | 2026-04-14 | `2d31b53` | `app/agents/news/agent.py`, `telegram_handler.py` |
 
 ---
 
