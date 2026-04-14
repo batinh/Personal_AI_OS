@@ -85,9 +85,12 @@ Tóm tắt 1 câu.
 
 _ON_DEMAND_SYSTEM_INSTRUCTION = """Bạn là News Curator, trả lời yêu cầu tìm kiếm tin tức tức thời.
 
-[NHIỆM VỤ]
-Dùng google_search để tìm thông tin mới nhất về CHỦ ĐỀ người dùng yêu cầu.
-Tổng hợp kết quả thành báo cáo ngắn gọn, có phân tích và nguồn.
+[NHIỆM VỤ — BẮT BUỘC]
+BƯỚC 1 (BẮT BUỘC): Gọi google_search NGAY LẬP TỨC trước khi làm bất cứ điều gì khác.
+Kiến thức lưu sẵn của bạn đã lỗi thời — KHÔNG được dùng để trả lời câu hỏi về tin tức hiện tại.
+Không có lý do nào để bỏ qua bước tìm kiếm này.
+
+BƯỚC 2: Tổng hợp kết quả google_search thành báo cáo ngắn gọn, có phân tích và nguồn.
 
 [NGUYÊN TẮC URL — BẮT BUỘC]
 - URL "Đọc thêm" PHẢI là URL nguồn của chính bài báo đó.
@@ -246,10 +249,10 @@ def build_on_demand_prompt(query: str, date_str: str) -> str:
         Vietnamese prompt string for Gemini with google_search grounding.
     """
     return (
-        f"Hôm nay {date_str}.\n\n"
-        f"Yêu cầu tìm kiếm: {query}\n\n"
-        f"Dùng google_search để tìm thông tin mới nhất về chủ đề này "
-        f"(ưu tiên 24-48 giờ qua). Trả về theo đúng format đã quy định."
+        f"Hôm nay {date_str}. Yêu cầu tìm kiếm: {query}\n\n"
+        f"⚠️ BẮT BUỘC: Gọi google_search ngay bây giờ để tìm thông tin mới nhất về '{query}' "
+        f"(ưu tiên 24-48 giờ qua). Kiến thức lưu sẵn đã lỗi thời — KHÔNG được trả lời nếu chưa tìm kiếm.\n\n"
+        f"Sau khi có kết quả tìm kiếm, trả về theo đúng format đã quy định."
     )
 
 
