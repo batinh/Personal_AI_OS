@@ -18,7 +18,10 @@ from app.agents.coach.utils import (
 from app.agents.coach.prompts import (
     build_system_instruction, get_shared_context_block, build_weekly_reflection_prompt,
 )
-from app.agents.coach.tools import set_actual_weekly_target
+from app.agents.coach.tools import (
+    set_actual_weekly_target,
+    get_volume_for_week, get_volume_summary, get_metric_trend,
+)
 from app.services.rag_memory import rag_db
 from app.core.database import get_training_loads, get_weekly_volume
 
@@ -93,7 +96,12 @@ def generate_weekly_reflection(config: dict):
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,
-                tools=[set_actual_weekly_target]  # Crucial: Let AI act on its reflection
+                tools=[
+                    set_actual_weekly_target,  # Crucial: Let AI act on its reflection
+                    get_volume_for_week,
+                    get_volume_summary,
+                    get_metric_trend,
+                ]
             )
         )
 

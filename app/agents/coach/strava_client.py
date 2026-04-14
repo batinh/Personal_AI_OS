@@ -217,7 +217,7 @@ class StravaClient:
         url = "https://www.strava.com/api/v3/athlete/activities"
         headers = {"Authorization": f"Bearer {token}"}
         params = {"per_page": limit}
-        
+
         try:
             response = requests.get(url, headers=headers, params=params)
             if response.status_code == 200:
@@ -225,6 +225,36 @@ class StravaClient:
         except Exception as e:
             logger.error(f"Activities Exception: {e}")
         return []
+
+    def get_all_activities_paginated(self, per_page: int = 100) -> list:
+        """Fetch every activity on the athlete's account via Strava pagination.
+        Stops when an empty page is returned. per_page max is 200 per Strava docs."""
+        token = self.get_access_token()
+        if not token:
+            return []
+        url = "https://www.strava.com/api/v3/athlete/activities"
+        headers = {"Authorization": f"Bearer {token}"}
+        all_activities = []
+        page = 1
+        while True:
+            try:
+                resp = requests.get(url, headers=headers, params={"per_page": per_page, "page": page})
+                if resp.status_code == 429:
+                    logger.warning("[STRAVA] Rate limited during paginated fetch; stopping.")
+                    break
+                if resp.status_code != 200:
+                    logger.error(f"[STRAVA] Paginated fetch page {page} failed: {resp.status_code}")
+                    break
+                batch = resp.json()
+                if not batch:
+                    break
+                all_activities.extend(batch)
+                logger.info(f"[STRAVA] Fetched page {page}: {len(batch)} activities (total so far: {len(all_activities)})")
+                page += 1
+            except Exception as e:
+                logger.error(f"[STRAVA] Paginated fetch exception on page {page}: {e}")
+                break
+        return all_activities
 
     def fetch_activity_detail_status(self, activity_id: str) -> dict:
         """

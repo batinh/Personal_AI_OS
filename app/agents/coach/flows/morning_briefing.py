@@ -22,6 +22,7 @@ from app.agents.coach.prompts import (
 from app.agents.coach.tools import (
     update_todays_plan, set_actual_weekly_target,
     search_long_term_memory, set_workout_plan,
+    get_volume_for_week, get_volume_summary, get_metric_trend,
 )
 from app.core.database import get_training_loads, get_weekly_volume
 
@@ -119,7 +120,10 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
                     update_todays_plan,
                     set_actual_weekly_target,
                     search_long_term_memory,
-                    set_workout_plan
+                    set_workout_plan,
+                    get_volume_for_week,
+                    get_volume_summary,
+                    get_metric_trend,
                 ]
             )
         )

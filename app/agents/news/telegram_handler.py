@@ -8,16 +8,11 @@ Zone 3: function names/logic = English, user-facing messages = Vietnamese.
 """
 import logging
 
-from google import genai
-from google.genai import types
-
 from app.core.notification import send_telegram_msg
 from app.core.user_context import get_primary_user_id
-from app.agents.news.prompts import build_news_system_instruction
-from app.agents.news.memory import load_news_memory, run_extract_in_background
+from app.agents.news.memory import run_extract_in_background
 
 logger = logging.getLogger("AI_COACH")
-client = genai.Client()
 
 _HELP_MSG = (
     "📰 <b>News Agent</b>\n\n"
@@ -100,15 +95,15 @@ def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
     """
     Handle a free-text message routed to the news agent (via @news / @tin prefix).
 
-    Uses google_search grounding so Gemini can find current news while responding.
-    Extracts preference signals from the exchange and saves to memory in background.
+    Delegates to generate_on_demand_briefing for search + synthesis, then extracts
+    preference signals from the exchange and saves to memory in background.
 
     Args:
         chat_id: Telegram chat ID to reply to.
         text: user message with the routing prefix already stripped.
         config: loaded config dict from load_config().
     """
-    from app.agents.news.agent import _get_model
+    from app.agents.news.agent import generate_on_demand_briefing, _get_model
 
     news_cfg = config.get("news_agent", {})
 
@@ -120,40 +115,13 @@ def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
         send_telegram_msg(chat_id, _HELP_MSG)
         return
 
-    model = _get_model(config)
     user_id = str(get_primary_user_id())
+    model = _get_model(config)
     logger.info(f"[NEWS-CHAT] Handling message for chat_id={chat_id}: '{text[:60]}'")
 
-    memory = load_news_memory(user_id)
-    memory_hint = ""
-    if memory.get("liked_topics") or memory.get("extra_notes"):
-        liked = ", ".join(memory.get("liked_topics", [])[:5])
-        notes = memory.get("extra_notes", "")[:100]
-        parts = [p for p in [liked, notes] if p]
-        memory_hint = f"\n(Sở thích người dùng: {'; '.join(parts)})" if parts else ""
+    reply = generate_on_demand_briefing(text, chat_id, config)
 
-    prompt = text + memory_hint
-
-    try:
-        system_inst = build_news_system_instruction()
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_inst,
-                tools=[types.Tool(google_search=types.GoogleSearch())],
-                max_output_tokens=1200,
-            ),
-        )
-        reply = response.text or "⚠️ Không thể trả lời lúc này."
-        logger.debug(f"[NEWS-CHAT] Reply length={len(reply)}: {reply[:300]!r}")
-        send_telegram_msg(chat_id, reply)
-        logger.info(f"[NEWS-CHAT] Sent reply for chat_id={chat_id}")
-
+    if reply:
         # Extract preference signals in background — non-blocking
         chat_text = f"Người dùng: {text}\nTrợ lý: {reply}"
-        run_extract_in_background(user_id, chat_text, client, model)
-
-    except Exception as e:
-        logger.error(f"[NEWS-CHAT] Error: {e}")
-        send_telegram_msg(chat_id, "❌ Lỗi khi xử lý câu hỏi. Vui lòng thử lại.")
+        run_extract_in_background(user_id, chat_text, model)

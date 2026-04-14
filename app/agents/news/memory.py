@@ -13,7 +13,11 @@ import logging
 import threading
 from typing import Optional
 
+from google import genai
+
 from app.core.database import get_news_state, set_news_state
+
+_client = genai.Client()
 
 logger = logging.getLogger("AI_COACH")
 
@@ -66,7 +70,7 @@ def _merge_topics(existing: list, new_items: list, max_items: int = 20) -> list:
     return merged[-max_items:]
 
 
-def extract_and_save_signals(user_id: str, chat_text: str, client, model: str) -> None:
+def extract_and_save_signals(user_id: str, chat_text: str, model: str) -> None:
     """
     Call Gemini to extract preference signals from a conversation turn,
     then merge into persistent memory.
@@ -76,14 +80,13 @@ def extract_and_save_signals(user_id: str, chat_text: str, client, model: str) -
     Args:
         user_id : user identifier
         chat_text: the full exchange (user message + agent reply)
-        client  : google.genai.Client instance
         model   : model ID string
     """
     from app.agents.news.prompts import build_memory_extraction_prompt
 
     prompt = build_memory_extraction_prompt(chat_text)
     try:
-        response = client.models.generate_content(
+        response = _client.models.generate_content(
             model=model,
             contents=prompt,
         )
@@ -135,11 +138,11 @@ def _parse_extraction(raw: str) -> Optional[dict]:
     return None
 
 
-def run_extract_in_background(user_id: str, chat_text: str, client, model: str) -> None:
+def run_extract_in_background(user_id: str, chat_text: str, model: str) -> None:
     """Fire-and-forget: extract memory signals in a daemon thread."""
     t = threading.Thread(
         target=extract_and_save_signals,
-        args=(user_id, chat_text, client, model),
+        args=(user_id, chat_text, model),
         daemon=True,
     )
     t.start()

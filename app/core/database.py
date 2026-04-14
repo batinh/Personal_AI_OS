@@ -89,6 +89,47 @@ def init_db():
     except sqlite3.OperationalError:
         pass  # Ignore if column already exists
 
+    # [PHASE 1] Coach Strava Metrics Upgrade — 25 new computed metric columns
+    _metric_migrations = [
+        # Group A — Aerobic Base
+        "ALTER TABLE run_activities ADD COLUMN aerobic_decoupling_pct REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN cardiac_drift_pct REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN avg_efficiency_factor REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN hr_zone_distribution TEXT DEFAULT NULL",  # JSON
+        "ALTER TABLE run_activities ADD COLUMN time_in_hr_zones_sec TEXT DEFAULT NULL",  # JSON
+        # Group B — Cadence / Mechanics
+        "ALTER TABLE run_activities ADD COLUMN avg_cadence_spm REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN avg_stride_length_m REAL DEFAULT NULL",
+        # Group C — Pace / Effort
+        "ALTER TABLE run_activities ADD COLUMN avg_pace_min_km REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN pace_variability_cv REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN positive_split_ratio REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN time_in_pace_zones_pct TEXT DEFAULT NULL",  # JSON
+        # Group D — Elevation / Grade
+        "ALTER TABLE run_activities ADD COLUMN total_elevation_gain_m REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN grade_adjusted_pace_min_km REAL DEFAULT NULL",
+        # Group E — Power (Stryd only, all nullable)
+        "ALTER TABLE run_activities ADD COLUMN avg_power_watts REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN normalized_power_watts REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN intensity_factor REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN training_stress_score REAL DEFAULT NULL",
+        # Group F — Interval / Sprint (auto-detected)
+        "ALTER TABLE run_activities ADD COLUMN workout_type_detected TEXT DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN interval_reps_count INTEGER DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN interval_avg_pace_min_km REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN interval_pace_consistency_pct REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN interval_avg_hr_bpm REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN recovery_hr_quality_bpm REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN max_velocity_m_s REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN anaerobic_time_sec REAL DEFAULT NULL",
+        "ALTER TABLE run_activities ADD COLUMN z4_z5_time_pct REAL DEFAULT NULL",
+    ]
+    for _sql in _metric_migrations:
+        try:
+            c.execute(_sql)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     # 2b. Table: run_activity_raw (full Strava payload per run for analysis, recall, tools)
     c.execute('''
         CREATE TABLE IF NOT EXISTS run_activity_raw (
@@ -238,6 +279,12 @@ def init_db():
     c.execute('''
         CREATE INDEX IF NOT EXISTS idx_audit_severity
         ON audit_entries(severity, category)
+    ''')
+
+    # [PHASE 1] Index for user+date range queries on computed metrics
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_run_activities_user_date
+        ON run_activities(user_id, start_date)
     ''')
 
     conn.commit()
@@ -827,6 +874,217 @@ def upsert_weekly_target(user_id: str, week_start_date: str, standard_target_km:
         logger.error(f"[DB_ERROR] upsert_weekly_target Error: {e}")
         return False
         
+# =====================================================================
+# PHASE 1: COMPUTED METRICS CRUD (Coach Strava Metrics Upgrade)
+# =====================================================================
+
+_COMPUTED_METRIC_COLUMNS = [
+    "aerobic_decoupling_pct", "cardiac_drift_pct", "avg_efficiency_factor",
+    "hr_zone_distribution", "time_in_hr_zones_sec",
+    "avg_cadence_spm", "avg_stride_length_m",
+    "avg_pace_min_km", "pace_variability_cv", "positive_split_ratio", "time_in_pace_zones_pct",
+    "total_elevation_gain_m", "grade_adjusted_pace_min_km",
+    "avg_power_watts", "normalized_power_watts", "intensity_factor", "training_stress_score",
+    "workout_type_detected", "interval_reps_count", "interval_avg_pace_min_km",
+    "interval_pace_consistency_pct", "interval_avg_hr_bpm", "recovery_hr_quality_bpm",
+    "max_velocity_m_s", "anaerobic_time_sec", "z4_z5_time_pct",
+]
+
+
+def upsert_run_computed_metrics(activity_id: str, user_id: str, metrics: dict) -> bool:
+    """
+    Upsert pre-computed stream metrics for a run. Creates a placeholder row first
+    so metrics are never lost when Harvest hasn't run yet.
+    Only updates columns present in metrics dict; other columns are untouched.
+    """
+    if not metrics:
+        return False
+    # Filter to only known metric columns to avoid injection
+    safe = {k: v for k, v in metrics.items() if k in _COMPUTED_METRIC_COLUMNS}
+    if not safe:
+        return False
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            # Ensure placeholder row exists
+            c.execute(
+                "INSERT OR IGNORE INTO run_activities (activity_id, user_id) VALUES (?, ?)",
+                (str(activity_id), str(user_id)),
+            )
+            set_clause = ", ".join(f"{col} = ?" for col in safe)
+            values = list(safe.values()) + [str(activity_id), str(user_id)]
+            c.execute(
+                f"UPDATE run_activities SET {set_clause} WHERE activity_id = ? AND user_id = ?",
+                values,
+            )
+        logger.info(f"[DB] Upserted computed metrics for activity {activity_id} ({len(safe)} fields)")
+        return True
+    except Exception as e:
+        logger.error(f"[DB_ERROR] upsert_run_computed_metrics: {e}")
+        return False
+
+
+def get_run_metrics_from_db(activity_id: str, user_id: str) -> dict:
+    """
+    Retrieve computed metrics for a single run.
+    Returns dict with only the metric columns (not the base activity columns).
+    Returns empty dict if no row found.
+    """
+    cols = ", ".join(_COMPUTED_METRIC_COLUMNS)
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT {cols} FROM run_activities WHERE activity_id = ? AND user_id = ?",
+                (str(activity_id), str(user_id)),
+            )
+            row = c.fetchone()
+        if not row:
+            return {}
+        return {col: row[col] for col in _COMPUTED_METRIC_COLUMNS}
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_run_metrics_from_db: {e}")
+        return {}
+
+
+def get_metric_trend_data(user_id: str, metric_name: str, days: int = 28) -> List[Dict]:
+    """
+    Retrieve trend data for a specific computed metric over the last N days.
+    Returns list of {start_date, activity_id, name, <metric_name>} dicts, newest first.
+    Only returns rows where the metric is not NULL.
+    """
+    if metric_name not in _COMPUTED_METRIC_COLUMNS:
+        logger.warning(f"[DB] Unknown metric for trend: {metric_name}")
+        return []
+    try:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute(
+                f"""
+                SELECT activity_id, name, start_date, {metric_name}
+                FROM run_activities
+                WHERE user_id = ?
+                  AND {metric_name} IS NOT NULL
+                  AND start_date >= date('now', ?)
+                ORDER BY start_date DESC
+                """,
+                (str(user_id), f"-{days} days"),
+            )
+            rows = c.fetchall()
+        return [
+            {
+                "activity_id": r["activity_id"],
+                "name": r["name"],
+                "start_date": r["start_date"],
+                metric_name: r[metric_name],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_metric_trend_data({metric_name}): {e}")
+        return []
+
+
+def get_monthly_volume(user_id: str, year: int, month: int) -> dict:
+    """
+    Return total km, run count, avg pace, and longest run for a calendar month.
+    month: 1-12.
+    """
+    try:
+        start = f"{year:04d}-{month:02d}-01"
+        # Last day: first day of next month minus 1
+        if month == 12:
+            end = f"{year + 1:04d}-01-01"
+        else:
+            end = f"{year:04d}-{month + 1:02d}-01"
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT
+                    COUNT(*) AS run_count,
+                    ROUND(SUM(distance_km), 2) AS total_km,
+                    ROUND(AVG(avg_pace_min_km), 2) AS avg_pace_min_km,
+                    ROUND(MAX(distance_km), 2) AS longest_km
+                FROM run_activities
+                WHERE user_id = ?
+                  AND date(start_date) >= ?
+                  AND date(start_date) < ?
+                """,
+                (str(user_id), start, end),
+            )
+            row = c.fetchone()
+        return {
+            "year": year,
+            "month": month,
+            "run_count": row["run_count"] or 0,
+            "total_km": row["total_km"] or 0.0,
+            "avg_pace_min_km": row["avg_pace_min_km"],
+            "longest_km": row["longest_km"] or 0.0,
+        }
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_monthly_volume({year}-{month}): {e}")
+        return {"year": year, "month": month, "run_count": 0, "total_km": 0.0, "avg_pace_min_km": None, "longest_km": 0.0}
+
+
+def get_yearly_volume(user_id: str, year: int) -> dict:
+    """
+    Return total km, run count, avg pace, longest run, and monthly breakdown for a year.
+    """
+    try:
+        start = f"{year:04d}-01-01"
+        end = f"{year + 1:04d}-01-01"
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute(
+                """
+                SELECT
+                    COUNT(*) AS run_count,
+                    ROUND(SUM(distance_km), 2) AS total_km,
+                    ROUND(AVG(avg_pace_min_km), 2) AS avg_pace_min_km,
+                    ROUND(MAX(distance_km), 2) AS longest_km
+                FROM run_activities
+                WHERE user_id = ?
+                  AND date(start_date) >= ?
+                  AND date(start_date) < ?
+                """,
+                (str(user_id), start, end),
+            )
+            row = c.fetchone()
+            # Monthly breakdown
+            c.execute(
+                """
+                SELECT
+                    strftime('%m', start_date) AS month,
+                    COUNT(*) AS run_count,
+                    ROUND(SUM(distance_km), 2) AS total_km
+                FROM run_activities
+                WHERE user_id = ?
+                  AND date(start_date) >= ?
+                  AND date(start_date) < ?
+                GROUP BY strftime('%m', start_date)
+                ORDER BY month
+                """,
+                (str(user_id), start, end),
+            )
+            monthly_rows = c.fetchall()
+        monthly = [
+            {"month": int(r["month"]), "run_count": r["run_count"], "total_km": r["total_km"]}
+            for r in monthly_rows
+        ]
+        return {
+            "year": year,
+            "run_count": row["run_count"] or 0,
+            "total_km": row["total_km"] or 0.0,
+            "avg_pace_min_km": row["avg_pace_min_km"],
+            "longest_km": row["longest_km"] or 0.0,
+            "monthly_breakdown": monthly,
+        }
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_yearly_volume({year}): {e}")
+        return {"year": year, "run_count": 0, "total_km": 0.0, "avg_pace_min_km": None, "longest_km": 0.0, "monthly_breakdown": []}
+
+
 # ==========================================
 # 🧠 MULTI-AGENT MEMORY MANAGEMENT (PHASE 8 - MULTI-TENANT)
 # ==========================================

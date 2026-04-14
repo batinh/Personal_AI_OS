@@ -37,6 +37,12 @@
         "afternoon_time": "17:30",
         "evening_time": "20:00",
         "telegram_chat_id": "",
+        "topics": [
+            { "name": "AI & Công nghệ", "emoji": "🤖" },
+            { "name": "Địa chính trị & Thế giới", "emoji": "🌏" },
+            { "name": "Kinh tế & Thị trường", "emoji": "📊" },
+            { "name": "Chạy bộ & Thể thao", "emoji": "🏃" }
+        ],
         "interest_profile": {
             "technology": 10,
             "sports_running": 8,

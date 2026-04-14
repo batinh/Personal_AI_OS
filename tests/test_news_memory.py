@@ -89,61 +89,60 @@ class TestSaveNewsMemory(unittest.TestCase):
 
 
 class TestExtractAndSaveSignals(unittest.TestCase):
+    @patch("app.agents.news.memory._client")
     @patch("app.agents.news.memory.load_news_memory")
     @patch("app.agents.news.memory.save_news_memory")
-    def test_saves_liked_topics(self, mock_save, mock_load):
+    def test_saves_liked_topics(self, mock_save, mock_load, mock_client):
         mock_load.return_value = {
             "liked_topics": [],
             "disliked_topics": [],
             "extra_notes": "",
         }
 
-        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = '{"liked": ["AI", "EV"], "disliked": [], "notes": ""}'
         mock_client.models.generate_content.return_value = mock_response
 
-        extract_and_save_signals("user1", "user: tell me about AI\nassistant: ...", mock_client, "model")
+        extract_and_save_signals("user1", "user: tell me about AI\nassistant: ...", "model")
 
         calls = {call[0][1]: call[0][2] for call in mock_save.call_args_list}
         self.assertIn("liked_topics", calls)
         parsed = json.loads(calls["liked_topics"])
         self.assertIn("AI", parsed)
 
+    @patch("app.agents.news.memory._client")
     @patch("app.agents.news.memory.load_news_memory")
     @patch("app.agents.news.memory.save_news_memory")
-    def test_no_save_when_no_signals(self, mock_save, mock_load):
+    def test_no_save_when_no_signals(self, mock_save, mock_load, mock_client):
         mock_load.return_value = {
             "liked_topics": [],
             "disliked_topics": [],
             "extra_notes": "",
         }
 
-        mock_client = MagicMock()
         mock_response = MagicMock()
         mock_response.text = '{"liked": [], "disliked": [], "notes": ""}'
         mock_client.models.generate_content.return_value = mock_response
 
-        extract_and_save_signals("user1", "user: ok\nassistant: ok", mock_client, "model")
+        extract_and_save_signals("user1", "user: ok\nassistant: ok", "model")
         mock_save.assert_not_called()
 
+    @patch("app.agents.news.memory._client")
     @patch("app.agents.news.memory.load_news_memory")
     @patch("app.agents.news.memory.save_news_memory")
-    def test_graceful_on_api_error(self, mock_save, mock_load):
+    def test_graceful_on_api_error(self, mock_save, mock_load, mock_client):
         mock_load.return_value = {"liked_topics": [], "disliked_topics": [], "extra_notes": ""}
-        mock_client = MagicMock()
         mock_client.models.generate_content.side_effect = RuntimeError("API error")
 
         # Should not raise
-        extract_and_save_signals("user1", "text", mock_client, "model")
+        extract_and_save_signals("user1", "text", "model")
         mock_save.assert_not_called()
 
 
 class TestRunExtractInBackground(unittest.TestCase):
     @patch("app.agents.news.memory.extract_and_save_signals")
     def test_spawns_thread(self, mock_extract):
-        mock_client = MagicMock()
-        run_extract_in_background("user1", "chat", mock_client, "model")
+        run_extract_in_background("user1", "chat", "model")
         import time; time.sleep(0.05)  # let daemon thread start
         mock_extract.assert_called_once()
 

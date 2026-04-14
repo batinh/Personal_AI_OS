@@ -6,13 +6,17 @@ Zone 3 boundary rule (per CLAUDE.md):
 - Injected f-string content / user-facing templates: Vietnamese
 
 Architecture:
-- build_news_system_instruction() → Gemini system_instruction (agent identity)
-- build_session_prompt()          → single call with google_search grounding
-- build_memory_extraction_prompt()→ extract preference signals from chat
+- build_news_system_instruction()        → legacy single-call system instruction
+- build_session_prompt()                 → legacy single-call prompt
+- build_topic_system_instruction()       → per-topic scheduled briefing (parallel)
+- build_topic_prompt()                   → per-topic focused prompt
+- build_on_demand_system_instruction()   → on-demand ad-hoc query
+- build_on_demand_prompt()               → on-demand user query prompt
+- build_memory_extraction_prompt()       → extract preference signals from chat
 """
 
 # ==========================================
-# SYSTEM INSTRUCTION (News Agent Identity)
+# SYSTEM INSTRUCTION (Legacy — single-call)
 # ==========================================
 
 _NEWS_SYSTEM_INSTRUCTION = """Bạn là News Curator, trợ lý tin tức AI chuyên nghiệp.
@@ -22,9 +26,11 @@ _NEWS_SYSTEM_INSTRUCTION = """Bạn là News Curator, trợ lý tin tức AI chu
 - Chỉ đưa tin có nguồn thật từ kết quả google_search — TUYỆT ĐỐI không dùng kiến thức lưu sẵn để bịa tin hoặc bịa URL.
 - Nếu google_search không trả về kết quả nào phù hợp, hãy nói thẳng "Không tìm thấy tin mới trong 48 giờ qua về chủ đề này."
 
-[NGUYÊN TẮC URL]
-- Chỉ kèm link nếu URL đó có trong kết quả google_search. KHÔNG tự tạo URL.
-- Nếu không có URL thực → bỏ hoàn toàn phần "Đọc thêm", không để link rỗng.
+[NGUYÊN TẮC URL — BẮT BUỘC]
+- URL trong "Đọc thêm" PHẢI là URL nguồn chính xác của bài báo đó.
+- KHÔNG lấy URL từ bài/chủ đề khác gán vào bài này — dù URL đó có trong search results.
+- Nếu bài đó không có URL rõ ràng trong search → BỎ HẲN dòng "Đọc thêm", không thay bằng URL khác.
+- KHÔNG tự tạo URL.
 
 [FORMAT MỖI TIN]
 emoji <b>Tiêu đề</b> <i>(DD/MM)</i>
@@ -35,6 +41,77 @@ Tóm tắt 1-2 câu ngắn gọn.
 - KHÔNG dùng Markdown (##, **, ``` v.v.). Telegram chỉ hỗ trợ HTML.
 - Mỗi tin cách nhau 1 dòng trống.
 - Tổng độ dài dưới 3500 ký tự."""
+
+
+# ==========================================
+# SYSTEM INSTRUCTION (Per-topic briefing)
+# ==========================================
+
+_TOPIC_SYSTEM_INSTRUCTION = """Bạn là News Curator, chuyên viên phân tích một chủ đề cụ thể.
+
+[NHIỆM VỤ]
+Dùng google_search để tìm tin tức và phân tích về CHỦ ĐỀ được yêu cầu trong 24-48 giờ qua.
+
+[NGUYÊN TẮC URL — BẮT BUỘC]
+- URL "Đọc thêm" PHẢI là URL nguồn của chính bài báo đó. Không được dùng URL của bài khác.
+- Nếu không có URL chính xác cho bài đó → BỎ HẲN "Đọc thêm", không thay bằng URL khác.
+- KHÔNG tự tạo URL hay đoán URL.
+
+[FORMAT OUTPUT — BẮT BUỘC]
+📊 <b>Phân tích:</b> [2-3 câu tổng hợp: điều gì đang xảy ra, tại sao quan trọng, bối cảnh]
+
+📰 <b>Tiêu đề tin 1</b> <i>(DD/MM)</i>
+Tóm tắt 1 câu.
+<a href="url">Đọc thêm</a>
+
+📰 <b>Tiêu đề tin 2</b> <i>(DD/MM)</i>
+Tóm tắt 1 câu.
+<a href="url">Đọc thêm</a>
+
+📰 <b>Tiêu đề tin 3</b> <i>(DD/MM)</i>  ← tuỳ chọn, chỉ thêm nếu có tin đáng chú ý
+Tóm tắt 1 câu.
+<a href="url">Đọc thêm</a>
+
+📈 <i>Xu hướng: [1 câu nhận xét signal/pattern đang nổi trong tuần]</i>
+
+[RÀNG BUỘC]
+- KHÔNG dùng Markdown. Chỉ dùng HTML tags: <b>, <i>, <a href>.
+- Độ dài tối đa 800 ký tự cho toàn bộ output."""
+
+
+# ==========================================
+# SYSTEM INSTRUCTION (On-demand query)
+# ==========================================
+
+_ON_DEMAND_SYSTEM_INSTRUCTION = """Bạn là News Curator, trả lời yêu cầu tìm kiếm tin tức tức thời.
+
+[NHIỆM VỤ]
+Dùng google_search để tìm thông tin mới nhất về CHỦ ĐỀ người dùng yêu cầu.
+Tổng hợp kết quả thành báo cáo ngắn gọn, có phân tích và nguồn.
+
+[NGUYÊN TẮC URL — BẮT BUỘC]
+- URL "Đọc thêm" PHẢI là URL nguồn của chính bài báo đó.
+- Nếu không có URL chính xác → BỎ HẲN "Đọc thêm".
+- KHÔNG tự tạo URL.
+
+[FORMAT OUTPUT — BẮT BUỘC]
+🔍 <b>[Chủ đề người dùng hỏi]</b>
+
+📊 <b>Tổng hợp:</b> [2-3 câu: tình hình hiện tại, điểm nổi bật, bối cảnh]
+
+📰 <b>Tiêu đề tin 1</b> <i>(DD/MM)</i>
+Tóm tắt 1 câu.
+<a href="url">Đọc thêm</a>
+
+📰 <b>Tiêu đề tin 2</b> <i>(DD/MM)</i>  ← thêm nếu có
+Tóm tắt 1 câu.
+<a href="url">Đọc thêm</a>
+
+📈 <i>Nhận xét: [1 câu về xu hướng hoặc điều cần theo dõi]</i>
+
+[RÀNG BUỘC]
+- KHÔNG dùng Markdown. Chỉ dùng HTML tags.
+- Độ dài tối đa 1000 ký tự."""
 
 
 # ==========================================
@@ -118,6 +195,62 @@ def _build_memory_section(memory: dict) -> str:
     if not parts:
         return ""
     return "Sở thích học được:\n" + "\n".join(f"  - {p}" for p in parts) + "\n"
+
+
+def build_topic_system_instruction() -> str:
+    """Return the per-topic system instruction for parallel scheduled briefings."""
+    return _TOPIC_SYSTEM_INSTRUCTION
+
+
+def build_topic_prompt(topic_name: str, emoji: str, session: str, date_str: str) -> str:
+    """
+    Build a focused prompt for a single topic in a scheduled briefing.
+
+    Args:
+        topic_name: e.g. "AI & Công nghệ"
+        emoji     : e.g. "🤖"
+        session   : "morning" | "afternoon" | "evening"
+        date_str  : formatted date string e.g. "14/04/2026"
+
+    Returns:
+        Focused Vietnamese prompt for one Gemini call.
+    """
+    session_ctx = {
+        "morning": "buổi sáng, tập trung tin mới nhất để bắt đầu ngày",
+        "afternoon": "buổi chiều, tập trung diễn biến trong ngày",
+        "evening": "buổi tối, tổng kết và phân tích sâu hơn",
+    }.get(session, "trong ngày")
+
+    return (
+        f"Hôm nay {date_str}, {session_ctx}.\n\n"
+        f"Chủ đề: {emoji} {topic_name}\n\n"
+        f"Dùng google_search để tìm 1-3 tin quan trọng nhất về '{topic_name}' "
+        f"trong 24-48 giờ qua. Trả về theo đúng format đã quy định."
+    )
+
+
+def build_on_demand_system_instruction() -> str:
+    """Return the system instruction for on-demand ad-hoc news queries."""
+    return _ON_DEMAND_SYSTEM_INSTRUCTION
+
+
+def build_on_demand_prompt(query: str, date_str: str) -> str:
+    """
+    Build a prompt for an on-demand ad-hoc news query from the user.
+
+    Args:
+        query   : user's raw query text, e.g. "trending AI" or "ETF Việt Nam"
+        date_str: formatted date string e.g. "14/04/2026"
+
+    Returns:
+        Vietnamese prompt string for Gemini with google_search grounding.
+    """
+    return (
+        f"Hôm nay {date_str}.\n\n"
+        f"Yêu cầu tìm kiếm: {query}\n\n"
+        f"Dùng google_search để tìm thông tin mới nhất về chủ đề này "
+        f"(ưu tiên 24-48 giờ qua). Trả về theo đúng format đã quy định."
+    )
 
 
 def build_session_prompt(session: str, interest_profile: dict, date_str: str, memory: dict) -> str:

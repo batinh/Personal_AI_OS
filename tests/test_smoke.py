@@ -36,6 +36,9 @@ class TestRouterImports(unittest.TestCase):
     def test_webhooks_router_importable(self):
         from app.routers.webhooks import router  # noqa: F401
 
+    def test_execute_sync_all_importable(self):
+        from app.agents.coach.harvest import execute_sync_all  # noqa: F401
+
     def test_audit_router_importable(self):
         from app.routers.audit import router  # noqa: F401
 
@@ -66,6 +69,30 @@ class TestCoachAgentImports(unittest.TestCase):
     def test_coach_agent_importable(self):
         from app.agents.coach import agent  # noqa: F401
 
+    def test_metrics_engine_importable(self):
+        from app.agents.coach.metrics_engine import (  # noqa: F401
+            compute_stream_metrics,
+            build_run_metrics_block,
+        )
+
+    def test_new_tools_importable(self):
+        from app.agents.coach.tools import (  # noqa: F401
+            get_run_stream_csv,
+            get_run_computed_metrics,
+            get_metric_trend,
+            get_volume_for_week,
+            get_volume_summary,
+        )
+
+    def test_database_computed_metrics_functions(self):
+        from app.core.database import (  # noqa: F401
+            upsert_run_computed_metrics,
+            get_run_metrics_from_db,
+            get_metric_trend_data,
+            get_monthly_volume,
+            get_yearly_volume,
+        )
+
 
 class TestNewsAgentImports(unittest.TestCase):
     """News agent symbols must all be importable."""
@@ -84,6 +111,20 @@ class TestNewsAgentImports(unittest.TestCase):
 
     def test_telegram_handler_importable(self):
         from app.agents.news.telegram_handler import handle_news_command  # noqa: F401
+
+    def test_news_topic_prompt_importable(self):
+        from app.agents.news.prompts import build_topic_system_instruction  # noqa: F401
+        from app.agents.news.prompts import build_topic_prompt  # noqa: F401
+
+    def test_news_on_demand_prompt_importable(self):
+        from app.agents.news.prompts import build_on_demand_system_instruction  # noqa: F401
+        from app.agents.news.prompts import build_on_demand_prompt  # noqa: F401
+
+    def test_generate_on_demand_briefing_importable(self):
+        from app.agents.news.agent import generate_on_demand_briefing  # noqa: F401
+
+    def test_news_chat_handler_importable(self):
+        from app.agents.news.telegram_handler import handle_news_chat  # noqa: F401
 
 
 if __name__ == "__main__":

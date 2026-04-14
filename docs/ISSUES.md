@@ -46,6 +46,8 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 | [ISS-F06](#iss-f06--strava-sync-race-condition--wrong-timezone) | bug | Strava sync race condition; wrong timezone on activity timestamps | High | AI | 2026-03-xx | 2026-03-xx | `a474e78` | `webhooks.py`, `strava_client.py` |
 | [ISS-F07](#iss-f07--gemini-model-selector-missing-new-models-in-console-ui) | enhancement | Gemini model selector missing new models in console UI | Low | U | 2026-03-xx | 2026-03-xx | `0d0ccb8` | `console.html` |
 | [ISS-F08](#iss-f08--templateresponse-api-broke-after-starlette-upgrade) | bug | `TemplateResponse` API broke after Starlette upgrade | High | AI | 2026-03-xx | 2026-03-xx | `6ae9683` | `routers/*.py` |
+| [ISS-010](#iss-010--url-cross-contamination-in-news-briefing) | bug | URL cross-contamination — wrong links on news articles | High | U+AI | 2026-04-14 | 2026-04-14 | `TBD` | `app/agents/news/agent.py`, `prompts.py` |
+| [ISS-011](#iss-011--on-demand-news-query-via-news-query) | feature | On-demand news query via `@news <query>` | Medium | U | 2026-04-14 | 2026-04-14 | `TBD` | `app/agents/news/agent.py`, `telegram_handler.py` |
 
 ---
 
@@ -259,3 +261,35 @@ for link, scored in scored_articles_map.items():
 **Type:** bug · **Priority:** High · **Fixed:** `6ae9683` · **Reporter:** AI
 **Root cause:** Starlette 1.0 changed `TemplateResponse(name, context)` → `TemplateResponse(request, name, context)`. All console/audit routes raised `TypeError`.
 **Fix:** Updated all `TemplateResponse` calls to include `request` as first argument.
+
+---
+
+### ISS-010 — URL cross-contamination in news briefing
+
+**Type:** bug · **Priority:** High · **Reporter:** U+AI · **Date:** 2026-04-14
+**Module:** `app/agents/news/agent.py`, `app/agents/news/prompts.py`
+
+**Symptom:**
+Telegram news briefing shows incorrect URLs attached to articles — e.g. `marathonhcmc.com` appearing as the "Đọc thêm" link on an AI/semiconductor article.
+
+**Root cause:**
+A single Gemini call was used for all topics simultaneously. With `google_search` grounding, Gemini's search results for all topics share the same context window. The model attaches URLs from one topic's search results to a different topic's article summaries.
+
+**Fix:**
+Replaced single-call architecture with `ThreadPoolExecutor` parallel per-topic calls (`_call_topic()` in `agent.py`). Each topic gets its own isolated Gemini call with its own `google_search` context — URLs can only come from that topic's search results. Added defensive URL instruction to `_NEWS_TOPIC_SYSTEM_INSTRUCTION` as belt-and-suspenders.
+
+---
+
+### ISS-011 — On-demand news query via `@news <query>`
+
+**Type:** feature · **Priority:** Medium · **Reporter:** U · **Date:** 2026-04-14
+**Module:** `app/agents/news/agent.py`, `app/agents/news/telegram_handler.py`, `app/agents/news/prompts.py`, `app/agents/news/memory.py`
+
+**Request:**
+User wants to send `@news trending AI` or `@news tình hình kinh tế hôm nay` and get a focused real-time search + synthesis in reply, rather than waiting for the scheduled briefing.
+
+**Implementation:**
+1. `generate_on_demand_briefing(query, chat_id, config)` added to `agent.py` — builds a focused system instruction + prompt, calls `_call_gemini_with_search()`, sends reply, returns reply text.
+2. `build_on_demand_system_instruction()` and `build_on_demand_prompt(query, date)` added to `prompts.py`.
+3. `handle_news_chat()` in `telegram_handler.py` simplified to delegate entirely to `generate_on_demand_briefing()`; memory extraction runs in background daemon thread via `run_extract_in_background()`.
+4. `genai.Client` ownership moved to `memory.py` as module-level `_client` — removes coupling between `telegram_handler` and Gemini client initialisation.
