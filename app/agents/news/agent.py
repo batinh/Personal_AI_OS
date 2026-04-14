@@ -110,14 +110,26 @@ def _session_header(session: str, date_str: str) -> str:
 # ==========================================
 
 def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_tokens: int = 1000) -> str | None:
-    """Call Gemini with google_search grounding. Returns text or None on failure."""
+    """
+    Call Gemini with forced google_search_retrieval grounding (dynamic_threshold=0.0).
+
+    Uses GoogleSearchRetrieval instead of the agentic GoogleSearch tool so that
+    search is always invoked — the model cannot skip it based on its own confidence.
+    Falls back to the agentic GoogleSearch tool if GoogleSearchRetrieval is rejected
+    by the API (model compatibility).
+    """
+    forced_tool = types.Tool(
+        google_search_retrieval=types.GoogleSearchRetrieval(
+            dynamic_retrieval_config=types.DynamicRetrievalConfig(dynamic_threshold=0.0)
+        )
+    )
     try:
         response = client.models.generate_content(
             model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
-                tools=[types.Tool(google_search=types.GoogleSearch())],
+                tools=[forced_tool],
                 max_output_tokens=max_tokens,
             ),
         )
@@ -127,11 +139,27 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
             for c in candidates
         )
         if not grounding_used:
-            logger.warning("[NEWS] Gemini did not invoke google_search — response may use training data only.")
+            logger.warning("[NEWS] google_search_retrieval returned no grounding metadata.")
+        else:
+            logger.info("[NEWS] Grounded call completed. grounding_used=True")
         return response.text or None
-    except Exception as e:
-        logger.warning(f"[NEWS] Gemini call failed: {e}")
-        return None
+    except Exception as retrieval_err:
+        # Some model versions don't support google_search_retrieval — fall back to agentic tool
+        logger.warning(f"[NEWS] google_search_retrieval failed ({retrieval_err}), retrying with agentic GoogleSearch.")
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_inst,
+                    tools=[types.Tool(google_search=types.GoogleSearch())],
+                    max_output_tokens=max_tokens,
+                ),
+            )
+            return response.text or None
+        except Exception as e:
+            logger.warning(f"[NEWS] Gemini call failed: {e}")
+            return None
 
 
 def _call_knowledge_only(model: str, system_inst: str, prompt: str) -> str | None:
