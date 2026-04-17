@@ -42,9 +42,8 @@ logger = logging.getLogger("AI_COACH")
 client = genai.Client()
 
 _MAX_TELEGRAM_CHARS = 4000
-_DEFAULT_MODEL = "models/gemini-flash-latest"
 
-# Max parallel topic workers — Gemini Flash handles concurrent requests well
+# Max parallel topic workers
 _MAX_TOPIC_WORKERS = 4
 
 
@@ -135,36 +134,80 @@ def _extract_text(response) -> str | None:
 
 _DEBUG_NEWS = os.getenv("DEBUG_NEWS", "").lower() in ("1", "true", "yes")
 
+# Default model — Gemini 1.5 Pro uses forced retrieval grounding (dynamic_threshold=0),
+# guaranteeing a web search on every call regardless of model confidence.
+# Gemini 2.0 Flash uses the agentic google_search tool but the model decides whether to search,
+# which is unreliable for generic queries.
+_DEFAULT_MODEL = "models/gemini-1.5-pro"
+
+
+def _is_gemini_15(model: str) -> bool:
+    """Return True for Gemini 1.5 family models which support forced retrieval grounding."""
+    return "1.5" in model
+
+
+def _build_search_tool(model: str) -> list:
+    """
+    Return the correct grounding tool config for the given model.
+
+    Gemini 1.5: google_search_retrieval with dynamic_threshold=0.0 forces a web
+    search on every call — the model cannot skip it regardless of confidence.
+
+    Gemini 2.0+: agentic google_search where the model decides whether to invoke
+    search. AFC is disabled so the server handles it transparently.
+    """
+    if _is_gemini_15(model):
+        return [
+            types.Tool(
+                google_search_retrieval=types.GoogleSearchRetrieval(
+                    dynamic_retrieval_config=types.DynamicRetrievalConfig(
+                        mode=types.DynamicRetrievalConfigMode.MODE_DYNAMIC,
+                        dynamic_threshold=0.0,
+                    )
+                )
+            )
+        ]
+    return [types.Tool(google_search=types.GoogleSearch())]
+
 
 def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_tokens: int = 1500) -> str | None:
     """
-    Call Gemini with google_search grounding (server-side, transparent).
+    Call Gemini with guaranteed web search grounding.
 
-    AFC is explicitly disabled so the SDK does not intercept the built-in
-    google_search tool. Server-side grounding handles search transparently —
-    the final response text already contains grounded content.
+    For Gemini 1.5 models (default): uses google_search_retrieval with
+    dynamic_threshold=0.0 which forces a live web search on every request.
+
+    For Gemini 2.0+ models: uses the agentic google_search tool with AFC
+    disabled. The model decides whether to search — less reliable for generic
+    queries but required by the 2.0 API.
 
     Set DEBUG_NEWS=true to log the full prompt and response part structure.
     """
     if _DEBUG_NEWS:
         logger.debug(
-            "[NEWS-DEBUG] system_instruction=\n%s\n\nprompt=\n%s",
+            "[NEWS-DEBUG] model=%s system_instruction=\n%s\n\nprompt=\n%s",
+            model,
             system_inst,
             prompt,
+        )
+
+    tools = _build_search_tool(model)
+    config_kwargs: dict = dict(
+        system_instruction=system_inst,
+        tools=tools,
+        max_output_tokens=max_tokens,
+    )
+    # AFC disable only needed for 2.0+ agentic tool — 1.5 retrieval doesn't use AFC
+    if not _is_gemini_15(model):
+        config_kwargs["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(
+            disable=True
         )
 
     try:
         response = client.models.generate_content(
             model=model,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_inst,
-                tools=[types.Tool(google_search=types.GoogleSearch())],
-                max_output_tokens=max_tokens,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=True
-                ),
-            ),
+            config=types.GenerateContentConfig(**config_kwargs),
         )
 
         if _DEBUG_NEWS:
