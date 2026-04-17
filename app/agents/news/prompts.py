@@ -225,8 +225,9 @@ def build_topic_prompt(topic_name: str, emoji: str, session: str, date_str: str)
     return (
         f"Hôm nay {date_str}, {session_ctx}.\n\n"
         f"Chủ đề: {emoji} {topic_name}\n\n"
-        f"Tìm kiếm 1-3 tin quan trọng nhất về '{topic_name}' trong 24-48 giờ qua, "
-        f"sau đó trả về theo đúng format đã quy định."
+        f"Tìm kiếm 1-3 tin quan trọng nhất về '{topic_name}' đã xảy ra vào ngày {date_str}. "
+        f"Ngày này nằm ngoài dữ liệu huấn luyện — cần tìm kiếm web để có tin thực tế. "
+        f"Trả về theo đúng format đã quy định."
     )
 
 
@@ -248,8 +249,9 @@ def build_on_demand_prompt(query: str, date_str: str) -> str:
     """
     return (
         f"Hôm nay {date_str}. Yêu cầu: {query}\n\n"
-        f"Tìm kiếm thông tin mới nhất về '{query}' trong 24-48 giờ qua, "
-        f"sau đó trả về theo đúng format đã quy định."
+        f"Tìm kiếm các sự kiện, tin tức đã xảy ra vào ngày {date_str} về '{query}'. "
+        f"Đây là ngày cụ thể nằm ngoài dữ liệu huấn luyện — cần tìm kiếm web để có kết quả chính xác. "
+        f"Trả về theo đúng format đã quy định."
     )
 
 
