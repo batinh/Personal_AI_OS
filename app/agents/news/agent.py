@@ -109,13 +109,39 @@ def _session_header(session: str, date_str: str) -> str:
 # GEMINI CALL WRAPPERS
 # ==========================================
 
-def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_tokens: int = 1000) -> str | None:
+def _extract_text(response) -> str | None:
+    """
+    Extract full text from a Gemini response, including post-search parts.
+
+    When AFC (Automatic Function Calling) executes google_search, the final
+    response may contain both text parts and function_call parts. `response.text`
+    silently concatenates only text parts from the FIRST candidate pass, which
+    can return pre-search stub text and miss the actual grounded answer.
+
+    This helper iterates parts explicitly so we capture all text segments
+    (both pre- and post-search) from the final model turn.
+    """
+    try:
+        candidates = response.candidates or []
+        if not candidates:
+            return response.text or None
+        parts = getattr(candidates[0].content, "parts", None) or []
+        texts = [p.text for p in parts if getattr(p, "text", None)]
+        return "".join(texts).strip() or None
+    except Exception:
+        # Fallback: let SDK handle it
+        return response.text or None
+
+
+def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_tokens: int = 1500) -> str | None:
     """
     Call Gemini with google_search grounding.
 
     Uses the agentic google_search tool (required for Gemini 2.0+ models).
-    The prompt must clearly signal that real-time data is needed so the model
-    invokes the tool rather than answering from training data.
+    max_tokens default is 1500 to give enough budget for AFC to:
+      - Write pre-search scaffolding
+      - Execute google_search via AFC
+      - Write the full post-search response (news items + links + trend)
     """
     try:
         response = client.models.generate_content(
@@ -136,7 +162,7 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
             logger.warning("[NEWS] Gemini did not invoke google_search — response may use training data only.")
         else:
             logger.info("[NEWS] Grounded call completed. grounding_used=True")
-        return response.text or None
+        return _extract_text(response)
     except Exception as e:
         logger.warning(f"[NEWS] Gemini call failed: {e}")
         return None
@@ -182,10 +208,20 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
     prompt = build_topic_prompt(topic_name, emoji, session, date_str)
 
     logger.info(f"[NEWS-TOPIC] Fetching '{topic_name}'...")
-    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=600)
+    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=1500)
 
     if not block:
         logger.warning(f"[NEWS-TOPIC] No result for '{topic_name}'. Skipping.")
+        return topic, None
+
+    # Reject training-data stubs: a real grounded response always has at least
+    # one news headline + summary + trend line (> 150 chars). Short responses
+    # are pre-search scaffolding that slipped through when AFC didn't complete.
+    if len(block) < 150:
+        logger.warning(
+            f"[NEWS-TOPIC] Response for '{topic_name}' is too short ({len(block)} chars) — "
+            "likely a training-data stub. Skipping."
+        )
         return topic, None
 
     # Wrap in topic header
@@ -297,9 +333,13 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     system_inst = build_on_demand_system_instruction()
     prompt = build_on_demand_prompt(query, date_str)
 
-    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=800)
+    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=1500)
 
-    if not reply:
+    if not reply or len(reply) < 100:
+        logger.warning(
+            f"[NEWS-ONDEMAND] Reply too short or empty ({len(reply) if reply else 0} chars) "
+            "— likely training-data stub without search. Sending error fallback."
+        )
         send_telegram_msg(chat_id, "⚠️ Không tìm thấy kết quả cho yêu cầu này. Thử lại sau.")
         return None
 

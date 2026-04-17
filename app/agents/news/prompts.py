@@ -49,6 +49,11 @@ Tóm tắt 1-2 câu ngắn gọn.
 
 _TOPIC_SYSTEM_INSTRUCTION = """Bạn là News Curator, chuyên viên phân tích một chủ đề cụ thể.
 
+[BƯỚC BẮT BUỘC — THỰC HIỆN NGAY]
+BƯỚC 1: Gọi google_search NGAY LẬP TỨC trước khi viết bất cứ nội dung nào.
+Kiến thức lưu sẵn của bạn ĐÃ LỖI THỜI — tuyệt đối không viết phân tích hoặc tin tức nếu chưa tìm kiếm.
+BƯỚC 2: Sau khi có kết quả tìm kiếm, viết output theo format bên dưới.
+
 [NHIỆM VỤ]
 Dùng google_search để tìm tin tức và phân tích về CHỦ ĐỀ được yêu cầu trong 24-48 giờ qua.
 
@@ -76,7 +81,7 @@ Tóm tắt 1 câu.
 
 [RÀNG BUỘC]
 - KHÔNG dùng Markdown. Chỉ dùng HTML tags: <b>, <i>, <a href>.
-- Độ dài tối đa 800 ký tự cho toàn bộ output."""
+- Độ dài tối đa 1200 ký tự cho toàn bộ output."""
 
 
 # ==========================================
@@ -227,8 +232,9 @@ def build_topic_prompt(topic_name: str, emoji: str, session: str, date_str: str)
     return (
         f"Hôm nay {date_str}, {session_ctx}.\n\n"
         f"Chủ đề: {emoji} {topic_name}\n\n"
-        f"Dùng google_search để tìm 1-3 tin quan trọng nhất về '{topic_name}' "
-        f"trong 24-48 giờ qua. Trả về theo đúng format đã quy định."
+        f"⚠️ BẮT BUỘC: Gọi google_search ngay bây giờ để tìm 1-3 tin quan trọng nhất về '{topic_name}' "
+        f"trong 24-48 giờ qua. Không được viết phân tích nếu chưa tìm kiếm.\n\n"
+        f"Sau khi có kết quả tìm kiếm, trả về theo đúng format đã quy định."
     )
 
 
