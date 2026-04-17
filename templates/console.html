@@ -275,6 +275,11 @@
         <i class="nav-icon fas fa-newspaper"></i>
         <span>News Agent</span>
       </a>
+      <a class="nav-item-link {{ 'active' if active_tab == 'logging' else '' }}"
+         onclick="switchTab('logging')" href="/console?tab=logging">
+        <i class="nav-icon fas fa-sliders-h"></i>
+        <span>Log Levels</span>
+      </a>
       <a class="nav-item-link {{ 'active' if active_tab == 'system' else '' }}"
          onclick="switchTab('system')" href="/console?tab=system">
         <i class="nav-icon fas fa-terminal"></i>
@@ -298,6 +303,7 @@
         {% elif active_tab == 'memory' %}🧠 AI Memory
         {% elif active_tab == 'settings' %}⚙️ Settings
         {% elif active_tab == 'news' %}📰 News Agent
+        {% elif active_tab == 'logging' %}📋 Log Levels
         {% elif active_tab == 'system' %}🖥️ System
         {% endif %}
       </div>
@@ -722,6 +728,35 @@
         </form>
       </div>
 
+      <!-- ====== TAB: LOG LEVELS ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'logging' else '' }}" id="tab-logging">
+        <div class="stat-card">
+          <div class="form-section-header"><i class="fas fa-sliders-h me-2"></i>Per-Module Log Levels</div>
+          <p class="text-muted small mb-3">Set the minimum log level for each application domain. Changes take effect immediately without restart.</p>
+          <form action="/console/save-log-levels" method="post">
+            <div class="row g-3">
+              {% for domain in log_domains %}
+              <div class="col-md-4 col-sm-6">
+                <label class="form-label fw-semibold text-capitalize" for="log_{{ domain }}">
+                  <i class="fas fa-tag me-1 text-secondary"></i>{{ domain }}
+                </label>
+                <select class="form-select form-select-sm" id="log_{{ domain }}" name="log_{{ domain }}">
+                  {% for lvl in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] %}
+                  <option value="{{ lvl }}" {{ 'selected' if log_levels.get(domain) == lvl else '' }}>{{ lvl }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="mt-4">
+              <button type="submit" class="btn btn-primary px-5 shadow-sm">
+                <i class="fas fa-save me-2"></i>Lưu Log Levels
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
       <!-- ====== TAB: SYSTEM ====== -->
       <div class="tab-pane {{ 'active' if active_tab == 'system' else '' }}" id="tab-system">
         <div class="row g-3 mb-3">
@@ -794,6 +829,7 @@
       memory:   '🧠 AI Memory',
       settings: '⚙️ Settings',
       news:     '📰 News Agent',
+      logging:  '📋 Log Levels',
       system:   '🖥️ System',
     };
     // Hide all panes

@@ -127,5 +127,26 @@ class TestNewsAgentImports(unittest.TestCase):
         from app.agents.news.telegram_handler import handle_news_chat  # noqa: F401
 
 
+class TestLoggingConfImports(unittest.TestCase):
+    """Logging infrastructure symbols — used at startup and by console router."""
+
+    def test_get_module_logger_importable(self):
+        from app.core.logging_conf import get_module_logger  # noqa: F401
+
+    def test_apply_log_levels_importable(self):
+        from app.core.logging_conf import apply_log_levels  # noqa: F401
+
+    def test_get_effective_log_levels_importable(self):
+        from app.core.logging_conf import get_effective_log_levels  # noqa: F401
+
+    def test_known_domains_importable(self):
+        from app.core.logging_conf import KNOWN_DOMAINS  # noqa: F401
+        assert isinstance(KNOWN_DOMAINS, list)
+        assert len(KNOWN_DOMAINS) > 0
+
+    def test_console_save_log_levels_importable(self):
+        from app.routers.console import console_save_log_levels  # noqa: F401
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

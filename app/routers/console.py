@@ -5,7 +5,6 @@
 import json
 import os
 import secrets
-import logging
 from typing import Optional
 
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, status
@@ -15,7 +14,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.config import load_config, save_config
 from app.core.notification import send_html_email
-from app.core.logging_conf import log_capture_string
+from app.core.logging_conf import (
+    log_capture_string,
+    apply_log_levels,
+    get_effective_log_levels,
+    KNOWN_DOMAINS,
+)
 from app.core.state import state
 from app.core.user_context import get_primary_user_id
 from app.core.database import (
@@ -29,7 +33,8 @@ from app.services.scheduler import reload_scheduler
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("admin")
 
 # ==========================================
 # 🔐 AUTHENTICATION
@@ -84,6 +89,7 @@ async def console_page(request: Request, tab: str = "overview", username: str = 
     logs_text = "\n".join(list(log_capture_string))
 
     news_config = config.get("news_agent", {})
+    log_levels = get_effective_log_levels()
 
     return templates.TemplateResponse(
         request,
@@ -104,6 +110,9 @@ async def console_page(request: Request, tab: str = "overview", username: str = 
             "service_active": state.service_active,
             # News settings
             "news_config": news_config,
+            # Logging settings
+            "log_levels": log_levels,
+            "log_domains": KNOWN_DOMAINS,
         },
     )
 
@@ -222,6 +231,35 @@ def _parse_int(value: Optional[str], default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+# ==========================================
+# 📊 LOG LEVELS — POST
+# ==========================================
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+
+@router.post("/console/save-log-levels")
+async def console_save_log_levels(
+    request: Request,
+    username: str = Depends(verify_credentials),
+):
+    """Save per-domain log level configuration from the console Logging tab."""
+    form = await request.form()
+    config = load_config()
+
+    new_levels: dict[str, str] = {}
+    for domain in KNOWN_DOMAINS:
+        level = str(form.get(f"log_{domain}", "INFO")).upper()
+        if level not in _VALID_LOG_LEVELS:
+            level = "INFO"
+        new_levels[domain] = level
+
+    config["log_levels"] = new_levels
+    save_config(config)
+    apply_log_levels(new_levels)
+    logger.info(f"[CONSOLE] User '{username}' updated log levels: {new_levels}")
+    return RedirectResponse(url="/console?tab=logging", status_code=303)
 
 
 # ==========================================
