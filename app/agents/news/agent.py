@@ -37,11 +37,13 @@ from app.agents.news.prompts import (
     build_on_demand_prompt,
 )
 from app.agents.news.memory import load_news_memory
+from app.core.logging_conf import get_module_logger
 
-logger = logging.getLogger("AI_COACH")
+logger = get_module_logger("news")
 client = genai.Client()
 
-_MAX_TELEGRAM_CHARS = 4000
+# Chunking is handled by send_telegram_msg() in notification.py (HTML-balanced, multi-message).
+# Do NOT truncate here — truncation would cut mid-tag and lose content.
 
 # Max parallel topic workers
 _MAX_TOPIC_WORKERS = 4
@@ -287,7 +289,7 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
     prompt = build_topic_prompt(topic_name, emoji, session, date_str)
 
     logger.info(f"[NEWS-TOPIC] Fetching '{topic_name}'...")
-    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=1500)
+    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
 
     if not block:
         logger.warning(f"[NEWS-TOPIC] No result for '{topic_name}'. Skipping.")
@@ -371,9 +373,6 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     blocks = [results[i] for i in sorted(results)]
     message = header + "\n\n" + "\n\n─────\n\n".join(blocks)
 
-    if len(message) > _MAX_TELEGRAM_CHARS:
-        message = message[:_MAX_TELEGRAM_CHARS] + "..."
-
     logger.info(f"[NEWS] Merged message length={len(message)}")
     logger.info(f"[TELEGRAM] Prepared message length={len(message)}; head={message[:80]!r}; tail={message[-60:]!r}")
     send_telegram_msg(chat_id, message)
@@ -412,7 +411,7 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     system_inst = build_on_demand_system_instruction()
     prompt = build_on_demand_prompt(query, date_str)
 
-    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=1500)
+    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
 
     if not reply or len(reply) < 100:
         logger.warning(
@@ -421,9 +420,6 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
         )
         send_telegram_msg(chat_id, "⚠️ Không tìm thấy kết quả cho yêu cầu này. Thử lại sau.")
         return None
-
-    if len(reply) > _MAX_TELEGRAM_CHARS:
-        reply = reply[:_MAX_TELEGRAM_CHARS] + "..."
 
     logger.info(f"[NEWS-ONDEMAND] Reply length={len(reply)}")
     send_telegram_msg(chat_id, reply)

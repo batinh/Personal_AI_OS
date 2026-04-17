@@ -77,7 +77,7 @@ Tóm tắt 1 câu.
 
 [RÀNG BUỘC]
 - KHÔNG dùng Markdown. Chỉ dùng HTML tags: <b>, <i>, <a href>.
-- Độ dài tối đa 1200 ký tự cho toàn bộ output."""
+- Độ dài tối đa 1800 ký tự cho toàn bộ output."""
 
 
 # ==========================================
@@ -112,7 +112,7 @@ Tóm tắt 1 câu.
 
 [RÀNG BUỘC]
 - KHÔNG dùng Markdown. Chỉ dùng HTML tags.
-- Độ dài tối đa 1000 ký tự."""
+- Độ dài tối đa 1500 ký tự."""
 
 
 # ==========================================
