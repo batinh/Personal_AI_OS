@@ -14,6 +14,44 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 Before commit: `docs/pragmatic_review_checklist.md`. New feature: `docs/feature_design_template.md`. Bug or feature: `docs/ISSUES.md`.
 
+## Docker Log Debug Toolkit
+`scripts/fetch-logs.sh` — fetch và filter log từ container `airunningcoach`.
+
+```bash
+# Tổng quan nhanh (count by level + last errors)
+bash scripts/fetch-logs.sh --summary
+
+# Lỗi trong 1 giờ qua
+bash scripts/fetch-logs.sh -l ERROR --since 1h
+
+# Log module cụ thể (news / coach / scheduler / webhook / ...)
+bash scripts/fetch-logs.sh -m news -n 200
+
+# Kết hợp: lỗi của news agent
+bash scripts/fetch-logs.sh -l ERROR,WARNING -m news --since 2h
+
+# Live tail toàn bộ
+bash scripts/fetch-logs.sh --live
+
+# Live tail filtered
+bash scripts/fetch-logs.sh --live -l ERROR -m scheduler
+```
+
+**Quy trình debug khi nhận báo lỗi:**
+```
+1. bash scripts/fetch-logs.sh --summary          # xác định level + module nào nhiều lỗi
+2. bash scripts/fetch-logs.sh -l ERROR -m <mod> --since 1h   # xem chi tiết
+3. Đọc code module bị lỗi → fix → chạy tests
+4. bash scripts/deploy-t440.sh --skip-pull       # rebuild + verify
+```
+
+**Fallback thủ công** (nếu script không dùng được):
+```bash
+docker logs airunningcoach --tail 100 2>&1 | grep -i error
+docker logs airunningcoach --since 1h 2>&1
+docker logs airunningcoach -f 2>&1   # live tail
+```
+
 ## Dev → Test → Deploy Workflow
 Every code change must pass this gate before deploying to T440:
 
