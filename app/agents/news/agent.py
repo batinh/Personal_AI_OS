@@ -112,22 +112,25 @@ def _session_header(session: str, date_str: str) -> str:
 
 def _extract_text(response) -> str | None:
     """
-    Extract full text from a Gemini response, including post-search parts.
+    Extract full text from a Gemini response, excluding thinking/reasoning parts.
 
-    When AFC (Automatic Function Calling) executes google_search, the final
-    response may contain both text parts and function_call parts. `response.text`
-    silently concatenates only text parts from the FIRST candidate pass, which
-    can return pre-search stub text and miss the actual grounded answer.
+    Gemini thinking models (e.g. gemini-flash-latest, gemini-2.0-flash-thinking)
+    include an internal chain-of-thought before the final answer. These parts have
+    ``thought=True`` on the Part object and must never be forwarded to users.
 
-    This helper iterates parts explicitly so we capture all text segments
-    (both pre- and post-search) from the final model turn.
+    Also handles the AFC / post-search pattern: when google_search executes, the
+    final response may have multiple text parts (pre-search stub + grounded answer).
+    We join only the non-thinking text parts.
     """
     try:
         candidates = response.candidates or []
         if not candidates:
             return response.text or None
         parts = getattr(candidates[0].content, "parts", None) or []
-        texts = [p.text for p in parts if getattr(p, "text", None)]
+        texts = [
+            p.text for p in parts
+            if getattr(p, "text", None) and not getattr(p, "thought", False)
+        ]
         return "".join(texts).strip() or None
     except Exception:
         # Fallback: let SDK handle it
@@ -135,6 +138,34 @@ def _extract_text(response) -> str | None:
 
 
 _DEBUG_NEWS = os.getenv("DEBUG_NEWS", "").lower() in ("1", "true", "yes")
+
+# Regex that matches a "thought" preamble Gemini thinking models sometimes emit
+# when the thought=True attribute is absent or when SDK fallback is used.
+# Pattern: text starts with "thought\n" or "thought " (case-insensitive) followed
+# by at least one Unicode word character.
+import re as _re
+_THOUGHT_PREFIX_RE = _re.compile(r"^thought[\n\r ]\w", _re.IGNORECASE)
+
+
+def _strip_thought_preamble(text: str) -> str | None:
+    """Remove a raw 'thought\\n...' preamble that slipped through thought=False filtering.
+
+    Gemini thinking models occasionally emit the chain-of-thought as plain text
+    without setting thought=True on the Part.  The real answer always follows the
+    preamble, separated from it by the first HTML tag (e.g. <b>, 📊).  We look
+    for that boundary and strip everything before it.
+
+    Returns None when the entire text appears to be thinking (no HTML or emoji
+    anchor found), so the caller can treat it as an empty/failed response.
+    """
+    if not _THOUGHT_PREFIX_RE.match(text):
+        return text  # no preamble detected
+
+    # Find the first HTML tag or news-emoji that marks the real answer
+    anchor = _re.search(r'(<[bBiIaA][\s>]|📊|📰|🔍|📈|✅)', text)
+    if not anchor:
+        return None  # all thinking, no answer
+    return text[anchor.start():].strip() or None
 
 # Default model — Gemini 1.5 Pro uses forced retrieval grounding (dynamic_threshold=0),
 # guaranteeing a web search on every call regardless of model confidence.
@@ -217,7 +248,11 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
             for ci, cand in enumerate(candidates):
                 parts = getattr(getattr(cand, "content", None), "parts", None) or []
                 part_summary = [
-                    {"type": type(p).__name__, "has_text": bool(getattr(p, "text", None))}
+                    {
+                        "type": type(p).__name__,
+                        "has_text": bool(getattr(p, "text", None)),
+                        "is_thought": bool(getattr(p, "thought", False)),
+                    }
                     for p in parts
                 ]
                 logger.debug(
@@ -239,6 +274,18 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
             logger.info("[NEWS] Grounded call completed. grounding_used=True")
 
         text = _extract_text(response)
+
+        # Defense-in-depth: strip any "thought\n..." preamble that slipped through
+        # when the thought=True attribute was absent (seen with gemini-flash-latest).
+        if text:
+            stripped = _strip_thought_preamble(text)
+            if stripped != text:
+                thinking_len = len(text) - len(stripped) if stripped else len(text)
+                logger.warning(
+                    "[NEWS] Stripped %d-char thinking preamble from response (thought attr was False/missing).",
+                    thinking_len,
+                )
+            text = stripped
 
         if _DEBUG_NEWS:
             logger.debug("[NEWS-DEBUG] extracted text (%d chars): %r", len(text) if text else 0, (text or "")[:300])
