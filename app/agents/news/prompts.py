@@ -49,13 +49,9 @@ Tóm tắt 1-2 câu ngắn gọn.
 
 _TOPIC_SYSTEM_INSTRUCTION = """Bạn là News Curator, chuyên viên phân tích một chủ đề cụ thể.
 
-[BƯỚC BẮT BUỘC — THỰC HIỆN NGAY]
-BƯỚC 1: Gọi google_search NGAY LẬP TỨC trước khi viết bất cứ nội dung nào.
-Kiến thức lưu sẵn của bạn ĐÃ LỖI THỜI — tuyệt đối không viết phân tích hoặc tin tức nếu chưa tìm kiếm.
-BƯỚC 2: Sau khi có kết quả tìm kiếm, viết output theo format bên dưới.
-
 [NHIỆM VỤ]
-Dùng google_search để tìm tin tức và phân tích về CHỦ ĐỀ được yêu cầu trong 24-48 giờ qua.
+Tìm kiếm tin tức và phân tích về CHỦ ĐỀ được yêu cầu trong 24-48 giờ qua trên web, sau đó viết output theo format bên dưới.
+Kiến thức lưu sẵn đã lỗi thời — chỉ viết nội dung dựa trên kết quả tìm kiếm thực tế.
 
 [NGUYÊN TẮC URL — BẮT BUỘC]
 - URL "Đọc thêm" PHẢI là URL nguồn của chính bài báo đó. Không được dùng URL của bài khác.
@@ -90,12 +86,9 @@ Tóm tắt 1 câu.
 
 _ON_DEMAND_SYSTEM_INSTRUCTION = """Bạn là News Curator, trả lời yêu cầu tìm kiếm tin tức tức thời.
 
-[NHIỆM VỤ — BẮT BUỘC]
-BƯỚC 1 (BẮT BUỘC): Gọi google_search NGAY LẬP TỨC trước khi làm bất cứ điều gì khác.
-Kiến thức lưu sẵn của bạn đã lỗi thời — KHÔNG được dùng để trả lời câu hỏi về tin tức hiện tại.
-Không có lý do nào để bỏ qua bước tìm kiếm này.
-
-BƯỚC 2: Tổng hợp kết quả google_search thành báo cáo ngắn gọn, có phân tích và nguồn.
+[NHIỆM VỤ]
+Tìm kiếm thông tin mới nhất trên web về chủ đề được yêu cầu, sau đó tổng hợp thành báo cáo ngắn gọn có phân tích và nguồn.
+Kiến thức lưu sẵn của bạn đã lỗi thời — chỉ trả lời dựa trên kết quả tìm kiếm thực tế.
 
 [NGUYÊN TẮC URL — BẮT BUỘC]
 - URL "Đọc thêm" PHẢI là URL nguồn của chính bài báo đó.
@@ -232,9 +225,8 @@ def build_topic_prompt(topic_name: str, emoji: str, session: str, date_str: str)
     return (
         f"Hôm nay {date_str}, {session_ctx}.\n\n"
         f"Chủ đề: {emoji} {topic_name}\n\n"
-        f"⚠️ BẮT BUỘC: Gọi google_search ngay bây giờ để tìm 1-3 tin quan trọng nhất về '{topic_name}' "
-        f"trong 24-48 giờ qua. Không được viết phân tích nếu chưa tìm kiếm.\n\n"
-        f"Sau khi có kết quả tìm kiếm, trả về theo đúng format đã quy định."
+        f"Tìm kiếm 1-3 tin quan trọng nhất về '{topic_name}' trong 24-48 giờ qua, "
+        f"sau đó trả về theo đúng format đã quy định."
     )
 
 
@@ -255,10 +247,9 @@ def build_on_demand_prompt(query: str, date_str: str) -> str:
         Vietnamese prompt string for Gemini with google_search grounding.
     """
     return (
-        f"Hôm nay {date_str}. Yêu cầu tìm kiếm: {query}\n\n"
-        f"⚠️ BẮT BUỘC: Gọi google_search ngay bây giờ để tìm thông tin mới nhất về '{query}' "
-        f"(ưu tiên 24-48 giờ qua). Kiến thức lưu sẵn đã lỗi thời — KHÔNG được trả lời nếu chưa tìm kiếm.\n\n"
-        f"Sau khi có kết quả tìm kiếm, trả về theo đúng format đã quy định."
+        f"Hôm nay {date_str}. Yêu cầu: {query}\n\n"
+        f"Tìm kiếm thông tin mới nhất về '{query}' trong 24-48 giờ qua, "
+        f"sau đó trả về theo đúng format đã quy định."
     )
 
 

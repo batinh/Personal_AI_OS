@@ -133,16 +133,26 @@ def _extract_text(response) -> str | None:
         return response.text or None
 
 
+_DEBUG_NEWS = os.getenv("DEBUG_NEWS", "").lower() in ("1", "true", "yes")
+
+
 def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_tokens: int = 1500) -> str | None:
     """
-    Call Gemini with google_search grounding.
+    Call Gemini with google_search grounding (server-side, transparent).
 
-    Uses the agentic google_search tool (required for Gemini 2.0+ models).
-    max_tokens default is 1500 to give enough budget for AFC to:
-      - Write pre-search scaffolding
-      - Execute google_search via AFC
-      - Write the full post-search response (news items + links + trend)
+    AFC is explicitly disabled so the SDK does not intercept the built-in
+    google_search tool. Server-side grounding handles search transparently —
+    the final response text already contains grounded content.
+
+    Set DEBUG_NEWS=true to log the full prompt and response part structure.
     """
+    if _DEBUG_NEWS:
+        logger.debug(
+            "[NEWS-DEBUG] system_instruction=\n%s\n\nprompt=\n%s",
+            system_inst,
+            prompt,
+        )
+
     try:
         response = client.models.generate_content(
             model=model,
@@ -151,8 +161,28 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
                 system_instruction=system_inst,
                 tools=[types.Tool(google_search=types.GoogleSearch())],
                 max_output_tokens=max_tokens,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=True
+                ),
             ),
         )
+
+        if _DEBUG_NEWS:
+            candidates = response.candidates or []
+            for ci, cand in enumerate(candidates):
+                parts = getattr(getattr(cand, "content", None), "parts", None) or []
+                part_summary = [
+                    {"type": type(p).__name__, "has_text": bool(getattr(p, "text", None))}
+                    for p in parts
+                ]
+                logger.debug(
+                    "[NEWS-DEBUG] candidate[%d] finish_reason=%s parts=%s grounding_metadata=%s",
+                    ci,
+                    getattr(cand, "finish_reason", "?"),
+                    part_summary,
+                    getattr(cand, "grounding_metadata", None) is not None,
+                )
+
         candidates = response.candidates or []
         grounding_used = any(
             getattr(c, "grounding_metadata", None) is not None
@@ -162,7 +192,13 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
             logger.warning("[NEWS] Gemini did not invoke google_search — response may use training data only.")
         else:
             logger.info("[NEWS] Grounded call completed. grounding_used=True")
-        return _extract_text(response)
+
+        text = _extract_text(response)
+
+        if _DEBUG_NEWS:
+            logger.debug("[NEWS-DEBUG] extracted text (%d chars): %r", len(text) if text else 0, (text or "")[:300])
+
+        return text
     except Exception as e:
         logger.warning(f"[NEWS] Gemini call failed: {e}")
         return None
