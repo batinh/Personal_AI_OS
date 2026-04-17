@@ -1,5 +1,4 @@
 import numpy as np
-import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -8,7 +7,9 @@ import math
 import os
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from app.core.logging_conf import get_module_logger
+
+logger = get_module_logger("coach")
 
 def calculate_trimp(duration_minutes: float, avg_hr: float, max_hr: int = 185, rest_hr: int = 55, gender: str = "male") -> dict:
     """

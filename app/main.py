@@ -10,7 +10,7 @@ from app.core.database import init_db, DB_PATH
 from app.core.config import load_config, CONFIG_PATH
 from app.routers import webhooks, admin, dashboard, console, audit
 from app.services.scheduler import start_scheduler, scheduler
-from app.core.logging_conf import setup_logging
+from app.core.logging_conf import setup_logging, apply_log_levels
 
 # 1. Setup Logging
 logger = setup_logging()
@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     cfg = load_config()
     if cfg:
         logger.info(f"[STARTUP] Config loaded. Model: {cfg.get('model_name', 'default')}")
+        apply_log_levels(cfg.get("log_levels", {}))
     else:
         logger.warning("[STARTUP] Config is EMPTY — system will run with defaults. Set up via Admin UI.")
 

@@ -1,5 +1,4 @@
 import os
-import logging
 from typing import Optional
 
 import requests
@@ -7,8 +6,10 @@ import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
 
+from app.core.logging_conf import get_module_logger
+
 # Initialize logging
-logger = logging.getLogger(__name__)
+logger = get_module_logger("strava")
 load_dotenv()
 
 # All 11 stream types from Strava API (time, latlng, distance, altitude, velocity_smooth, heartrate, cadence, watts, temp, moving, grade_smooth)

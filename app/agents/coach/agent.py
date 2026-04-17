@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import logging
 import unicodedata
 import pytz
 import uuid
@@ -44,7 +43,8 @@ from app.agents.coach.metrics_engine import build_run_metrics_block
 # [ARCHITECTURE UPDATE] Import Strict Data Contracts
 from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("coach")
 client = genai.Client()
 
 # ==========================================

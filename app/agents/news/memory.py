@@ -16,10 +16,11 @@ from typing import Optional
 from google import genai
 
 from app.core.database import get_news_state, set_news_state
+from app.core.logging_conf import get_module_logger
 
 _client = genai.Client()
 
-logger = logging.getLogger("AI_COACH")
+logger = get_module_logger("news")
 
 
 def load_news_memory(user_id: str) -> dict:

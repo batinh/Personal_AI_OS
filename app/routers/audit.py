@@ -7,7 +7,6 @@ POST /audit/api/entries/{id}/acknowledge → mark as acknowledged
 POST /audit/api/entries/{id}/resolve     → mark as resolved
 POST /audit/api/run  → trigger manual audit scan
 """
-import logging
 import os
 import secrets
 from typing import Optional
@@ -21,7 +20,8 @@ from app.core.database import get_audit_entries, update_audit_status, get_audit_
 from app.core.user_context import get_primary_user_id
 from app.services.log_auditor import run_audit
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("audit")
 router = APIRouter(prefix="/audit", tags=["Audit"])
 templates = Jinja2Templates(directory="templates")
 _security = HTTPBasic()

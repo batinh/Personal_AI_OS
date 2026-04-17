@@ -17,7 +17,8 @@ from app.services.stream_storage import save_activity_stream_to_file
 from app.core.notification import send_telegram_msg
 from app.services.rag_memory import rag_db
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("coach")
 
 RUN_TYPES = {"Run", "TrailRun", "VirtualRun"}
 

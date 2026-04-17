@@ -1,6 +1,5 @@
 import os
 import secrets
-import logging
 from typing import Optional
 
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, status
@@ -16,7 +15,8 @@ from app.services.scheduler import reload_scheduler
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("admin")
 
 # ==========================================
 # 🔐 AUTHENTICATION SETUP

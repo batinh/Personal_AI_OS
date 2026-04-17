@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request, BackgroundTasks
 import os
 from app.core.user_context import get_primary_user_id
-import logging
 
 from app.core.config import load_config
 from app.core.notification import send_telegram_msg, send_html_email
@@ -18,7 +17,8 @@ from app.services.stream_storage import save_activity_stream_to_file
 from app.agents.coach.metrics_engine import compute_stream_metrics
 
 router = APIRouter()
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("webhook")
 
 # --- BUSINESS LOGIC (SERVICE LAYER) ---
 def _ingest_realtime_run(activity_id: str, act_name: str, meta_data: dict, chat_id: str, config: dict):

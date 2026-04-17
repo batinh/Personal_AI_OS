@@ -2,14 +2,14 @@ import json
 import sqlite3
 import os
 import uuid
-import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import pytz
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("database")
 
 # --- Absolute path anchored to this file's location ---
 # database.py is at: <project_root>/app/core/database.py

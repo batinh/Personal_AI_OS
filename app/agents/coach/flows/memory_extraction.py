@@ -1,7 +1,6 @@
 import os
 import re
 import json
-import logging
 
 from google import genai
 from google.genai import types
@@ -13,7 +12,8 @@ from app.agents.coach.utils import send_message_with_retry
 from app.agents.coach.prompts import build_memory_extraction_prompt
 from app.core.schemas import MemoryExtractionResult
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("coach")
 client = genai.Client()
 
 

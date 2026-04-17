@@ -1,9 +1,9 @@
 import os
 import shutil
-import logging
 from datetime import datetime
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("backup")
 
 def perform_backup():
     """

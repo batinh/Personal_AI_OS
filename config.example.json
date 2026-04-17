@@ -30,6 +30,20 @@
         "sender_password": "your_gmail_app_password",
         "receiver_email": "your.receiver@gmail.com"
     },
+    "log_levels": {
+        "news": "INFO",
+        "coach": "INFO",
+        "strava": "INFO",
+        "scheduler": "INFO",
+        "webhook": "INFO",
+        "database": "INFO",
+        "memory": "INFO",
+        "notification": "INFO",
+        "weather": "INFO",
+        "backup": "INFO",
+        "audit": "INFO",
+        "admin": "INFO"
+    },
     "news_agent": {
         "enabled": true,
         "news_model": "models/gemini-flash-latest",

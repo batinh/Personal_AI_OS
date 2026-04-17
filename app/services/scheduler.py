@@ -3,7 +3,6 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 import pytz
 import os
-import logging
 
 from app.core.user_context import get_primary_user_id
 from app.core.config import load_config
@@ -17,7 +16,8 @@ from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
 from app.services.log_auditor import run_audit
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("scheduler")
 TZ_VN = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
 # BackgroundScheduler runs jobs in a thread pool — all task functions must be regular def.
 scheduler = BackgroundScheduler()

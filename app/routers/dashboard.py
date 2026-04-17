@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-import logging
 import os
 from app.core.user_context import get_primary_user_id
 
@@ -11,7 +10,8 @@ from app.core.config import load_config
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("admin")
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def user_dashboard(request: Request):

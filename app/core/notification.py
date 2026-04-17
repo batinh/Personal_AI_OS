@@ -1,5 +1,4 @@
 import os
-import logging
 import requests
 import smtplib
 from email.mime.text import MIMEText
@@ -8,8 +7,10 @@ from dotenv import load_dotenv
 import re
 import html
 
+from app.core.logging_conf import get_module_logger
+
 load_dotenv()
-logger = logging.getLogger(__name__)
+logger = get_module_logger("notification")
 
 # Matches valid Telegram HTML tags that should pass through unchanged.
 # Telegram supports: <b>, <i>, <u>, <s>, <code>, <pre>, <a href>, <tg-spoiler>

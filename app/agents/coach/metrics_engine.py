@@ -6,13 +6,13 @@ No DB, no Gemini imports — this module is side-effect-free.
 All helpers return None (not raise) when data is absent or insufficient.
 """
 import json
-import logging
 import math
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("coach")
 
 # --------------------------------------------------------------------------- #
 # Public entry point

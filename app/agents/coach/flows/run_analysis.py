@@ -1,7 +1,6 @@
 import os
 from app.core.user_context import get_primary_user_id
 import json
-import logging
 import pytz
 from datetime import datetime
 
@@ -28,7 +27,8 @@ from app.agents.coach.metrics_engine import build_run_metrics_block
 from app.core.schemas import RunAnalysisResult
 from app.core.database import get_training_loads, get_weekly_volume
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("coach")
 client = genai.Client()
 
 

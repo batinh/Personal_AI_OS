@@ -1,7 +1,6 @@
 # app/agents/coach/tools.py
 
 import os
-import logging
 import pytz
 import json
 from datetime import datetime
@@ -18,7 +17,8 @@ from app.services.stream_storage import load_activity_stream_from_file, get_stre
 from app.agents.coach.utils import calculate_acwr
 from app.agents.coach.metrics_engine import build_run_metrics_block
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("coach")
 
 def update_todays_plan(user_id: str, workout_title: str, description: str) -> str:
     """

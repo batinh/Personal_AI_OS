@@ -6,13 +6,12 @@ Also handles free-text messages routed here via @news / @tin prefix.
 
 Zone 3: function names/logic = English, user-facing messages = Vietnamese.
 """
-import logging
-
 from app.core.notification import send_telegram_msg
 from app.core.user_context import get_primary_user_id
 from app.agents.news.memory import run_extract_in_background
+from app.core.logging_conf import get_module_logger
 
-logger = logging.getLogger("AI_COACH")
+logger = get_module_logger("news")
 
 _HELP_MSG = (
     "📰 <b>News Agent</b>\n\n"
