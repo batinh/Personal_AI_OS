@@ -9,14 +9,14 @@ Usage:
     from app.services.log_auditor import run_audit
     count = run_audit(user_id="123456")   # returns number of new entries inserted
 """
-import logging
 import re
 from pathlib import Path
 from typing import Tuple
 
 from app.core.database import insert_audit_entry
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("audit")
 
 # Absolute path to log file (same anchor as logging_conf.py)
 _BASE_DIR = Path(__file__).resolve().parent.parent.parent

@@ -8,9 +8,17 @@ cd Personal_AI_OS
 pip install -r requirements.txt
 pip install -r requirements-dev.txt
 cp config.example.json data/config.json
+
+# Install git pre-commit hooks (smoke tests + ruff + black)
+bash scripts/install-hooks.sh
 ```
 
 See [setup.md](./setup.md) for full environment variable setup.
+
+The pre-commit hook runs automatically on every `git commit`:
+- Smoke tests (`tests/test_smoke.py`) — catches ImportError in < 2s
+- `ruff check` — lint errors
+- `black --check` — formatting
 
 ---
 
@@ -77,7 +85,7 @@ python -m pytest tests/ -q
 
 - `tests/conftest.py` — session-level stubs for `google.genai` and `chromadb` (both are MagicMock — cannot inspect internal call arguments; patch builders directly)
 - Each test file maps to one module (e.g., `test_news_agent.py` → `app/agents/news/agent.py`)
-- See [DELIVERY_CHECKLIST.md](./testing/DELIVERY_CHECKLIST.md) for the minimum test set per change type
+- See [DELIVERY_CHECKLIST.md](./DELIVERY_CHECKLIST.md) for the minimum test set per change type
 
 ---
 

@@ -1,0 +1,79 @@
+name: Deploy to T440
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_pull:
+        description: "Skip git pull on T440 (rebuild only)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      environment:
+        description: "Target environment"
+        required: false
+        default: "production"
+
+# Only one deploy at a time
+concurrency:
+  group: deploy-t440
+  cancel-in-progress: false
+
+jobs:
+  pre-checks:
+    name: Pre-deploy gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Smoke tests
+        run: python -m pytest tests/test_smoke.py -v --tb=short
+
+      - name: Full test suite
+        run: python -m pytest tests/ -q --tb=short
+
+  deploy:
+    name: Deploy to T440
+    needs: pre-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+
+    steps:
+      - name: Trigger deploy on T440 via SSH
+        # Requires: Settings > Secrets > T440_SSH_KEY, T440_HOST, T440_USER
+        # Set up: ssh-keygen, copy public key to T440 ~/.ssh/authorized_keys
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.T440_HOST }}
+          username: ${{ secrets.T440_USER }}
+          key: ${{ secrets.T440_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.T440_USER }}/repo/Personal_AI_OS
+            SKIP_FLAG=""
+            if [ "${{ github.event.inputs.skip_pull }}" = "true" ]; then
+              SKIP_FLAG="--skip-pull"
+            fi
+            bash scripts/deploy-t440.sh $SKIP_FLAG
+
+# Setup instructions (one-time):
+# 1. ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/github_deploy
+# 2. cat ~/.ssh/github_deploy.pub >> ~/.ssh/authorized_keys   (on T440)
+# 3. GitHub repo > Settings > Secrets > Actions > New repository secret:
+#    - T440_SSH_KEY = contents of ~/.ssh/github_deploy (private key)
+#    - T440_HOST = T440 IP or hostname
+#    - T440_USER = tinhn
+# 4. Trigger via: GitHub Actions > Deploy to T440 > Run workflow

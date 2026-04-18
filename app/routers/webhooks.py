@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request, BackgroundTasks
 import os
 from app.core.user_context import get_primary_user_id
-import logging
 
 from app.core.config import load_config
 from app.core.notification import send_telegram_msg, send_html_email
@@ -9,15 +8,17 @@ from app.agents.coach.agent import analyze_run_with_gemini, handle_telegram_chat
 from app.agents.coach.strava_client import StravaClient
 
 # Include execute_manual_sync in imports
-from app.agents.coach.harvest import harvest_data, execute_manual_sync, build_activity_record
+from app.agents.coach.harvest import harvest_data, execute_manual_sync, execute_sync_all, build_activity_record
 from app.core.state import state
 from app.services.scheduler import task_morning_briefing
-from app.core.database import save_run_activity, save_run_activity_raw, delete_run_activity
+from app.core.database import save_run_activity, save_run_activity_raw, delete_run_activity, upsert_run_computed_metrics
 from app.services.rag_memory import rag_db
 from app.services.stream_storage import save_activity_stream_to_file
+from app.agents.coach.metrics_engine import compute_stream_metrics
 
 router = APIRouter()
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("webhook")
 
 # --- BUSINESS LOGIC (SERVICE LAYER) ---
 def _ingest_realtime_run(activity_id: str, act_name: str, meta_data: dict, chat_id: str, config: dict):
@@ -66,7 +67,7 @@ def run_strava_workflow(activity_id: str):
     except (ValueError, TypeError):
         return
 
-    if not csv_data:
+    if not stream_raw and not csv_data:
         return
 
     chat_id = get_primary_user_id()
@@ -80,9 +81,19 @@ def run_strava_workflow(activity_id: str):
             stream_file_path = save_activity_stream_to_file(chat_id, activity_id, stream_raw)
         save_run_activity_raw(chat_id, activity_id, act_name, meta_data, stream_csv="", stream_file_path=stream_file_path)
 
+        # 1.5. Compute and persist running science metrics from stream data
+        if stream_raw:
+            try:
+                metrics = compute_stream_metrics(stream_raw, meta_data, config, act_name)
+                if metrics:
+                    upsert_run_computed_metrics(activity_id, chat_id, metrics)
+                    logger.info(f"[METRICS] Stored computed metrics for activity {activity_id}")
+            except Exception as e:
+                logger.error(f"[METRICS] Failed to compute metrics for activity {activity_id}: {e}")
+
     # 2. Handover to AI for semantic analysis and GCS scoring
     logger.info("[*] Sending Data to Gemini...")
-    analysis_text = analyze_run_with_gemini(activity_id, act_name, csv_data, meta_data, config)
+    analysis_text = analyze_run_with_gemini(activity_id, act_name, meta_data, config)
 
     # [NEW ARCHITECTURE] 2.5: Inject immediately into RAG Memory (Tier 3)
     if analysis_text and chat_id:
@@ -162,19 +173,20 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
         # 1. Catch manual /sync command
         if text.strip().startswith("/sync"):
             parts = text.strip().split()
-            limit = 3         # Default: 3 activities
-            days_back = None  # Default: no day limit
-            
-            if len(parts) > 1:
-                param = parts[1].lower()
+            param = parts[1].lower() if len(parts) > 1 else ""
+
+            if param == "all":
+                send_telegram_msg(str(chat_id), "🚀 <b>Sync All</b>: đang khởi động đồng bộ toàn bộ lịch sử Strava. Có thể mất vài phút...")
+                background_tasks.add_task(execute_sync_all, str(chat_id))
+            else:
+                limit = 3         # Default: 3 activities
+                days_back = None  # Default: no day limit
                 if param == "month":
                     limit = 50
                     days_back = 30
                 elif param.isdigit():
                     limit = int(param)
-                    
-            # [FIX BUG] Trigger Sync and Return response immediately
-            background_tasks.add_task(execute_manual_sync, str(chat_id), limit, days_back)
+                background_tasks.add_task(execute_manual_sync, str(chat_id), limit, days_back)
             return {"status": "ok"}
 
         # 2. Catch /standup command to test morning briefing

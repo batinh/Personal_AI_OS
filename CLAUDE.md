@@ -4,15 +4,57 @@
 
 ## Commands
 ```bash
+python -m pytest tests/test_smoke.py -v        # smoke only — run FIRST (< 2s)
 python -m pytest tests/ -q                      # full suite (gate before commit — 0 failures)
-python -m pytest tests/test_<module>.py -v     # targeted (run this first)
+python -m pytest tests/test_<module>.py -v     # targeted module
 python -m pytest tests/ --cov=app --cov-report=html
 docker compose up --build
-bash scripts/deploy-t440.sh              # T440: git pull + rebuild + health check
-bash scripts/deploy-t440.sh --skip-pull # rebuild only
+bash scripts/pre-deploy-check.sh         # local gate: pytest + config + compose syntax
+bash scripts/deploy-t440.sh              # T440: backup image + git pull + rebuild + health check
+bash scripts/deploy-t440.sh --skip-pull # rebuild only (no git pull)
+bash scripts/rollback-t440.sh            # restore airunningcoach:backup image
+bash scripts/install-hooks.sh           # one-time: install pre-commit hooks (smoke + ruff + black)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-Before commit: `docs/pragmatic_review_checklist.md`. New feature: `docs/feature_design_template.md`. Bug or feature: `docs/ISSUES.md`.
+Before commit: `docs/DELIVERY_CHECKLIST.md` (typed by change type). Pragmatic review: `docs/pragmatic_review_checklist.md`. New feature: `docs/feature_design_template.md`. Bug or feature: `docs/ISSUES.md`.
+
+## Docker Log Debug Toolkit
+`scripts/fetch-logs.sh` — fetch và filter log từ container `airunningcoach`.
+
+```bash
+# Tổng quan nhanh (count by level + last errors)
+bash scripts/fetch-logs.sh --summary
+
+# Lỗi trong 1 giờ qua
+bash scripts/fetch-logs.sh -l ERROR --since 1h
+
+# Log module cụ thể (news / coach / scheduler / webhook / ...)
+bash scripts/fetch-logs.sh -m news -n 200
+
+# Kết hợp: lỗi của news agent
+bash scripts/fetch-logs.sh -l ERROR,WARNING -m news --since 2h
+
+# Live tail toàn bộ
+bash scripts/fetch-logs.sh --live
+
+# Live tail filtered
+bash scripts/fetch-logs.sh --live -l ERROR -m scheduler
+```
+
+**Quy trình debug khi nhận báo lỗi:**
+```
+1. bash scripts/fetch-logs.sh --summary          # xác định level + module nào nhiều lỗi
+2. bash scripts/fetch-logs.sh -l ERROR -m <mod> --since 1h   # xem chi tiết
+3. Đọc code module bị lỗi → fix → chạy tests
+4. bash scripts/deploy-t440.sh --skip-pull       # rebuild + verify
+```
+
+**Fallback thủ công** (nếu script không dùng được):
+```bash
+docker logs airunningcoach --tail 100 2>&1 | grep -i error
+docker logs airunningcoach --since 1h 2>&1
+docker logs airunningcoach -f 2>&1   # live tail
+```
 
 ## Dev → Test → Deploy Workflow
 Every code change must pass this gate before deploying to T440:

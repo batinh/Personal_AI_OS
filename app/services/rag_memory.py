@@ -1,5 +1,4 @@
 import os
-import logging
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 from chromadb.config import Settings
@@ -23,7 +22,8 @@ if cache_dir:
     os.environ["XDG_CACHE_HOME"] = cache_dir # Add this to completely fix ONNX cache issues
 # 3. AFTER SETTING ENV VARS, FINALLY IMPORT CHROMA
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("memory")
 
 class RagMemory:
     """

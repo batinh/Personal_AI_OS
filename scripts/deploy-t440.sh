@@ -45,7 +45,11 @@ else
     log "Skipping pull (--skip-pull)"
 fi
 
-# --- Step 2: Rebuild and restart containers ---
+# --- Step 2: Backup current image before rebuild ---
+log "Tagging current image as backup..."
+docker tag airunningcoach:latest airunningcoach:backup 2>/dev/null || warn "No existing image to back up (first deploy?)"
+
+# --- Step 3: Rebuild and restart containers ---
 log "Rebuilding and restarting containers..."
 cd "$REPO_DIR"
 docker compose up --build -d || fail "docker compose up failed"
@@ -114,9 +118,13 @@ fi
 
 # --- Summary ---
 echo ""
+DEPLOY_LOG="$REPO_DIR/deployments.log"
+COMMIT=$(git -C "$REPO_DIR" rev-parse --short HEAD 2>/dev/null || echo "unknown")
 if [ "$PASS" -eq "$TOTAL" ]; then
     log "All tests passed ($PASS/$TOTAL)"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | $COMMIT | ${USER:-unknown} | DEPLOY | SUCCESS ($PASS/$TOTAL)" >> "$DEPLOY_LOG"
 else
     warn "Some tests failed ($PASS/$TOTAL)"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | $COMMIT | ${USER:-unknown} | DEPLOY | PARTIAL ($PASS/$TOTAL)" >> "$DEPLOY_LOG"
     exit 1
 fi

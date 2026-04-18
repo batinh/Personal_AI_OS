@@ -5,7 +5,6 @@
 import json
 import os
 import secrets
-import logging
 from typing import Optional
 
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, status
@@ -15,7 +14,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.config import load_config, save_config
 from app.core.notification import send_html_email
-from app.core.logging_conf import log_capture_string
+from app.core.logging_conf import (
+    log_capture_string,
+    apply_log_levels,
+    get_effective_log_levels,
+    KNOWN_DOMAINS,
+)
 from app.core.state import state
 from app.core.user_context import get_primary_user_id
 from app.core.database import (
@@ -29,7 +33,8 @@ from app.services.scheduler import reload_scheduler
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("admin")
 
 # ==========================================
 # 🔐 AUTHENTICATION
@@ -84,6 +89,7 @@ async def console_page(request: Request, tab: str = "overview", username: str = 
     logs_text = "\n".join(list(log_capture_string))
 
     news_config = config.get("news_agent", {})
+    log_levels = get_effective_log_levels()
 
     return templates.TemplateResponse(
         request,
@@ -104,6 +110,9 @@ async def console_page(request: Request, tab: str = "overview", username: str = 
             "service_active": state.service_active,
             # News settings
             "news_config": news_config,
+            # Logging settings
+            "log_levels": log_levels,
+            "log_domains": KNOWN_DOMAINS,
         },
     )
 
@@ -188,23 +197,17 @@ async def console_save_news(
 
     # --- Basic toggles & scalars ---
     news_cfg["enabled"] = form.get("news_enabled") == "on"
-    news_cfg["morning_time"] = form.get("morning_time", "07:00").strip()
-    news_cfg["afternoon_time"] = form.get("afternoon_time", "17:00").strip()
-    news_cfg["watch_interval_minutes"] = _parse_int(form.get("watch_interval_minutes"), 30)
-    news_cfg["alert_threshold"] = _parse_int(form.get("alert_threshold"), 7)
-    news_cfg["digest_threshold"] = _parse_int(form.get("digest_threshold"), 4)
-    news_cfg["topic_cooldown_hours"] = _parse_int(form.get("topic_cooldown_hours"), 2)
-    news_cfg["max_articles_per_feed"] = _parse_int(form.get("max_articles_per_feed"), 5)
+    news_cfg["news_model"] = form.get("news_model", "models/gemini-flash-latest").strip() or "models/gemini-flash-latest"
+    news_cfg["morning_time"] = form.get("morning_time", "06:30").strip()
+    news_cfg["afternoon_time"] = form.get("afternoon_time", "17:30").strip()
+    news_cfg["evening_time"] = form.get("evening_time", "20:00").strip()
     news_cfg["telegram_chat_id"] = form.get("news_telegram_chat_id", "").strip()
 
-    # --- Feeds (serialized as JSON by client-side JS) ---
-    feeds_json = form.get("feeds_json", "[]")
-    try:
-        feeds = json.loads(feeds_json)
-        if isinstance(feeds, list):
-            news_cfg["feeds"] = feeds
-    except (json.JSONDecodeError, ValueError):
-        logger.warning("[CONSOLE] Invalid feeds_json submitted — keeping existing feeds.")
+    # Remove deprecated RSS-era keys if present
+    for old_key in ("watch_interval_minutes", "alert_threshold", "digest_threshold",
+                    "topic_cooldown_hours", "max_articles_per_feed", "feeds",
+                    "shock_threshold"):
+        news_cfg.pop(old_key, None)
 
     # --- Interest profile (serialized as JSON by client-side JS) ---
     profile_json = form.get("interest_profile_json", "{}")
@@ -228,6 +231,35 @@ def _parse_int(value: Optional[str], default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+# ==========================================
+# 📊 LOG LEVELS — POST
+# ==========================================
+_VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+
+@router.post("/console/save-log-levels")
+async def console_save_log_levels(
+    request: Request,
+    username: str = Depends(verify_credentials),
+):
+    """Save per-domain log level configuration from the console Logging tab."""
+    form = await request.form()
+    config = load_config()
+
+    new_levels: dict[str, str] = {}
+    for domain in KNOWN_DOMAINS:
+        level = str(form.get(f"log_{domain}", "INFO")).upper()
+        if level not in _VALID_LOG_LEVELS:
+            level = "INFO"
+        new_levels[domain] = level
+
+    config["log_levels"] = new_levels
+    save_config(config)
+    apply_log_levels(new_levels)
+    logger.info(f"[CONSOLE] User '{username}' updated log levels: {new_levels}")
+    return RedirectResponse(url="/console?tab=logging", status_code=303)
 
 
 # ==========================================

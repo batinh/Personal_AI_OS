@@ -1,8 +1,9 @@
 import os
 import requests
-import logging
 
-logger = logging.getLogger("WEATHER_SERVICE")
+from app.core.logging_conf import get_module_logger
+
+logger = get_module_logger("weather")
 
 def get_today_weather():
     """

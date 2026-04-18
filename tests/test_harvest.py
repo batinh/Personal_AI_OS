@@ -83,7 +83,7 @@ class TestBuildActivityRecord(unittest.TestCase):
 class TestHarvestData(unittest.TestCase):
     """Cron harvest_data() integration with mocked Strava + DB."""
 
-    @patch("app.agents.coach.harvest.get_db_connection")
+    @patch("app.core.database.get_db_connection")
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.upsert_user")
     @patch("app.agents.coach.harvest.init_db")

@@ -275,6 +275,11 @@
         <i class="nav-icon fas fa-newspaper"></i>
         <span>News Agent</span>
       </a>
+      <a class="nav-item-link {{ 'active' if active_tab == 'logging' else '' }}"
+         onclick="switchTab('logging')" href="/console?tab=logging">
+        <i class="nav-icon fas fa-sliders-h"></i>
+        <span>Log Levels</span>
+      </a>
       <a class="nav-item-link {{ 'active' if active_tab == 'system' else '' }}"
          onclick="switchTab('system')" href="/console?tab=system">
         <i class="nav-icon fas fa-terminal"></i>
@@ -298,6 +303,7 @@
         {% elif active_tab == 'memory' %}🧠 AI Memory
         {% elif active_tab == 'settings' %}⚙️ Settings
         {% elif active_tab == 'news' %}📰 News Agent
+        {% elif active_tab == 'logging' %}📋 Log Levels
         {% elif active_tab == 'system' %}🖥️ System
         {% endif %}
       </div>
@@ -660,60 +666,24 @@
               <div class="col-md-3">
                 <label class="form-label fw-semibold small">Điểm tin buổi sáng</label>
                 <input type="time" class="form-control" name="morning_time"
-                       value="{{ news_config.get('morning_time', '07:00') }}" required>
+                       value="{{ news_config.get('morning_time', '06:30') }}" required>
               </div>
               <div class="col-md-3">
                 <label class="form-label fw-semibold small">Điểm tin buổi chiều</label>
                 <input type="time" class="form-control" name="afternoon_time"
-                       value="{{ news_config.get('afternoon_time', '17:00') }}" required>
+                       value="{{ news_config.get('afternoon_time', '17:30') }}" required>
               </div>
               <div class="col-md-3">
-                <label class="form-label fw-semibold small">Chu kỳ quét tin nóng (phút)</label>
-                <input type="number" class="form-control" name="watch_interval_minutes"
-                       value="{{ news_config.get('watch_interval_minutes', 30) }}" min="5" max="1440" required>
-                <div class="form-text">Tối thiểu 5 phút</div>
+                <label class="form-label fw-semibold small">Điểm tin buổi tối</label>
+                <input type="time" class="form-control" name="evening_time"
+                       value="{{ news_config.get('evening_time', '20:00') }}" required>
               </div>
               <div class="col-md-3">
-                <label class="form-label fw-semibold small">Bài tối đa mỗi feed</label>
-                <input type="number" class="form-control" name="max_articles_per_feed"
-                       value="{{ news_config.get('max_articles_per_feed', 5) }}" min="1" max="20" required>
-              </div>
-            </div>
-          </div>
-
-          <!-- Thresholds -->
-          <div class="stat-card mb-3">
-            <div class="form-section-header"><i class="fas fa-tachometer-alt me-2"></i>Ngưỡng điểm</div>
-            <div class="row g-3">
-              <div class="col-md-4">
-                <label class="form-label fw-semibold small">
-                  Ngưỡng cảnh báo tin nóng: <b id="alertThresholdVal">{{ news_config.get('alert_threshold', 7) }}</b>/10
-                </label>
-                <input type="range" class="form-range" name="alert_threshold"
-                       min="1" max="10" step="1"
-                       value="{{ news_config.get('alert_threshold', 7) }}"
-                       oninput="document.getElementById('alertThresholdVal').textContent=this.value">
-                <div class="form-text">Bài báo ≥ ngưỡng này sẽ gửi cảnh báo ngay lập tức.</div>
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-semibold small">
-                  Ngưỡng đưa vào điểm tin: <b id="digestThresholdVal">{{ news_config.get('digest_threshold', 4) }}</b>/10
-                </label>
-                <input type="range" class="form-range" name="digest_threshold"
-                       min="1" max="10" step="1"
-                       value="{{ news_config.get('digest_threshold', 4) }}"
-                       oninput="document.getElementById('digestThresholdVal').textContent=this.value">
-                <div class="form-text">Bài báo ≥ ngưỡng này mới xuất hiện trong điểm tin sáng/chiều.</div>
-              </div>
-              <div class="col-md-4">
-                <label class="form-label fw-semibold small">
-                  Cool-down chủ đề (giờ): <b id="cooldownVal">{{ news_config.get('topic_cooldown_hours', 2) }}</b>h
-                </label>
-                <input type="range" class="form-range" name="topic_cooldown_hours"
-                       min="1" max="24" step="1"
-                       value="{{ news_config.get('topic_cooldown_hours', 2) }}"
-                       oninput="document.getElementById('cooldownVal').textContent=this.value">
-                <div class="form-text">Tối đa 3 cảnh báo/chủ đề trong khoảng thời gian này.</div>
+                <label class="form-label fw-semibold small">Model AI cho tin tức</label>
+                <input type="text" class="form-control" name="news_model"
+                       value="{{ news_config.get('news_model', 'models/gemini-flash-latest') }}"
+                       placeholder="models/gemini-flash-latest">
+                <div class="form-text">Mặc định: models/gemini-flash-latest</div>
               </div>
             </div>
           </div>
@@ -721,24 +691,22 @@
           <!-- Interest Profile -->
           <div class="stat-card mb-3">
             <div class="form-section-header"><i class="fas fa-star me-2"></i>Hồ sơ sở thích (Interest Profile)</div>
-            <div class="form-text mb-2">Điểm số được tính dựa trên mức độ phù hợp với hồ sơ này. Trọng số 1–10.</div>
+            <div class="form-text mb-2">Gemini sẽ ưu tiên chủ đề có trọng số cao hơn. Trọng số 1–10.</div>
             <div class="table-responsive">
               <table class="table table-sm os-table" id="interestTable">
                 <thead>
                   <tr>
-                    <th style="width:160px;">Danh mục</th>
-                    <th>Từ khóa (cách nhau bởi dấu phẩy)</th>
-                    <th style="width:120px;">Trọng số</th>
+                    <th>Danh mục</th>
+                    <th style="width:140px;">Trọng số (1–10)</th>
                     <th style="width:50px;"></th>
                   </tr>
                 </thead>
                 <tbody id="interestBody">
-                  {% for cat, data in news_config.get('interest_profile', {}).items() %}
+                  {% for cat, weight in news_config.get('interest_profile', {}).items() %}
                   <tr>
-                    <td><input type="text" class="form-control form-control-sm" value="{{ cat }}" placeholder="Tên danh mục"></td>
-                    <td><input type="text" class="form-control form-control-sm" value="{{ data.get('keywords', []) | join(', ') }}" placeholder="AI, chip, semiconductor..."></td>
+                    <td><input type="text" class="form-control form-control-sm" value="{{ cat }}" placeholder="Tên danh mục (vd: technology)"></td>
                     <td>
-                      <input type="number" class="form-control form-control-sm" value="{{ data.get('weight', 5) }}" min="1" max="10">
+                      <input type="number" class="form-control form-control-sm" value="{{ weight if weight is number else 5 }}" min="1" max="10">
                     </td>
                     <td>
                       <button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="this.closest('tr').remove()">×</button>
@@ -754,49 +722,39 @@
             <input type="hidden" name="interest_profile_json" id="interestProfileJson">
           </div>
 
-          <!-- RSS Feeds -->
-          <div class="stat-card mb-3">
-            <div class="form-section-header"><i class="fas fa-rss me-2"></i>Nguồn tin (RSS Feeds)</div>
-            <div class="table-responsive">
-              <table class="table table-sm os-table" id="feedsTable">
-                <thead>
-                  <tr>
-                    <th style="width:180px;">Tên nguồn</th>
-                    <th>URL</th>
-                    <th style="width:150px;">Danh mục</th>
-                    <th style="width:50px;"></th>
-                  </tr>
-                </thead>
-                <tbody id="feedsBody">
-                  {% for feed in news_config.get('feeds', []) %}
-                  <tr>
-                    <td><input type="text" class="form-control form-control-sm" value="{{ feed.get('name', '') }}" placeholder="VnExpress"></td>
-                    <td><input type="url" class="form-control form-control-sm" value="{{ feed.get('url', '') }}" placeholder="https://..."></td>
-                    <td>
-                      <select class="form-select form-select-sm">
-                        {% for cat in ['general', 'technology', 'automotive', 'sports', 'it_workforce', 'economics', 'economics_politics'] %}
-                        <option value="{{ cat }}" {{ 'selected' if feed.get('category') == cat else '' }}>{{ cat }}</option>
-                        {% endfor %}
-                      </select>
-                    </td>
-                    <td>
-                      <button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="this.closest('tr').remove()">×</button>
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addFeedRow()">
-              <i class="fas fa-plus me-1"></i>Thêm nguồn
-            </button>
-            <input type="hidden" name="feeds_json" id="feedsJson">
-          </div>
-
           <button type="submit" class="btn btn-primary btn-lg px-5 shadow-sm" onclick="serializeNewsForm()">
             <i class="fas fa-save me-2"></i>Lưu cài đặt News Agent
           </button>
         </form>
+      </div>
+
+      <!-- ====== TAB: LOG LEVELS ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'logging' else '' }}" id="tab-logging">
+        <div class="stat-card">
+          <div class="form-section-header"><i class="fas fa-sliders-h me-2"></i>Per-Module Log Levels</div>
+          <p class="text-muted small mb-3">Set the minimum log level for each application domain. Changes take effect immediately without restart.</p>
+          <form action="/console/save-log-levels" method="post">
+            <div class="row g-3">
+              {% for domain in log_domains %}
+              <div class="col-md-4 col-sm-6">
+                <label class="form-label fw-semibold text-capitalize" for="log_{{ domain }}">
+                  <i class="fas fa-tag me-1 text-secondary"></i>{{ domain }}
+                </label>
+                <select class="form-select form-select-sm" id="log_{{ domain }}" name="log_{{ domain }}">
+                  {% for lvl in ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] %}
+                  <option value="{{ lvl }}" {{ 'selected' if log_levels.get(domain) == lvl else '' }}>{{ lvl }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="mt-4">
+              <button type="submit" class="btn btn-primary px-5 shadow-sm">
+                <i class="fas fa-save me-2"></i>Lưu Log Levels
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
 
       <!-- ====== TAB: SYSTEM ====== -->
@@ -871,6 +829,7 @@
       memory:   '🧠 AI Memory',
       settings: '⚙️ Settings',
       news:     '📰 News Agent',
+      logging:  '📋 Log Levels',
       system:   '🖥️ System',
     };
     // Hide all panes
@@ -990,36 +949,12 @@
   {% endif %}
 
   // ---- News Agent helpers ----
-  function addFeedRow() {
-    const tbody = document.getElementById('feedsBody');
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td><input type="text" class="form-control form-control-sm" placeholder="VnExpress Tech" /></td>
-      <td><input type="text" class="form-control form-control-sm" placeholder="https://..." /></td>
-      <td>
-        <select class="form-select form-select-sm">
-          <option value="tech">tech</option>
-          <option value="business">business</option>
-          <option value="world">world</option>
-          <option value="science">science</option>
-          <option value="health">health</option>
-          <option value="sports">sports</option>
-          <option value="general">general</option>
-        </select>
-      </td>
-      <td class="text-center">
-        <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('tr').remove()">×</button>
-      </td>`;
-    tbody.appendChild(row);
-  }
-
   function addInterestRow() {
     const tbody = document.getElementById('interestBody');
     const row = document.createElement('tr');
     row.innerHTML = `
-      <td><input type="text" class="form-control form-control-sm" placeholder="Category name" /></td>
-      <td><input type="text" class="form-control form-control-sm" placeholder="keyword1, keyword2" /></td>
-      <td><input type="number" class="form-control form-control-sm" value="1.0" min="0" max="3" step="0.1" /></td>
+      <td><input type="text" class="form-control form-control-sm" placeholder="Tên danh mục (vd: technology)" /></td>
+      <td><input type="number" class="form-control form-control-sm" value="5" min="1" max="10" /></td>
       <td class="text-center">
         <button type="button" class="btn btn-outline-danger btn-sm" onclick="this.closest('tr').remove()">×</button>
       </td>`;
@@ -1027,30 +962,14 @@
   }
 
   function serializeNewsForm() {
-    // Serialize feeds table → JSON array
-    const feedRows = document.querySelectorAll('#feedsBody tr');
-    const feeds = [];
-    feedRows.forEach(row => {
-      const inputs = row.querySelectorAll('input, select');
-      const name = inputs[0] ? inputs[0].value.trim() : '';
-      const url  = inputs[1] ? inputs[1].value.trim() : '';
-      const cat  = inputs[2] ? inputs[2].value.trim() : 'general';
-      if (url) feeds.push({ name, url, category: cat });
-    });
-    document.getElementById('feedsJson').value = JSON.stringify(feeds);
-
-    // Serialize interest profile table → JSON object {category: {keywords: [...], weight: n}}
+    // Serialize interest profile table → flat JSON object {category: weight}
     const intRows = document.querySelectorAll('#interestBody tr');
     const profile = {};
     intRows.forEach(row => {
       const inputs = row.querySelectorAll('input');
-      const cat     = inputs[0] ? inputs[0].value.trim() : '';
-      const kwRaw   = inputs[1] ? inputs[1].value.trim() : '';
-      const weight  = inputs[2] ? parseFloat(inputs[2].value) || 1.0 : 1.0;
-      if (cat) {
-        const keywords = kwRaw.split(',').map(k => k.trim()).filter(k => k.length > 0);
-        profile[cat] = { keywords, weight };
-      }
+      const cat    = inputs[0] ? inputs[0].value.trim() : '';
+      const weight = inputs[1] ? (parseInt(inputs[1].value) || 5) : 5;
+      if (cat) profile[cat] = weight;
     });
     document.getElementById('interestProfileJson').value = JSON.stringify(profile);
   }

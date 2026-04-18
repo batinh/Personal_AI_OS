@@ -1,0 +1,30 @@
+[run]
+source = app
+omit =
+    app/routers/admin.py
+    app/routers/console.py
+    app/routers/dashboard.py
+    app/services/backup.py
+    app/services/weather.py
+    app/services/rag_memory.py
+    */migrations/*
+    */__init__.py
+
+[report]
+# Current baseline: 65%. Target: 80%.
+# Raise fail_under by 5% each quarter as coverage improves.
+fail_under = 60
+show_missing = True
+skip_covered = False
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    \.\.\.
+    pass
+
+[html]
+directory = reports/htmlcov
+
+[xml]
+output = reports/coverage.xml

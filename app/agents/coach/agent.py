@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import logging
 import unicodedata
 import pytz
 import uuid
@@ -18,7 +17,8 @@ from app.core.database import (
     get_training_loads, get_recent_runs_log, update_run_gcs_score,
     update_daily_plan, get_upcoming_plans,
     get_plan_for_date, update_plan_status, get_weekly_volume, get_runs_in_last_days,
-    insert_memory, get_all_active_memories, get_weekly_target # [ARCHITECTURE UPDATE] Using global deduplication
+    insert_memory, get_all_active_memories, get_weekly_target, # [ARCHITECTURE UPDATE] Using global deduplication
+    get_run_metrics_from_db,
 )
 from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
 from app.services.rag_memory import rag_db
@@ -34,13 +34,17 @@ from app.agents.coach.prompts import (
 from app.agents.coach.tools import (
     update_todays_plan, check_training_status, get_recent_workouts,
     search_long_term_memory, get_total_run_stats, set_workout_plan, set_actual_weekly_target,
-    get_run_full_details
+    get_run_full_details,
+    get_run_stream_csv, get_run_computed_metrics, get_metric_trend,
+    get_volume_for_week, get_volume_summary,
 )
+from app.agents.coach.metrics_engine import build_run_metrics_block
 
 # [ARCHITECTURE UPDATE] Import Strict Data Contracts
 from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("coach")
 client = genai.Client()
 
 # ==========================================
@@ -77,6 +81,11 @@ _TOOLS_READ_ONLY = [
     check_training_status,
     get_recent_workouts,
     get_run_full_details,
+    get_run_computed_metrics,
+    get_run_stream_csv,
+    get_metric_trend,
+    get_volume_for_week,
+    get_volume_summary,
     search_long_term_memory,
 ]
 
@@ -243,7 +252,7 @@ _PAST_CONTEXT_KEYWORDS = (
 )
 
 # --- FLOW 1: RUN ANALYSIS ---
-def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str, meta_data: dict, config: dict):
+def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
@@ -279,20 +288,23 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
     )
 
     meta_text = "\n".join([f"Km {s['km']}: {s['pace']:.2f} m/s | HR {int(s['hr'])}" for s in meta_data.get('splits', [])])
-    
-    # [HOTFIX]: Return csv_data and task_description from config    
+
+    # Load pre-computed metrics block (computed at webhook time, stored in DB)
+    raw_metrics = get_run_metrics_from_db(activity_id, user_id_str)
+    metrics_block = build_run_metrics_block(raw_metrics, config)
+
     # USE OMNICHANNEL BUILDER, OUTPUT FORMAT FOR STRAVA
     prompt = build_universal_run_analysis_prompt(
-        shared_context=shared_context, 
-        run_name=activity_name, 
-        meta_text=meta_text, 
+        shared_context=shared_context,
+        run_name=activity_name,
+        meta_text=meta_text,
         today_plan=plan_context,
         # Fetching from Admin Config
         task_desc=config.get("task_description", DEFAULT_ANALYSIS_TASK),
         analysis_req=config.get("analysis_requirements", DEFAULT_ANALYSIS_REQUIREMENTS),
-        report_structure=config.get("report_structure", DEFAULT_REPORT_STRUCTURE), # Added missing variable!
+        report_structure=config.get("report_structure", DEFAULT_REPORT_STRUCTURE),
         format_rules=config.get("output_format", UNIVERSAL_FORMAT_RULES),
-        csv_data=csv_data
+        metrics_block=metrics_block,
     )
 
     debug_log_prompt("DEBUG STRAVA PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")

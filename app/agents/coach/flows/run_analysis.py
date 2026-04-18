@@ -1,7 +1,6 @@
 import os
 from app.core.user_context import get_primary_user_id
 import json
-import logging
 import pytz
 from datetime import datetime
 
@@ -11,6 +10,7 @@ from google.genai import types
 from app.core.database import (
     get_plan_for_date, update_run_gcs_score,
     save_message, update_plan_status,
+    get_run_metrics_from_db,
 )
 from app.agents.coach.utils import (
     calculate_acwr, calculate_training_phase, debug_log_prompt,
@@ -23,14 +23,16 @@ from app.agents.coach.prompts import (
     DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES,
 )
 from app.agents.coach.tools import update_todays_plan, set_actual_weekly_target
+from app.agents.coach.metrics_engine import build_run_metrics_block
 from app.core.schemas import RunAnalysisResult
 from app.core.database import get_training_loads, get_weekly_volume
 
-logger = logging.getLogger("AI_COACH")
+from app.core.logging_conf import get_module_logger
+logger = get_module_logger("coach")
 client = genai.Client()
 
 
-def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str, meta_data: dict, config: dict):
+def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
@@ -72,7 +74,10 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
 
     meta_text = "\n".join([f"Km {s['km']}: {s['pace']:.2f} m/s | HR {int(s['hr'])}" for s in meta_data.get('splits', [])])
 
-    # [HOTFIX]: Return csv_data and task_description from config
+    # Load pre-computed metrics block (computed at webhook time, stored in DB)
+    raw_metrics = get_run_metrics_from_db(activity_id, user_id_str)
+    metrics_block = build_run_metrics_block(raw_metrics, config)
+
     # USE OMNICHANNEL BUILDER, OUTPUT FORMAT FOR STRAVA
     prompt = build_universal_run_analysis_prompt(
         shared_context=shared_context,
@@ -84,7 +89,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, csv_data: str,
         analysis_req=config.get("analysis_requirements", DEFAULT_ANALYSIS_REQUIREMENTS),
         report_structure=config.get("report_structure", DEFAULT_REPORT_STRUCTURE),
         format_rules=config.get("output_format", UNIVERSAL_FORMAT_RULES),
-        csv_data=csv_data
+        metrics_block=metrics_block,
     )
 
     debug_log_prompt("DEBUG STRAVA PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")

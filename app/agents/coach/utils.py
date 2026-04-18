@@ -1,5 +1,4 @@
 import numpy as np
-import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -8,7 +7,9 @@ import math
 import os
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from app.core.logging_conf import get_module_logger
+
+logger = get_module_logger("coach")
 
 def calculate_trimp(duration_minutes: float, avg_hr: float, max_hr: int = 185, rest_hr: int = 55, gender: str = "male") -> dict:
     """
@@ -374,6 +375,28 @@ def send_message_with_retry(chat_session, message, max_retries=3):
                     logger.warning(f"[API RESILIENCE] MALFORMED_RESPONSE from Gemini, response truncated. Retrying... (Attempt {attempt + 1}/{max_retries})")
                     continue
                 logger.error("[API RESILIENCE] MALFORMED_RESPONSE persists after all retries.")
+
+            # DEBUG: when enabled, log request+response previews for prompt review
+            try:
+                val = os.getenv("DEBUG_PROMPTS")
+                debug_enabled = val is not None and (val.strip() == "" or val.strip().lower() in ("1", "true", "yes", "on"))
+                if debug_enabled:
+                    req_preview = (message or "")[:2000]
+                    resp_text = getattr(response, "text", None)
+                    resp_preview = (resp_text or "")[:2000]
+                    # candidates preview if available
+                    try:
+                        cand_preview = None
+                        if getattr(response, "candidates", None):
+                            cand_preview = str(response.candidates[0])[:1000]
+                    except Exception:
+                        cand_preview = None
+                    logger.debug(f"[API DEBUG] Request preview={req_preview!r}")
+                    logger.debug(f"[API DEBUG] Response preview={resp_preview!r}")
+                    if cand_preview:
+                        logger.debug(f"[API DEBUG] Candidate preview={cand_preview!r}")
+            except Exception:
+                logger.debug("[API DEBUG] Failed to build request/response preview")
 
             return response
         except Exception as e:

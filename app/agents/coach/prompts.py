@@ -353,22 +353,24 @@ Lưu ý: Nếu VĐV đang có chấn thương, BẮT BUỘC phải nhắc nhở 
 """
 
 def build_universal_run_analysis_prompt(
-    shared_context: str, 
-    run_name: str, 
-    meta_text: str, 
-    today_plan: str, 
-    task_desc: str, 
-    analysis_req: str, 
-    report_structure: str, 
-    format_rules: str, 
-    csv_data: str
+    shared_context: str,
+    run_name: str,
+    meta_text: str,
+    today_plan: str,
+    task_desc: str,
+    analysis_req: str,
+    report_structure: str,
+    format_rules: str,
+    metrics_block: str = "",
 ) -> str:
     """Flow 3: Omni-channel Run Analysis"""
+    metrics_section = f"\n[RUNNING SCIENCE METRICS]\n{metrics_block}" if metrics_block else ""
     return f"""
 {shared_context}
 
 [BÀI TẬP VỪA HOÀN THÀNH: {run_name}]
 - Tóm tắt Splits & HR: \n{meta_text}
+{metrics_section}
 
 [ĐỐI CHIẾU GIÁO ÁN]
 {today_plan}
@@ -381,9 +383,6 @@ def build_universal_run_analysis_prompt(
 {report_structure}
 
 {format_rules}
-
-[RAW DATA - THÔNG SỐ CHI TIẾT TỪNG SPLIT/GIÂY]
-{csv_data}
 """
 
 # ==========================================

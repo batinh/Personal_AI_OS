@@ -51,6 +51,8 @@ _PATCHES = [
     "app.agents.coach.flows.run_analysis.update_plan_status",
     "app.agents.coach.flows.run_analysis.send_message_with_retry",
     "app.agents.coach.flows.run_analysis.client",
+    "app.agents.coach.flows.run_analysis.get_run_metrics_from_db",
+    "app.agents.coach.flows.run_analysis.build_run_metrics_block",
 ]
 
 
@@ -99,7 +101,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         mocks, patchers = self._apply_patches(analysis_text="Great run!", gcs_score=8)
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            result = analyze_run_with_gemini("act_1", "Morning 10K", "csv", _make_meta_data(), _make_config())
+            result = analyze_run_with_gemini("act_1", "Morning 10K", _make_meta_data(), _make_config())
             self.assertEqual(result, "Great run!")
         finally:
             self._stop(patchers)
@@ -108,7 +110,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         mocks, patchers = self._apply_patches(gcs_score=7)
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            analyze_run_with_gemini("act_1", "Morning 10K", "csv", _make_meta_data(), _make_config())
+            analyze_run_with_gemini("act_1", "Morning 10K", _make_meta_data(), _make_config())
             mocks["update_run_gcs_score"].assert_called_once_with("act_1", "123456", 7)
         finally:
             self._stop(patchers)
@@ -117,7 +119,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         mocks, patchers = self._apply_patches(analysis_text="Nice pace!")
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            analyze_run_with_gemini("act_1", "Morning 10K", "csv", _make_meta_data(), _make_config())
+            analyze_run_with_gemini("act_1", "Morning 10K", _make_meta_data(), _make_config())
             mocks["save_message"].assert_called_once()
             call_args = mocks["save_message"].call_args[0]
             self.assertEqual(call_args[0], "123456")
@@ -131,7 +133,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         mocks, patchers = self._apply_patches(today_plan=today_plan)
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            analyze_run_with_gemini("act_1", "Morning 10K", "csv", _make_meta_data(), _make_config())
+            analyze_run_with_gemini("act_1", "Morning 10K", _make_meta_data(), _make_config())
             mocks["update_plan_status"].assert_called_once_with("123456", "2026-04-10", "Completed")
         finally:
             self._stop(patchers)
@@ -140,7 +142,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         mocks, patchers = self._apply_patches(today_plan=None)
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            analyze_run_with_gemini("act_1", "Morning 10K", "csv", _make_meta_data(), _make_config())
+            analyze_run_with_gemini("act_1", "Morning 10K", _make_meta_data(), _make_config())
             mocks["update_plan_status"].assert_not_called()
         finally:
             self._stop(patchers)
@@ -150,7 +152,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         mocks["send_message_with_retry"].side_effect = Exception("Gemini API error")
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            result = analyze_run_with_gemini("act_1", "Morning 10K", "csv", _make_meta_data(), _make_config())
+            result = analyze_run_with_gemini("act_1", "Morning 10K", _make_meta_data(), _make_config())
             self.assertIsNone(result)
         finally:
             self._stop(patchers)
@@ -160,7 +162,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         mocks["send_message_with_retry"].side_effect = Exception("timeout")
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            analyze_run_with_gemini("act_1", "Morning 10K", "csv", _make_meta_data(), _make_config())
+            analyze_run_with_gemini("act_1", "Morning 10K", _make_meta_data(), _make_config())
             mocks["update_run_gcs_score"].assert_not_called()
         finally:
             self._stop(patchers)
@@ -169,7 +171,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         mocks, patchers = self._apply_patches(analysis_text="")
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            result = analyze_run_with_gemini("act_1", "Morning 10K", "csv", _make_meta_data(), _make_config())
+            result = analyze_run_with_gemini("act_1", "Morning 10K", _make_meta_data(), _make_config())
             self.assertEqual(result, "")
         finally:
             self._stop(patchers)
@@ -179,7 +181,7 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         meta = {"splits": []}  # No start_date_local
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
-            result = analyze_run_with_gemini("act_1", "Morning 10K", "csv", meta, _make_config())
+            result = analyze_run_with_gemini("act_1", "Morning 10K", meta, _make_config())
             # Should not raise; get_plan_for_date called with some date string
             mocks["get_plan_for_date"].assert_called_once()
             date_arg = mocks["get_plan_for_date"].call_args[0][1]
