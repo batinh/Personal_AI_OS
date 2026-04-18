@@ -22,8 +22,17 @@ _FAKE_RAG_DB = MagicMock()
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 def _make_response(text: str):
+    from unittest.mock import MagicMock
+    part = MagicMock()
+    part.text = text
+    part.thought = False
+    content = MagicMock()
+    content.parts = [part]
+    candidate = MagicMock()
+    candidate.content = content
     r = MagicMock()
     r.text = text
+    r.candidates = [candidate]
     return r
 
 

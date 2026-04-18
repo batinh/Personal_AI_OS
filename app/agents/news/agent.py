@@ -110,62 +110,9 @@ def _session_header(session: str, date_str: str) -> str:
 # GEMINI CALL WRAPPERS
 # ==========================================
 
-def _extract_text(response) -> str | None:
-    """
-    Extract full text from a Gemini response, excluding thinking/reasoning parts.
-
-    Gemini thinking models (e.g. gemini-flash-latest, gemini-2.0-flash-thinking)
-    include an internal chain-of-thought before the final answer. These parts have
-    ``thought=True`` on the Part object and must never be forwarded to users.
-
-    Also handles the AFC / post-search pattern: when google_search executes, the
-    final response may have multiple text parts (pre-search stub + grounded answer).
-    We join only the non-thinking text parts.
-    """
-    try:
-        candidates = response.candidates or []
-        if not candidates:
-            return response.text or None
-        parts = getattr(candidates[0].content, "parts", None) or []
-        texts = [
-            p.text for p in parts
-            if getattr(p, "text", None) and not getattr(p, "thought", False)
-        ]
-        return "".join(texts).strip() or None
-    except Exception:
-        # Fallback: let SDK handle it
-        return response.text or None
-
+from app.core.gemini_utils import extract_text as _extract_text, strip_thought_preamble as _strip_thought_preamble
 
 _DEBUG_NEWS = os.getenv("DEBUG_NEWS", "").lower() in ("1", "true", "yes")
-
-# Regex that matches a "thought" preamble Gemini thinking models sometimes emit
-# when the thought=True attribute is absent or when SDK fallback is used.
-# Pattern: text starts with "thought\n" or "thought " (case-insensitive) followed
-# by at least one Unicode word character.
-import re as _re
-_THOUGHT_PREFIX_RE = _re.compile(r"^thought[\n\r ]\w", _re.IGNORECASE)
-
-
-def _strip_thought_preamble(text: str) -> str | None:
-    """Remove a raw 'thought\\n...' preamble that slipped through thought=False filtering.
-
-    Gemini thinking models occasionally emit the chain-of-thought as plain text
-    without setting thought=True on the Part.  The real answer always follows the
-    preamble, separated from it by the first HTML tag (e.g. <b>, 📊).  We look
-    for that boundary and strip everything before it.
-
-    Returns None when the entire text appears to be thinking (no HTML or emoji
-    anchor found), so the caller can treat it as an empty/failed response.
-    """
-    if not _THOUGHT_PREFIX_RE.match(text):
-        return text  # no preamble detected
-
-    # Find the first HTML tag or news-emoji that marks the real answer
-    anchor = _re.search(r'(<[bBiIaA][\s>]|📊|📰|🔍|📈|✅)', text)
-    if not anchor:
-        return None  # all thinking, no answer
-    return text[anchor.start():].strip() or None
 
 _DEFAULT_MODEL = "models/gemini-2.5-flash"
 

@@ -12,6 +12,7 @@ from google.genai import types
 # [REFACTOR] Removed Pydantic models from here to comply with Single Responsibility Principle
 
 from app.core.notification import send_telegram_msg, send_typing_action
+from app.core.gemini_utils import extract_text as _extract_gemini_text
 from app.core.database import (
     save_message, load_history_for_gemini, clear_history,
     get_training_loads, get_recent_runs_log, update_run_gcs_score,
@@ -429,7 +430,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
             )
         )
         response = send_message_with_retry(chat_session, prompt)
-        reply = response.text or "⚠️ Coach Dyno không thể Briefing lúc này."
+        reply = _extract_gemini_text(response) or "⚠️ Coach Dyno không thể Briefing lúc này."
         
         if chat_id:
             send_telegram_msg(chat_id, reply)
@@ -576,7 +577,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             )
         )
         response = send_message_with_retry(chat_session, formatted_history[-1]["parts"][0]["text"])
-        reply = response.text or "⚠️ Coach Dyno không thể trả lời lúc này."
+        reply = _extract_gemini_text(response) or "⚠️ Coach Dyno không thể trả lời lúc này."
         
         save_message(chat_id, "user", text)
         save_message(chat_id, "model", reply)
@@ -655,7 +656,7 @@ def generate_weekly_reflection(config: dict):
         
         # Re-use Resilience Pattern
         response = send_message_with_retry(chat_session, prompt)
-        reflection_text = response.text or "⚠️ Coach Dyno encountered an error generating the reflection."
+        reflection_text = _extract_gemini_text(response) or "⚠️ Coach Dyno encountered an error generating the reflection."
 
     # 4. Inject Memory into RAG (Long-term autonomous memory)
         week_str = now.strftime('%Y-%m-%d')

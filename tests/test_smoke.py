@@ -29,6 +29,9 @@ class TestCoreImports(unittest.TestCase):
     def test_user_context_importable(self):
         from app.core.user_context import get_primary_user_id  # noqa: F401
 
+    def test_gemini_utils_importable(self):
+        from app.core.gemini_utils import extract_text, strip_thought_preamble  # noqa: F401
+
 
 class TestRouterImports(unittest.TestCase):
     """All routers must be importable — FastAPI registers them at startup."""
