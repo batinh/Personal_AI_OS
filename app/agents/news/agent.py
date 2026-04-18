@@ -167,16 +167,28 @@ def _strip_thought_preamble(text: str) -> str | None:
         return None  # all thinking, no answer
     return text[anchor.start():].strip() or None
 
-# Default model — Gemini 1.5 Pro uses forced retrieval grounding (dynamic_threshold=0),
-# guaranteeing a web search on every call regardless of model confidence.
-# Gemini 2.0 Flash uses the agentic google_search tool but the model decides whether to search,
-# which is unreliable for generic queries.
-_DEFAULT_MODEL = "models/gemini-1.5-pro"
+# Default model — gemini-pro-latest (Gemini 1.5 Pro stable) uses forced retrieval
+# grounding (dynamic_threshold=0.0), guaranteeing a web search on every call.
+# Gemini 2.0+ uses the agentic google_search tool where the model decides whether
+# to search — unreliable for generic queries like "hôm nay có gì mới?".
+_DEFAULT_MODEL = "models/gemini-pro-latest"
 
 
 def _is_gemini_15(model: str) -> bool:
-    """Return True for Gemini 1.5 family models which support forced retrieval grounding."""
-    return "1.5" in model
+    """Return True for models that support forced retrieval grounding via google_search_retrieval.
+
+    Gemini 1.5 family and classic gemini-pro models support the forced retrieval API
+    (dynamic_threshold=0.0 guarantees search on every call).
+
+    Gemini 2.0+ family uses the agentic google_search tool — the model decides
+    whether to invoke search (unreliable for generic news queries).
+
+    Detection heuristic: 2.0+ models contain "2.0" or are "gemini-flash-latest" /
+    "gemini-2.0-flash" patterns. Everything else uses forced retrieval.
+    """
+    m = model.lower()
+    _agentic_patterns = ("2.0", "gemini-flash-latest", "gemini-2.0")
+    return not any(p in m for p in _agentic_patterns)
 
 
 def _build_search_tool(model: str) -> list:
@@ -336,7 +348,7 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
     prompt = build_topic_prompt(topic_name, emoji, session, date_str)
 
     logger.info(f"[NEWS-TOPIC] Fetching '{topic_name}'...")
-    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
+    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=3000)
 
     if not block:
         logger.warning(f"[NEWS-TOPIC] No result for '{topic_name}'. Skipping.")
@@ -458,7 +470,7 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     system_inst = build_on_demand_system_instruction()
     prompt = build_on_demand_prompt(query, date_str)
 
-    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
+    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2500)
 
     if not reply or len(reply) < 100:
         logger.warning(
