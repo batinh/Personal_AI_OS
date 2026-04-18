@@ -108,7 +108,10 @@ fi
 
 # Docker logs error check (last 50 lines)
 TOTAL=$((TOTAL + 1))
-ERROR_COUNT=$(docker logs airunningcoach --tail 50 2>&1 | grep -ci 'error\|traceback\|exception' || echo "0")
+# grep -c always prints a count (even "0"), so || echo "0" adds a duplicate line.
+# Use || true to suppress the non-zero exit when no matches, capture the count directly.
+ERROR_COUNT=$(docker logs airunningcoach --tail 50 2>&1 | { grep -ci 'error\|traceback\|exception' || true; })
+ERROR_COUNT=${ERROR_COUNT:-0}
 if [ "${ERROR_COUNT:-0}" -eq 0 ]; then
     echo -e "  ${GREEN}PASS${NC} No errors in recent logs"
     PASS=$((PASS + 1))
