@@ -4,15 +4,19 @@
 
 ## Commands
 ```bash
+python -m pytest tests/test_smoke.py -v        # smoke only — run FIRST (< 2s)
 python -m pytest tests/ -q                      # full suite (gate before commit — 0 failures)
-python -m pytest tests/test_<module>.py -v     # targeted (run this first)
+python -m pytest tests/test_<module>.py -v     # targeted module
 python -m pytest tests/ --cov=app --cov-report=html
 docker compose up --build
-bash scripts/deploy-t440.sh              # T440: git pull + rebuild + health check
-bash scripts/deploy-t440.sh --skip-pull # rebuild only
+bash scripts/pre-deploy-check.sh         # local gate: pytest + config + compose syntax
+bash scripts/deploy-t440.sh              # T440: backup image + git pull + rebuild + health check
+bash scripts/deploy-t440.sh --skip-pull # rebuild only (no git pull)
+bash scripts/rollback-t440.sh            # restore airunningcoach:backup image
+bash scripts/install-hooks.sh           # one-time: install pre-commit hooks (smoke + ruff + black)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-Before commit: `docs/pragmatic_review_checklist.md`. New feature: `docs/feature_design_template.md`. Bug or feature: `docs/ISSUES.md`.
+Before commit: `docs/DELIVERY_CHECKLIST.md` (typed by change type). Pragmatic review: `docs/pragmatic_review_checklist.md`. New feature: `docs/feature_design_template.md`. Bug or feature: `docs/ISSUES.md`.
 
 ## Docker Log Debug Toolkit
 `scripts/fetch-logs.sh` — fetch và filter log từ container `airunningcoach`.

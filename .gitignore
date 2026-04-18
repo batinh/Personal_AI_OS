@@ -50,6 +50,9 @@ available_models_*.json
 .coverage
 reports/
 
+# --- Deploy audit log (local only) ---
+deployments.log
+
 # --- Local utility scripts ---
 get_full_context.py
 
