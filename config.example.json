@@ -46,7 +46,7 @@
     },
     "news_agent": {
         "enabled": true,
-        "news_model": "models/gemini-1.5-pro-latest",
+        "news_model": "models/gemini-2.5-flash",
         "morning_time": "06:30",
         "afternoon_time": "17:30",
         "evening_time": "20:00",

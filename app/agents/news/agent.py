@@ -167,11 +167,7 @@ def _strip_thought_preamble(text: str) -> str | None:
         return None  # all thinking, no answer
     return text[anchor.start():].strip() or None
 
-# Default model — gemini-pro-latest (Gemini 1.5 Pro stable) uses forced retrieval
-# grounding (dynamic_threshold=0.0), guaranteeing a web search on every call.
-# Gemini 2.0+ uses the agentic google_search tool where the model decides whether
-# to search — unreliable for generic queries like "hôm nay có gì mới?".
-_DEFAULT_MODEL = "models/gemini-1.5-pro-latest"
+_DEFAULT_MODEL = "models/gemini-2.5-flash"
 
 
 def _is_gemini_15(model: str) -> bool:
@@ -237,12 +233,6 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
         tools=tools,
         max_output_tokens=max_tokens,
     )
-    # AFC disable only needed for 2.0+ agentic tool — 1.5 retrieval doesn't use AFC
-    if not _is_gemini_15(model):
-        config_kwargs["automatic_function_calling"] = types.AutomaticFunctionCallingConfig(
-            disable=True
-        )
-
     try:
         response = client.models.generate_content(
             model=model,
