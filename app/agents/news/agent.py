@@ -171,24 +171,19 @@ def _strip_thought_preamble(text: str) -> str | None:
 # grounding (dynamic_threshold=0.0), guaranteeing a web search on every call.
 # Gemini 2.0+ uses the agentic google_search tool where the model decides whether
 # to search — unreliable for generic queries like "hôm nay có gì mới?".
-_DEFAULT_MODEL = "models/gemini-pro-latest"
+_DEFAULT_MODEL = "models/gemini-1.5-pro-latest"
 
 
 def _is_gemini_15(model: str) -> bool:
-    """Return True for models that support forced retrieval grounding via google_search_retrieval.
+    """Return True only for Gemini 1.5 models, which support google_search_retrieval with forced threshold.
 
-    Gemini 1.5 family and classic gemini-pro models support the forced retrieval API
-    (dynamic_threshold=0.0 guarantees search on every call).
+    google_search_retrieval with dynamic_threshold=0.0 guarantees a live web search on
+    every call — the model cannot skip it. Only the 1.5 family supports this API.
 
-    Gemini 2.0+ family uses the agentic google_search tool — the model decides
-    whether to invoke search (unreliable for generic news queries).
-
-    Detection heuristic: 2.0+ models contain "2.0" or are "gemini-flash-latest" /
-    "gemini-2.0-flash" patterns. Everything else uses forced retrieval.
+    All other models (2.0+, gemini-pro-latest, gemini-flash-latest, etc.) use the
+    agentic google_search tool where the model decides whether to search.
     """
-    m = model.lower()
-    _agentic_patterns = ("2.0", "gemini-flash-latest", "gemini-2.0")
-    return not any(p in m for p in _agentic_patterns)
+    return "1.5" in model.lower()
 
 
 def _build_search_tool(model: str) -> list:
