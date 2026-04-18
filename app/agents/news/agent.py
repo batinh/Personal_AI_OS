@@ -336,7 +336,7 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
     prompt = build_topic_prompt(topic_name, emoji, session, date_str)
 
     logger.info(f"[NEWS-TOPIC] Fetching '{topic_name}'...")
-    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
+    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=3000)
 
     if not block:
         logger.warning(f"[NEWS-TOPIC] No result for '{topic_name}'. Skipping.")
@@ -458,7 +458,7 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     system_inst = build_on_demand_system_instruction()
     prompt = build_on_demand_prompt(query, date_str)
 
-    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
+    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2500)
 
     if not reply or len(reply) < 100:
         logger.warning(
