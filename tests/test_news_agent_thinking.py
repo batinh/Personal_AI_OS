@@ -200,10 +200,12 @@ class TestCallGeminiWithSearch(unittest.TestCase):
     """Verify that thinking parts never reach the return value of _call_gemini_with_search."""
 
     def _invoke(self, response: MagicMock, model: str = "models/gemini-1.5-pro") -> str | None:
+        """Returns only the text portion of the (text, urls) tuple for backward-compat assertions."""
         with patch("app.agents.news.agent.client") as mock_client:
             mock_client.models.generate_content.return_value = response
             from app.agents.news.agent import _call_gemini_with_search
-            return _call_gemini_with_search(model, "system", "user prompt")
+            text, _urls = _call_gemini_with_search(model, "system", "user prompt")
+            return text
 
     def test_clean_response_returned(self):
         part = _make_part("<b>NEWS</b> Real grounded content here with 200+ chars " + "x" * 160)
@@ -244,8 +246,9 @@ class TestCallGeminiWithSearch(unittest.TestCase):
         with patch("app.agents.news.agent.client") as mock_client:
             mock_client.models.generate_content.side_effect = RuntimeError("quota exceeded")
             from app.agents.news.agent import _call_gemini_with_search
-            result = _call_gemini_with_search("models/gemini-1.5-pro", "sys", "prompt")
-        self.assertIsNone(result)
+            text, urls = _call_gemini_with_search("models/gemini-1.5-pro", "sys", "prompt")
+        self.assertIsNone(text)
+        self.assertEqual(urls, [])
 
 
 # ─────────────────────────────────────────────────────────────────────────────

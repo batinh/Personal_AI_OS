@@ -110,61 +110,213 @@ def _session_header(session: str, date_str: str) -> str:
 # GEMINI CALL WRAPPERS
 # ==========================================
 
+import re
+
 from app.core.gemini_utils import extract_text as _extract_text, strip_thought_preamble as _strip_thought_preamble
 
 _DEBUG_NEWS = os.getenv("DEBUG_NEWS", "").lower() in ("1", "true", "yes")
 
 _DEFAULT_MODEL = "models/gemini-2.5-flash"
+_MAX_TELEGRAM_CHARS = 3500
+
+_SEARCH_TOOL = [types.Tool(google_search=types.GoogleSearch())]
 
 
-def _is_gemini_15(model: str) -> bool:
-    """Return True only for Gemini 1.5 models, which support google_search_retrieval with forced threshold.
+def _extract_grounding_urls(candidates: list) -> list[tuple[str, str]]:
+    """Extract (title, uri) pairs from grounding_metadata.grounding_chunks. Deduped, ordered."""
+    seen: set[str] = set()
+    urls: list[tuple[str, str]] = []
+    for cand in candidates:
+        meta = getattr(cand, "grounding_metadata", None)
+        chunks = getattr(meta, "grounding_chunks", None) or []
+        for chunk in chunks:
+            web = getattr(chunk, "web", None)
+            if not web:
+                continue
+            uri = getattr(web, "uri", "") or ""
+            title = getattr(web, "title", "") or ""
+            if uri and uri not in seen:
+                seen.add(uri)
+                urls.append((title, uri))
+    return urls
 
-    google_search_retrieval with dynamic_threshold=0.0 guarantees a live web search on
-    every call — the model cannot skip it. Only the 1.5 family supports this API.
 
-    All other models (2.0+, gemini-pro-latest, gemini-flash-latest, etc.) use the
-    agentic google_search tool where the model decides whether to search.
+_DOC_THEM_RE = re.compile(r'<a\s+href=["\'][^"\']*["\']>\s*Đọc thêm\s*</a>', re.IGNORECASE)
+
+
+def _inject_links_by_article(text: str, candidates: list) -> tuple[str, int]:
     """
-    return "1.5" in model.lower()
+    Post-process model output to inject per-article grounding URLs inline.
 
+    Finds each 📰 article block and inserts the relevant grounding URL after the
+    article's content. Uses grounding_supports segment.text matching for accuracy;
+    falls back to sequential chunk order if supports are unavailable or don't match.
 
-def _build_search_tool(model: str) -> list:
+    Returns (updated_text, count_injected).
     """
-    Return the correct grounding tool config for the given model.
+    if not text:
+        return text, 0
 
-    Gemini 1.5: google_search_retrieval with dynamic_threshold=0.0 forces a web
-    search on every call — the model cannot skip it regardless of confidence.
+    chunks: list = []
+    supports: list = []
+    for cand in candidates:
+        meta = getattr(cand, "grounding_metadata", None)
+        if not meta:
+            continue
+        c = list(getattr(meta, "grounding_chunks", None) or [])
+        if c:
+            chunks = c
+            supports = list(getattr(meta, "grounding_supports", None) or [])
+            break
 
-    Gemini 2.0+: agentic google_search where the model decides whether to invoke
-    search. AFC is disabled so the server handles it transparently.
+    if not chunks:
+        return text, 0
+
+    def _chunk_uri(idx: int) -> str:
+        if 0 <= idx < len(chunks):
+            web = getattr(chunks[idx], "web", None)
+            return getattr(web, "uri", "") or ""
+        return ""
+
+    # Sequential deduped URL fallback
+    seen: set[str] = set()
+    seq_urls: list[str] = []
+    for chunk in chunks:
+        web = getattr(chunk, "web", None)
+        uri = getattr(web, "uri", "") or ""
+        if uri and uri not in seen:
+            seen.add(uri)
+            seq_urls.append(uri)
+
+    # Strip wrong/homepage URLs the model may have written
+    clean = _DOC_THEM_RE.sub("", text)
+
+    art_re = re.compile(r'📰')
+
+    def _build_ranges(src: str) -> list[tuple[int, int]]:
+        starts = [m.start() for m in art_re.finditer(src)]
+        if not starts:
+            return []
+        ranges = []
+        for i, s in enumerate(starts):
+            end = starts[i + 1] if i + 1 < len(starts) else len(src)
+            trend_m = re.search(r'\n📈', src[s:end])
+            if trend_m:
+                end = s + trend_m.start()
+            ranges.append((s, end))
+        return ranges
+
+    orig_ranges = _build_ranges(text)
+    clean_ranges = _build_ranges(clean)
+
+    if not orig_ranges or len(orig_ranges) != len(clean_ranges):
+        return clean, 0
+
+    def _url_by_segment_text(art_text: str) -> str:
+        """Find URL whose support segment.text appears inside this article."""
+        for sup in supports:
+            seg = getattr(sup, "segment", None)
+            seg_text = getattr(seg, "text", "") or ""
+            if seg_text and seg_text in art_text:
+                idxs = getattr(sup, "grounding_chunk_indices", []) or []
+                for idx in idxs:
+                    uri = _chunk_uri(idx)
+                    if uri:
+                        return uri
+        return ""
+
+    n = len(orig_ranges)
+    article_urls: list[str] = []
+    for i in range(n):
+        orig_art_text = text[orig_ranges[i][0]:orig_ranges[i][1]]
+        url = _url_by_segment_text(orig_art_text) if supports else ""
+        if not url and i < len(seq_urls):
+            url = seq_urls[i]
+        article_urls.append(url)
+
+    # Insert links in reverse order so earlier positions stay valid
+    result = clean
+    injected = 0
+    for i in range(n - 1, -1, -1):
+        url = article_urls[i]
+        if not url:
+            continue
+        art_start, art_end = clean_ranges[i]
+        content = result[art_start:art_end]
+        insert_pos = art_start + len(content.rstrip())
+        result = result[:insert_pos] + f'\n<a href="{url}">Đọc thêm</a>' + result[insert_pos:]
+        injected += 1
+
+    return result, injected
+
+
+def _inject_grounding_urls_into_text(text: str, grounding_urls: list[tuple[str, str]]) -> tuple[str, int]:
     """
-    if _is_gemini_15(model):
-        return [
-            types.Tool(
-                google_search_retrieval=types.GoogleSearchRetrieval(
-                    dynamic_retrieval_config=types.DynamicRetrievalConfig(
-                        mode=types.DynamicRetrievalConfigMode.MODE_DYNAMIC,
-                        dynamic_threshold=0.0,
-                    )
-                )
-            )
-        ]
-    return [types.Tool(google_search=types.GoogleSearch())]
+    Inject grounding URLs sequentially into 📰 article blocks in the model output.
 
+    Uses pre-extracted (title, uri) URL list. Falls back to sequential assignment
+    when per-article matching via grounding_supports is unavailable.
 
-def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_tokens: int = 1500) -> str | None:
+    Returns (updated_text, count_injected).
     """
-    Call Gemini with guaranteed web search grounding.
+    if not text or not grounding_urls:
+        return text, 0
 
-    For Gemini 1.5 models (default): uses google_search_retrieval with
-    dynamic_threshold=0.0 which forces a live web search on every request.
+    seq_urls = [uri for _, uri in grounding_urls if uri]
+    if not seq_urls:
+        return text, 0
 
-    For Gemini 2.0+ models: uses the agentic google_search tool with AFC
-    disabled. The model decides whether to search — less reliable for generic
-    queries but required by the 2.0 API.
+    clean = _DOC_THEM_RE.sub("", text)
 
-    Set DEBUG_NEWS=true to log the full prompt and response part structure.
+    art_re = re.compile(r'📰')
+    starts = [m.start() for m in art_re.finditer(clean)]
+    if not starts:
+        return clean, 0
+
+    ranges: list[tuple[int, int]] = []
+    for i, s in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(clean)
+        trend_m = re.search(r'\n📈', clean[s:end])
+        if trend_m:
+            end = s + trend_m.start()
+        ranges.append((s, end))
+
+    result = clean
+    injected = 0
+    for i in range(len(ranges) - 1, -1, -1):
+        if i >= len(seq_urls):
+            continue
+        url = seq_urls[i]
+        art_start, art_end = ranges[i]
+        # recalculate position since we're modifying result in-place (reverse order)
+        content = result[art_start:art_end]
+        insert_pos = art_start + len(content.rstrip())
+        result = result[:insert_pos] + f'\n<a href="{url}">Đọc thêm</a>' + result[insert_pos:]
+        injected += 1
+
+    return result, injected
+
+
+def _build_sources_block(urls: list[tuple[str, str]], max_sources: int = 3) -> str:
+    """Fallback sources block when no 📰 markers found in model output."""
+    if not urls:
+        return ""
+    lines = ["📎 <b>Nguồn:</b>"]
+    for title, uri in urls[:max_sources]:
+        label = (title.strip() or uri)[:60]
+        lines.append(f'• <a href="{uri}">{label}</a>')
+    return "\n".join(lines)
+
+
+def _call_gemini_with_search(
+    model: str, system_inst: str, prompt: str, max_tokens: int = 1500
+) -> tuple[str | None, list[tuple[str, str]]]:
+    """
+    Call Gemini with google_search grounding.
+
+    Returns:
+        (text, grounding_urls) where grounding_urls is a list of (title, uri) tuples.
+        Set DEBUG_NEWS=true to log prompts and response parts.
     """
     if _DEBUG_NEWS:
         logger.debug(
@@ -174,11 +326,11 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
             prompt,
         )
 
-    tools = _build_search_tool(model)
     config_kwargs: dict = dict(
         system_instruction=system_inst,
-        tools=tools,
+        tools=_SEARCH_TOOL,
         max_output_tokens=max_tokens,
+        thinking_config=types.ThinkingConfig(thinking_budget=1024),
     )
     try:
         response = client.models.generate_content(
@@ -208,6 +360,11 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
                 )
 
         candidates = response.candidates or []
+        for cand in candidates:
+            fr = getattr(cand, "finish_reason", None)
+            if str(fr) in ("FinishReason.MAX_TOKENS", "MAX_TOKENS"):
+                logger.warning("[NEWS] finish_reason=MAX_TOKENS — response may be truncated. Increase max_output_tokens.")
+
         grounding_used = any(
             getattr(c, "grounding_metadata", None) is not None
             for c in candidates
@@ -216,6 +373,10 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
             logger.warning("[NEWS] Gemini did not invoke google_search — response may use training data only.")
         else:
             logger.info("[NEWS] Grounded call completed. grounding_used=True")
+
+        grounding_urls = _extract_grounding_urls(candidates)
+        for title, uri in grounding_urls:
+            logger.info("[NEWS-SOURCE] %s: %s", title, uri)
 
         text = _extract_text(response)
 
@@ -234,10 +395,10 @@ def _call_gemini_with_search(model: str, system_inst: str, prompt: str, max_toke
         if _DEBUG_NEWS:
             logger.debug("[NEWS-DEBUG] extracted text (%d chars): %r", len(text) if text else 0, (text or "")[:300])
 
-        return text
+        return text, grounding_urls
     except Exception as e:
         logger.warning(f"[NEWS] Gemini call failed: {e}")
-        return None
+        return None, []
 
 
 def _call_knowledge_only(model: str, system_inst: str, prompt: str) -> str | None:
@@ -280,7 +441,7 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
     prompt = build_topic_prompt(topic_name, emoji, session, date_str)
 
     logger.info(f"[NEWS-TOPIC] Fetching '{topic_name}'...")
-    block = _call_gemini_with_search(model, system_inst, prompt, max_tokens=3000)
+    block, grounding_urls = _call_gemini_with_search(model, system_inst, prompt, max_tokens=6000)
 
     if not block:
         logger.warning(f"[NEWS-TOPIC] No result for '{topic_name}'. Skipping.")
@@ -296,9 +457,15 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
         )
         return topic, None
 
-    # Wrap in topic header
-    formatted = f"{emoji} <b>{topic_name.upper()}</b>\n\n{block.strip()}"
-    logger.info(f"[NEWS-TOPIC] Got {len(block)} chars for '{topic_name}'")
+    # Inject real grounding URLs into inline "Đọc thêm" links the model generated.
+    # If the model wrote no links at all, fall back to a compact sources block.
+    body, replaced = _inject_grounding_urls_into_text(block.strip(), grounding_urls)
+    if replaced == 0:
+        fallback = _build_sources_block(grounding_urls)
+        if fallback:
+            body = body + "\n\n" + fallback
+    formatted = f"{emoji} <b>{topic_name.upper()}</b>\n\n{body}"
+    logger.info(f"[NEWS-TOPIC] Got {len(block)} chars, {len(grounding_urls)} sources, {replaced} links replaced for '{topic_name}'")
     return topic, formatted
 
 
@@ -402,7 +569,7 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     system_inst = build_on_demand_system_instruction()
     prompt = build_on_demand_prompt(query, date_str)
 
-    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2500)
+    reply, grounding_urls = _call_gemini_with_search(model, system_inst, prompt, max_tokens=8000)
 
     if not reply or len(reply) < 100:
         logger.warning(
@@ -412,7 +579,13 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
         send_telegram_msg(chat_id, "⚠️ Không tìm thấy kết quả cho yêu cầu này. Thử lại sau.")
         return None
 
-    logger.info(f"[NEWS-ONDEMAND] Reply length={len(reply)}")
+    reply, replaced = _inject_grounding_urls_into_text(reply, grounding_urls)
+    if replaced == 0:
+        fallback = _build_sources_block(grounding_urls)
+        if fallback:
+            reply = reply.rstrip() + "\n\n" + fallback
+
+    logger.info(f"[NEWS-ONDEMAND] Reply length={len(reply)}, sources={len(grounding_urls)}, links_replaced={replaced}")
     send_telegram_msg(chat_id, reply)
     logger.info(f"[NEWS-ONDEMAND] Sent reply to chat_id={chat_id}")
     return reply
@@ -433,14 +606,21 @@ def _generate_legacy_briefing(config: dict, session: str, chat_id: str, model: s
     prompt = build_session_prompt(session, interest_profile, date_str, memory)
     system_inst = build_news_system_instruction()
 
-    reply = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
+    reply, grounding_urls = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
     if not reply:
         logger.info("[NEWS] Legacy grounded search empty — falling back to knowledge-only.")
         reply = _call_knowledge_only(model, system_inst, prompt)
+        grounding_urls = []
 
     if not reply:
         logger.error(f"[NEWS] Both calls failed for {session}. Skipping send.")
         return
+
+    reply, replaced = _inject_grounding_urls_into_text(reply, grounding_urls)
+    if replaced == 0:
+        fallback = _build_sources_block(grounding_urls)
+        if fallback:
+            reply = reply.rstrip() + "\n\n" + fallback
 
     if len(reply) > _MAX_TELEGRAM_CHARS:
         reply = reply[:_MAX_TELEGRAM_CHARS] + "..."

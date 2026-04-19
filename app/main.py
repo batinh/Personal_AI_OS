@@ -15,6 +15,14 @@ from app.core.logging_conf import setup_logging, apply_log_levels
 # 1. Setup Logging
 logger = setup_logging()
 
+# Route uvicorn.error into the AI_COACH file handler so startup/error logs
+# are captured in logs/app.log and survive container restarts.
+# uvicorn.access is suppressed (too verbose for persistent log files).
+logging.getLogger("uvicorn.error").handlers = []
+logging.getLogger("uvicorn.error").propagate = True
+logging.getLogger("uvicorn.access").handlers = []
+logging.getLogger("uvicorn.access").propagate = False
+
 # 2. Lifespan context manager (replaces deprecated @app.on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):

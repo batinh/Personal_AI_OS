@@ -7,6 +7,7 @@
 python -m pytest tests/test_smoke.py -v        # smoke only — run FIRST (< 2s)
 python -m pytest tests/ -q                      # full suite (gate before commit — 0 failures)
 python -m pytest tests/test_<module>.py -v     # targeted module
+python -m pytest tests/test_telegram_chunking.py -v  # after any notification.py change
 python -m pytest tests/ --cov=app --cov-report=html
 docker compose up --build
 bash scripts/pre-deploy-check.sh         # local gate: pytest + config + compose syntax
@@ -20,6 +21,9 @@ Before commit: `docs/DELIVERY_CHECKLIST.md` (typed by change type). Pragmatic re
 
 ## Docker Log Debug Toolkit
 `scripts/fetch-logs.sh` — fetch và filter log từ container `airunningcoach`.
+
+App logs are written to `./logs/app.log` (bind-mounted: `./logs/:/app/logs`).
+Daily rotation at midnight → `app.log.2026-04-18`, 30-day retention. Persists across container restarts.
 
 ```bash
 # Tổng quan nhanh (count by level + last errors)
@@ -39,6 +43,10 @@ bash scripts/fetch-logs.sh --live
 
 # Live tail filtered
 bash scripts/fetch-logs.sh --live -l ERROR -m scheduler
+
+# Khi container down — đọc từ ./logs/app.log* trên host
+bash scripts/fetch-logs.sh --file --summary
+bash scripts/fetch-logs.sh --file -l ERROR -m news
 ```
 
 **Quy trình debug khi nhận báo lỗi:**
@@ -49,11 +57,10 @@ bash scripts/fetch-logs.sh --live -l ERROR -m scheduler
 4. bash scripts/deploy-t440.sh --skip-pull       # rebuild + verify
 ```
 
-**Fallback thủ công** (nếu script không dùng được):
+**Fallback thủ công** (khi container down):
 ```bash
-docker logs airunningcoach --tail 100 2>&1 | grep -i error
-docker logs airunningcoach --since 1h 2>&1
-docker logs airunningcoach -f 2>&1   # live tail
+tail -n 100 ./logs/app.log | grep -i error
+cat ./logs/app.log* | grep -i error | tail -50
 ```
 
 ## Dev → Test → Deploy Workflow

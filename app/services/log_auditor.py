@@ -18,9 +18,10 @@ from app.core.database import insert_audit_entry
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("audit")
 
-# Absolute path to log file (same anchor as logging_conf.py)
+# Absolute path to log file — must match logging_conf.LOG_FILE_PATH.
+# Written to ./logs/ which is bind-mounted out of the container.
 _BASE_DIR = Path(__file__).resolve().parent.parent.parent
-LOG_FILE_PATH = _BASE_DIR / "data" / "app.log"
+LOG_FILE_PATH = _BASE_DIR / "logs" / "app.log"
 
 # ---------------------------------------------------------------------------
 # Detection patterns — ordered from most specific to least specific
@@ -90,11 +91,9 @@ def run_audit(user_id: str) -> int:
     lines_scanned = 0
 
     try:
-        # Read all rotated log files: app.log, app.log.1, app.log.2, app.log.3
-        log_files = sorted(
-            LOG_FILE_PATH.parent.glob("app.log*"),
-            key=lambda p: (0 if p.name == "app.log" else int(p.suffixes[-1].lstrip(".") or 1)),
-        )
+        # Read all rotated log files: app.log, app.log.2026-04-18, app.log.2026-04-17, …
+        # TimedRotatingFileHandler uses date suffixes — sort lexicographically (YYYY-MM-DD is chronological).
+        log_files = sorted(LOG_FILE_PATH.parent.glob("app.log*"))
 
         for log_path in log_files:
             try:
