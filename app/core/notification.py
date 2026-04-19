@@ -63,6 +63,105 @@ def sanitize_md_to_tg_html(text: str) -> str:
     return text
 
 
+_CHUNK_TAG_RE = re.compile(r'(<[^>]+>)')
+
+
+def _get_tag_name(tag: str):
+    m = re.match(r'</\s*([a-zA-Z0-9\-]+)\s*>', tag)
+    if m:
+        return m.group(1).lower()
+    m = re.match(r'<\s*([a-zA-Z0-9\-]+)', tag)
+    return m.group(1).lower() if m else None
+
+
+def split_html_preserving_tags(html_text: str, limit: int) -> list[str]:
+    """Split HTML into chunks of at most `limit` chars with balanced tags.
+
+    Key invariant: open_tags is updated AFTER the overflow check, so suffix
+    always reflects only tags that were genuinely opened in the current chunk.
+    """
+    tokens = _CHUNK_TAG_RE.split(html_text)
+    chunks = []
+    current = ''
+    open_tags: list[tuple[str, str]] = []  # (tagname, opening_tag_str)
+
+    for tok in tokens:
+        if not tok:
+            continue
+
+        candidate = current + tok
+
+        if len(candidate) > limit:
+            if not current:
+                # Token alone exceeds limit — must be text; hard-split it.
+                piece = tok
+                while piece:
+                    take = piece[:limit]
+                    suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
+                    chunks.append(take + suffix)
+                    piece = piece[limit:]
+                current = ''
+            elif tok.startswith('<') and tok.endswith('>'):
+                if tok.startswith('</'):
+                    # Closing tag overflows: include it in current chunk so the pair
+                    # stays balanced. Pop the matching open tag first, then suffix
+                    # covers any remaining open tags.
+                    tagname = _get_tag_name(tok)
+                    for i in range(len(open_tags) - 1, -1, -1):
+                        if open_tags[i][0] == tagname:
+                            open_tags.pop(i)
+                            break
+                    suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
+                    chunks.append(current + tok + suffix)
+                    current = ''.join(t[1] for t in open_tags)
+                else:
+                    # Opening tag overflows: flush current chunk, then start the next
+                    # chunk with this tag open (add to open_tags AFTER flushing).
+                    suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
+                    chunks.append(current + suffix)
+                    tagname = _get_tag_name(tok)
+                    open_tags.append((tagname, tok))
+                    current = ''.join(t[1] for t in open_tags)  # includes new tag
+            else:
+                # Text token overflows: flush current chunk, then split text.
+                suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
+                chunks.append(current + suffix)
+                current = ''.join(t[1] for t in open_tags)
+                remaining = tok
+                while remaining:
+                    space = limit - len(current)
+                    if space <= 0:
+                        suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
+                        chunks.append(current + suffix)
+                        current = ''.join(t[1] for t in open_tags)
+                        space = limit - len(current)
+                    take = remaining[:space]
+                    current += take
+                    remaining = remaining[space:]
+                    if remaining:
+                        suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
+                        chunks.append(current + suffix)
+                        current = ''.join(t[1] for t in open_tags)
+            continue
+
+        # Token fits: update open_tags and accept.
+        if tok.startswith('<') and tok.endswith('>'):
+            tagname = _get_tag_name(tok)
+            if tok.startswith('</'):
+                for i in range(len(open_tags) - 1, -1, -1):
+                    if open_tags[i][0] == tagname:
+                        open_tags.pop(i)
+                        break
+            else:
+                open_tags.append((tagname, tok))
+        current = candidate
+
+    if current:
+        suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
+        chunks.append(current + suffix)
+    return chunks
+
+
 def send_telegram_msg(chat_id, text):
     """Send formatted message via Telegram Bot API.
 
@@ -157,97 +256,6 @@ def send_telegram_msg(chat_id, text):
         return
 
     # Medium-length message: attempt HTML-balanced chunking so formatting is preserved
-    # Helper: split HTML into tokens (tags vs text)
-    tag_re = re.compile(r'(<[^>]+>)')
-
-    def _get_tag_name(tag: str):
-        m = re.match(r'</\s*([a-zA-Z0-9\-]+)\s*>', tag)
-        if m:
-            return m.group(1).lower()
-        m = re.match(r'<\s*([a-zA-Z0-9\-]+)', tag)
-        return m.group(1).lower() if m else None
-
-    def split_html_preserving_tags(html_text: str, limit: int):
-        tokens = tag_re.split(html_text)
-        chunks = []
-        current = ''
-        open_tags = []  # list of (tagname, opening_tag_str)
-
-        for tok in tokens:
-            if not tok:
-                continue
-            if tok.startswith('<') and tok.endswith('>'):
-                # a tag
-                tagname = _get_tag_name(tok)
-                if tok.startswith('</'):
-                    # closing tag
-                    # remove last matching open tag if present
-                    for i in range(len(open_tags)-1, -1, -1):
-                        if open_tags[i][0] == tagname:
-                            open_tags.pop(i)
-                            break
-                    candidate = current + tok
-                else:
-                    # opening tag (could have attrs)
-                    open_tags.append((tagname, tok))
-                    candidate = current + tok
-            else:
-                # text
-                candidate = current + tok
-            # If adding this token would exceed limit, close current chunk
-            if len(candidate) > limit:
-                # If current is empty, token itself longer than limit -> hard split text inside
-                if not current:
-                    # split tok (must be text because tags are small). Split tok into substrings
-                    piece = tok
-                    while piece:
-                        take = piece[:limit]
-                        # close tags in take
-                        suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
-                        chunks.append(take + suffix)
-                        piece = piece[limit:]
-                    # current remains empty
-                    current = ''
-                else:
-                    # close current by appending closing tags
-                    suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
-                    chunks.append(current + suffix)
-                    # reopen tags for next chunk
-                    opener = ''.join(t[1] for t in open_tags)
-                    current = opener
-                    # Re-evaluate tok: append tok to current (it should fit now, unless tok itself > limit)
-                    if tok.startswith('<') and tok.endswith('>'):
-                        # tag
-                        current += tok
-                    else:
-                        # text
-                        # if still too big, split
-                        remaining = tok
-                        while remaining:
-                            space = limit - len(current)
-                            if space <= 0:
-                                # start new chunk
-                                suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
-                                chunks.append(current + suffix)
-                                current = ''.join(t[1] for t in open_tags)
-                                space = limit - len(current)
-                            take = remaining[:space]
-                            current += take
-                            remaining = remaining[space:]
-                            if remaining:
-                                suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
-                                chunks.append(current + suffix)
-                                current = ''.join(t[1] for t in open_tags)
-                continue
-            else:
-                # safe to accept candidate
-                current = candidate
-        # finalize
-        if current:
-            suffix = ''.join(f'</{t[0]}>' for t in reversed(open_tags))
-            chunks.append(current + suffix)
-        return chunks
-
     try:
         chunks = split_html_preserving_tags(safe_text, TELEGRAM_LIMIT)
     except Exception as e:
