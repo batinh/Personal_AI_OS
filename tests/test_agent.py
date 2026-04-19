@@ -255,17 +255,17 @@ class TestHandleTelegramChat(unittest.TestCase):
             self._stop_patches(ps)
 
     def test_short_message_uses_fast_path(self):
-        """Short conversational messages bypass full context build (fast path)."""
+        """Exact whitelist greetings bypass RAG (fast path)."""
         ps = self._patches()
         mocks = self._start_patches(ps)
 
         fake_session = MagicMock()
-        fake_session.send_message.return_value = _make_response("Chúc buổi sáng tốt lành!")
+        fake_session.send_message.return_value = _make_response("Xin chào!")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
 
         try:
             from app.agents.coach.agent import handle_telegram_chat
-            handle_telegram_chat("u1", "Chào buổi sáng!", _make_config())
+            handle_telegram_chat("u1", "hi", _make_config())
             # Fast path: should NOT call get_all_active_memories (RAG skipped),
             # but SHOULD fetch lightweight local facts (weekly volume).
             mocks["g_mems"].assert_not_called()
@@ -275,11 +275,15 @@ class TestHandleTelegramChat(unittest.TestCase):
             self._stop_patches(ps)
 
     def test_classify_intent_fast_for_short_messages(self):
-        """Short conversational messages are classified as fast."""
+        """Only exact whitelist matches go to fast; unknowns default to standard."""
         from app.agents.coach.agent import _classify_intent
-        self.assertEqual(_classify_intent("Ok!"), "fast")
-        self.assertEqual(_classify_intent("Cảm ơn nhé"), "fast")
+        # Exact whitelist hits → fast
+        self.assertEqual(_classify_intent("ok"), "fast")
+        self.assertEqual(_classify_intent("cảm ơn"), "fast")
         self.assertEqual(_classify_intent("👍"), "fast")
+        # Non-whitelist (has punctuation or extra words) → standard (safe default)
+        self.assertEqual(_classify_intent("Ok!"), "standard")
+        self.assertEqual(_classify_intent("Cảm ơn nhé"), "standard")
 
     def test_classify_intent_standard_for_analysis(self):
         """Messages with analysis keywords are classified as standard."""
@@ -304,26 +308,27 @@ class TestPastContextKeywordMatching(unittest.TestCase):
         self.assertEqual(_fold_vietnamese_ascii("HÔM QUA"), "hom qua")
         self.assertEqual(_fold_vietnamese_ascii("ký ức"), "ky uc")
 
-    def test_past_keywords_match_vietnamese_no_diacritics(self):
-        from app.agents.coach.agent import _text_matches_keyword_list, _PAST_CONTEXT_KEYWORDS
-        self.assertTrue(_text_matches_keyword_list("tuan truoc chay bao nhieu km", _PAST_CONTEXT_KEYWORDS))
-        self.assertTrue(_text_matches_keyword_list("hom qua minh chay the nao", _PAST_CONTEXT_KEYWORDS))
-        self.assertTrue(_text_matches_keyword_list("tong ket tuan nay", _PAST_CONTEXT_KEYWORDS))
+    def test_standard_keywords_match_vietnamese_no_diacritics(self):
+        from app.agents.coach.agent import _text_matches_keyword_list, _STANDARD_KEYWORDS
+        self.assertTrue(_text_matches_keyword_list("tuan truoc chay bao nhieu km", _STANDARD_KEYWORDS))
+        self.assertTrue(_text_matches_keyword_list("tong ket tuan nay", _STANDARD_KEYWORDS))
+        self.assertTrue(_text_matches_keyword_list("lich trinh tap luyen", _STANDARD_KEYWORDS))
 
-    def test_past_keywords_match_vietnamese_with_diacritics(self):
-        from app.agents.coach.agent import _text_matches_keyword_list, _PAST_CONTEXT_KEYWORDS
-        self.assertTrue(_text_matches_keyword_list("Tổng kết tuần vừa rồi", _PAST_CONTEXT_KEYWORDS))
-        self.assertTrue(_text_matches_keyword_list("Nhớ lại bài chạy hôm qua", _PAST_CONTEXT_KEYWORDS))
+    def test_standard_keywords_match_vietnamese_with_diacritics(self):
+        from app.agents.coach.agent import _text_matches_keyword_list, _STANDARD_KEYWORDS
+        self.assertTrue(_text_matches_keyword_list("Tổng kết tuần vừa rồi", _STANDARD_KEYWORDS))
+        self.assertTrue(_text_matches_keyword_list("Nhớ lại bài chạy hôm qua", _STANDARD_KEYWORDS))
 
-    def test_past_keywords_match_english(self):
-        from app.agents.coach.agent import _text_matches_keyword_list, _PAST_CONTEXT_KEYWORDS
-        self.assertTrue(_text_matches_keyword_list("What did I run last week?", _PAST_CONTEXT_KEYWORDS))
-        self.assertTrue(_text_matches_keyword_list("weekly recap please", _PAST_CONTEXT_KEYWORDS))
+    def test_standard_keywords_match_english(self):
+        from app.agents.coach.agent import _text_matches_keyword_list, _STANDARD_KEYWORDS
+        self.assertTrue(_text_matches_keyword_list("What did I run last week?", _STANDARD_KEYWORDS))
+        self.assertTrue(_text_matches_keyword_list("weekly recap please", _STANDARD_KEYWORDS))
 
-    def test_past_keywords_no_false_positive_on_preview(self):
-        from app.agents.coach.agent import _text_matches_keyword_list, _PAST_CONTEXT_KEYWORDS
-        # Removed bare "review" to avoid matching "preview"
-        self.assertFalse(_text_matches_keyword_list("preview the plan", _PAST_CONTEXT_KEYWORDS))
+    def test_standard_keywords_no_false_positive_on_greeting(self):
+        from app.agents.coach.agent import _text_matches_keyword_list, _STANDARD_KEYWORDS
+        # Pure social greetings should not match training keywords
+        self.assertFalse(_text_matches_keyword_list("hi there", _STANDARD_KEYWORDS))
+        self.assertFalse(_text_matches_keyword_list("thanks a lot", _STANDARD_KEYWORDS))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -603,6 +608,7 @@ class TestTieredSystemPrompt(unittest.TestCase):
     ):
         mock_core.return_value = "CORE_SYSTEM"
         mock_full.return_value = "FULL_SYSTEM"
+        mock_send.return_value = _make_response("Hi!")
         fake_session = MagicMock()
         fake_session.send_message.return_value = _make_response("Hi!")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session

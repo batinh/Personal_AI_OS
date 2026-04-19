@@ -72,6 +72,14 @@ class TestCoachAgentImports(unittest.TestCase):
     def test_coach_agent_importable(self):
         from app.agents.coach import agent  # noqa: F401
 
+    def test_coach_agent_intent_symbols(self):
+        from app.agents.coach.agent import (  # noqa: F401
+            _classify_intent,
+            _FAST_EXACT,
+            _STANDARD_KEYWORDS,
+            _is_degenerate_response,
+        )
+
     def test_metrics_engine_importable(self):
         from app.agents.coach.metrics_engine import (  # noqa: F401
             compute_stream_metrics,

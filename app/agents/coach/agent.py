@@ -117,24 +117,46 @@ def _select_tools_for_message(text: str) -> list:
 # ==========================================
 # ⚡ PERFORMANCE: FAST vs STANDARD PATH
 # ==========================================
-_STANDARD_KEYWORDS = [
-    "phân tích", "kế hoạch", "lịch", "đổi", "thay", "hủy", "nghỉ", "mục tiêu",
-    "tuần", "tháng", "race", "giải", "tốc độ", "cường độ", "tập", "chạy",
-    "analyze", "plan", "schedule", "target", "training"
-]
+
+# Whitelist: only these exact messages go to the fast (no-context) path.
+# Everything else defaults to "standard" — wrong routing to fast breaks UX.
+_FAST_EXACT = frozenset({
+    "hi", "hello", "ok", "oke", "okay", "thanks", "thank you",
+    "cảm ơn", "cam on", "chào", "chao", "xin chào", "xin chao",
+    "được", "duoc", "tốt", "tot", "👍", "🙏", "😊", "✅",
+})
+
+_STANDARD_KEYWORDS = (
+    # Vietnamese — training/planning (có dấu; _fold covers no-dấu variants automatically)
+    "phân tích", "kế hoạch", "lịch", "lịch trình", "giáo án",
+    "đổi", "thay", "hủy", "nghỉ", "mục tiêu",
+    "tuần", "tháng", "race", "giải", "tốc độ", "cường độ",
+    "tập", "chạy", "bài", "buổi",
+    "ngày mai", "hôm nay", "tuần tới", "tuần sau", "tuần trước",
+    "tuần này", "tuần qua", "hôm qua",
+    "tổng kết", "nhớ lại", "lịch sử", "thống kê", "bài chạy",
+    "acwr", "gcs", "pace", "power", "zone", "km",
+    # English
+    "analyze", "plan", "schedule", "target", "training",
+    "last week", "this week", "next week", "recap", "history",
+    "how many", "how much", "total", "weekly", "workout",
+)
+
 
 def _classify_intent(text: str) -> str:
     """
-    Classify message intent to select context-building path.
-    Fast path: short conversational messages (≤60 chars, no analysis keywords).
-    Standard path: long or analysis-related messages requiring full context.
+    Route to fast (greeting-only) or standard (full context) path.
+    Default is "standard" — wrong fast routing breaks UX, wrong standard only costs latency.
+    Fast is reserved for exact single-token greetings/acks.
     """
-    if len(text) > 60:
+    if text.strip().lower() in _FAST_EXACT:
+        return "fast"
+    if len(text) > 80:
         return "standard"
-    text_lower = text.lower()
-    if any(kw in text_lower for kw in _STANDARD_KEYWORDS):
+    if _text_matches_keyword_list(text, _STANDARD_KEYWORDS):
         return "standard"
-    return "fast"
+    # Unknown short message → standard (safe default)
+    return "standard"
 
 
 def _fold_vietnamese_ascii(text: str) -> str:
@@ -161,96 +183,10 @@ def _text_matches_keyword_list(text: str, keywords: tuple) -> bool:
     return False
 
 
-# Force 'standard' intent when user clearly asks about history, memory, weekly recap, past runs.
-# Includes: Vietnamese (có dấu), VI gõ không dấu (via _fold), English phrases.
-_PAST_CONTEXT_KEYWORDS = (
-    # Vietnamese — time / recap
-    "tuần trước",
-    "tuần này",
-    "tuần vừa rồi",
-    "tuần qua",
-    "tuần rồi",
-    "hôm qua",
-    "hôm kia",
-    "mấy hôm",
-    "mấy ngày",
-    "gần đây",
-    "vừa rồi",
-    "cuối tuần",
-    "chủ nhật vừa",
-    "thứ hai vừa",
-    "thứ 7 vừa",
-    "quá khứ",
-    "trước đây",
-    "lần trước",
-    "lịch sử",
-    "tổng kết",
-    "nhớ lại",
-    "ký ức",
-    "kí ức",
-    "trí nhớ",
-    "tra cứu",
-    "đối chiếu",
-    "thống kê",
-    "bài chạy",
-    "bài tập",
-    "các bài",
-    "những bài",
-    "hoạt động gần",
-    "đã chạy",
-    "vừa chạy",
-    "chạy xong",
-    "km tuần",
-    "số km",
-    "khối lượng tuần",
-    # Explicit VI no-dấu / typo-prone (fold also covers most; these catch edge cases)
-    "tuan truoc",
-    "tuan nay",
-    "tuan qua",
-    "hom qua",
-    "qua khu",
-    "ky uc",
-    "tong ket",
-    "lich su",
-    "bai chay",
-    "lan truoc",
-    "gan day",
-    "nho lai",
-    "tra cuu",
-    # English
-    "last week",
-    "last run",
-    "last workout",
-    "previous run",
-    "previous week",
-    "past week",
-    "this week",
-    "training history",
-    "workout history",
-    "running history",
-    "activity history",
-    "weekly recap",
-    "week review",
-    "weekly summary",
-    "look back",
-    "recap",
-    "reflection",
-    "week review",
-    "weekly review",
-    "what did i run",
-    "how many km",
-    "how much did i run",
-    "total mileage",
-    "weekly volume",
-    "recent runs",
-    "past runs",
-    "my runs",
-    "earlier",
-    "days ago",
-    "long term memory",
-    "search memory",
-    "remember when",
-)
+def _is_degenerate_response(text: str | None) -> bool:
+    """Return True when the model returned nothing (thought-only or empty output)."""
+    return not text or not text.strip()
+
 
 # --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):
@@ -488,12 +424,6 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     intent = _classify_intent(text)
     logger.info(f"[CHAT] Intent classified as '{intent}' for message: '{text[:50]}'")
 
-    # Heuristic override: past / memory / weekly recap → full context (standard intent)
-    if _text_matches_keyword_list(text, _PAST_CONTEXT_KEYWORDS):
-        if intent != "standard":
-            logger.info("[CHAT] Forcing intent 'standard' due to past-context keyword match.")
-        intent = "standard"
-
     # Always compute local context (weekly volume, decision context, active memories).
     # These are local facts and must not be skipped even for 'fast' conversational intents —
     # skipping causes the agent to lack factual grounding and misroute tools.
@@ -573,12 +503,35 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 max_output_tokens=max_tokens,
-                tools=selected_tools
+                tools=selected_tools,
             )
         )
         response = send_message_with_retry(chat_session, formatted_history[-1]["parts"][0]["text"])
-        reply = _extract_gemini_text(response) or "⚠️ Coach Dyno không thể trả lời lúc này."
-        
+        reply = _extract_gemini_text(response)
+
+        # Phase 4: degenerate-response gate — retry once with full standard context
+        if _is_degenerate_response(reply) and intent == "fast":
+            logger.warning("[CHAT] Degenerate response on fast path — retrying with standard context.")
+            standard_inst = build_system_instruction(
+                config.get("system_instruction", ""), config.get("user_profile", ""),
+                int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
+            )
+            retry_session = client.chats.create(
+                model=config.get("model_name", "models/gemini-2.0-flash"),
+                history=formatted_history[:-1],
+                config=types.GenerateContentConfig(
+                    system_instruction=standard_inst,
+                    max_output_tokens=1200,
+                    tools=selected_tools,
+                )
+            )
+            retry_response = send_message_with_retry(retry_session, formatted_history[-1]["parts"][0]["text"])
+            reply = _extract_gemini_text(retry_response)
+
+        if not reply:
+            logger.error("[CHAT] Both fast and retry paths returned empty — sending fallback.")
+            reply = "⚠️ Coach Dyno không thể trả lời lúc này. Bạn thử hỏi lại theo cách khác nhé!"
+
         save_message(chat_id, "user", text)
         save_message(chat_id, "model", reply)
         send_telegram_msg(chat_id, reply)
