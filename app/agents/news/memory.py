@@ -14,11 +14,12 @@ import threading
 from typing import Optional
 
 from google import genai
+from google.genai import types
 
 from app.core.database import get_news_state, set_news_state
 from app.core.logging_conf import get_module_logger
 
-_client = genai.Client()
+_client = genai.Client(http_options=types.HttpOptions(timeout=30))
 
 logger = get_module_logger("news")
 
