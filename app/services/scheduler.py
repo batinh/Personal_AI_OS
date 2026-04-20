@@ -32,15 +32,18 @@ def task_morning_briefing():
     Fetches weather then delegates reasoning to the sync Coach Agent.
     Runs in BackgroundScheduler thread pool.
     """
-    chat_id = get_primary_user_id()
-    if not chat_id:
-        logger.warning("[SCHEDULER] TELEGRAM_CHAT_ID not found for briefing.")
-        return
+    try:
+        chat_id = get_primary_user_id()
+        if not chat_id:
+            logger.warning("[SCHEDULER] TELEGRAM_CHAT_ID not found for briefing.")
+            return
 
-    logger.info("[SCHEDULER] Triggering morning briefing...")
-    config = load_config()
-    weather_info = get_today_weather()
-    generate_morning_briefing(config, weather_info)
+        logger.info("[SCHEDULER] Triggering morning briefing...")
+        config = load_config()
+        weather_info = get_today_weather()
+        generate_morning_briefing(config, weather_info)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_morning_briefing failed: %s", e, exc_info=True)
 
 
 # ==========================================
@@ -48,8 +51,11 @@ def task_morning_briefing():
 # ==========================================
 def task_auto_harvest():
     """Auto-sync Strava every specified interval. Runs in BackgroundScheduler thread pool."""
-    logger.info("[SCHEDULER] Auto-harvesting...")
-    harvest_data()
+    try:
+        logger.info("[SCHEDULER] Auto-harvesting...")
+        harvest_data()
+    except Exception as e:
+        logger.error("[SCHEDULER] task_auto_harvest failed: %s", e, exc_info=True)
 
 
 # ==========================================
@@ -60,16 +66,19 @@ def task_weekly_reflection():
     [ORCHESTRATOR] Cron trigger for Weekly Reflection & Background Memory Extraction.
     Runs in BackgroundScheduler thread pool.
     """
-    logger.info("[SCHEDULER] Triggering Weekly Reflection...")
-    cfg = load_config()
-    chat_id = get_primary_user_id()
+    try:
+        logger.info("[SCHEDULER] Triggering Weekly Reflection...")
+        cfg = load_config()
+        chat_id = get_primary_user_id()
 
-    if chat_id:
-        logger.info("[SCHEDULER] Step 1: Triggering implicit memory extraction...")
-        extract_implicit_memory(str(chat_id))
+        if chat_id:
+            logger.info("[SCHEDULER] Step 1: Triggering implicit memory extraction...")
+            extract_implicit_memory(str(chat_id))
 
-    logger.info("[SCHEDULER] Step 2: Generating and sending Weekly Reflection...")
-    generate_weekly_reflection(cfg)
+        logger.info("[SCHEDULER] Step 2: Generating and sending Weekly Reflection...")
+        generate_weekly_reflection(cfg)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_weekly_reflection failed: %s", e, exc_info=True)
 
 
 # ==========================================
@@ -77,23 +86,32 @@ def task_weekly_reflection():
 # ==========================================
 def task_morning_news():
     """Morning news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
-    logger.info("[SCHEDULER] Triggering morning news briefing...")
-    config = load_config()
-    generate_news_briefing(config, session="morning")
+    try:
+        logger.info("[SCHEDULER] Triggering morning news briefing...")
+        config = load_config()
+        generate_news_briefing(config, session="morning")
+    except Exception as e:
+        logger.error("[SCHEDULER] task_morning_news failed: %s", e, exc_info=True)
 
 
 def task_afternoon_news():
     """Afternoon news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
-    logger.info("[SCHEDULER] Triggering afternoon news briefing...")
-    config = load_config()
-    generate_news_briefing(config, session="afternoon")
+    try:
+        logger.info("[SCHEDULER] Triggering afternoon news briefing...")
+        config = load_config()
+        generate_news_briefing(config, session="afternoon")
+    except Exception as e:
+        logger.error("[SCHEDULER] task_afternoon_news failed: %s", e, exc_info=True)
 
 
 def task_evening_news():
     """Evening news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
-    logger.info("[SCHEDULER] Triggering evening news briefing...")
-    config = load_config()
-    generate_news_briefing(config, session="evening")
+    try:
+        logger.info("[SCHEDULER] Triggering evening news briefing...")
+        config = load_config()
+        generate_news_briefing(config, session="evening")
+    except Exception as e:
+        logger.error("[SCHEDULER] task_evening_news failed: %s", e, exc_info=True)
 
 
 # ==========================================
@@ -104,43 +122,46 @@ def task_proactive_coach_check():
     Daily proactive coaching check. Sends alerts for high training load or
     upcoming race week taper reminders. Must be regular def (BackgroundScheduler thread pool).
     """
-    chat_id = get_primary_user_id()
-    if not chat_id:
-        return
+    try:
+        chat_id = get_primary_user_id()
+        if not chat_id:
+            return
 
-    config = load_config()
-    loads = get_training_loads(str(chat_id))
-    acwr = loads.get("acwr", 0.0)
-    race_distance_km = float(config.get("race_distance_km", 21.1))
-    phase_info = calculate_training_phase(config.get("race_date", ""), race_distance_km)
-    weeks_left = phase_info.get("weeks_left", 99)
+        config = load_config()
+        loads = get_training_loads(str(chat_id))
+        acwr = loads.get("acwr", 0.0)
+        race_distance_km = float(config.get("race_distance_km", 21.1))
+        phase_info = calculate_training_phase(config.get("race_date", ""), race_distance_km)
+        weeks_left = phase_info.get("weeks_left", 99)
 
-    alerts = []
+        alerts = []
 
-    if acwr > 1.5:
-        alerts.append(
-            f"🚨 <b>CẢNH BÁO TẢI TRỌNG CAO</b>\n"
-            f"ACWR hiện tại: <b>{acwr:.2f}</b> (ngưỡng nguy hiểm > 1.5)\n"
-            f"Khuyến nghị: Giảm khối lượng ngay hôm nay. Bài Easy hoặc nghỉ hoàn toàn."
-        )
-    elif acwr > 1.3:
-        alerts.append(
-            f"⚠️ <b>Tải trọng tăng cao</b>\n"
-            f"ACWR: <b>{acwr:.2f}</b> (ngưỡng thận trọng > 1.3)\n"
-            f"Khuyến nghị: Không tăng thêm khối lượng tuần này."
-        )
+        if acwr > 1.5:
+            alerts.append(
+                f"🚨 <b>CẢNH BÁO TẢI TRỌNG CAO</b>\n"
+                f"ACWR hiện tại: <b>{acwr:.2f}</b> (ngưỡng nguy hiểm > 1.5)\n"
+                f"Khuyến nghị: Giảm khối lượng ngay hôm nay. Bài Easy hoặc nghỉ hoàn toàn."
+            )
+        elif acwr > 1.3:
+            alerts.append(
+                f"⚠️ <b>Tải trọng tăng cao</b>\n"
+                f"ACWR: <b>{acwr:.2f}</b> (ngưỡng thận trọng > 1.3)\n"
+                f"Khuyến nghị: Không tăng thêm khối lượng tuần này."
+            )
 
-    if 1 <= weeks_left <= 3:
-        taper_label = {1: "Race Week", 2: "Tuần −2", 3: "Tuần −3"}.get(weeks_left, "")
-        taper_pct = {1: "25%", 2: "50%", 3: "75%"}.get(weeks_left, "")
-        alerts.append(
-            f"🏁 <b>Nhắc nhở Taper — {taper_label}</b>\n"
-            f"Còn {weeks_left} tuần đến ngày đua. Giảm khối lượng xuống còn {taper_pct} so với peak."
-        )
+        if 1 <= weeks_left <= 3:
+            taper_label = {1: "Race Week", 2: "Tuần −2", 3: "Tuần −3"}.get(weeks_left, "")
+            taper_pct = {1: "25%", 2: "50%", 3: "75%"}.get(weeks_left, "")
+            alerts.append(
+                f"🏁 <b>Nhắc nhở Taper — {taper_label}</b>\n"
+                f"Còn {weeks_left} tuần đến ngày đua. Giảm khối lượng xuống còn {taper_pct} so với peak."
+            )
 
-    for msg in alerts:
-        send_telegram_msg(str(chat_id), msg)
-        logger.info(f"[SCHEDULER] Proactive alert sent: ACWR={acwr:.2f}, weeks_left={weeks_left}")
+        for msg in alerts:
+            send_telegram_msg(str(chat_id), msg)
+            logger.info(f"[SCHEDULER] Proactive alert sent: ACWR={acwr:.2f}, weeks_left={weeks_left}")
+    except Exception as e:
+        logger.error("[SCHEDULER] task_proactive_coach_check failed: %s", e, exc_info=True)
 
 
 # ==========================================
@@ -148,14 +169,17 @@ def task_proactive_coach_check():
 # ==========================================
 def task_log_audit():
     """Scan app.log for errors/warnings, persist findings to audit_entries table. Regular def (thread pool)."""
-    user_id = str(get_primary_user_id())
-    if not user_id or user_id == "None":
-        logger.warning("[SCHEDULER] No primary user ID. Skipping log audit.")
-        return
-    logger.info("[SCHEDULER] Running log audit...")
-    count = run_audit(user_id)
-    if count:
-        logger.info(f"[SCHEDULER] Log audit complete: {count} new entries inserted.")
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping log audit.")
+            return
+        logger.info("[SCHEDULER] Running log audit...")
+        count = run_audit(user_id)
+        if count:
+            logger.info(f"[SCHEDULER] Log audit complete: {count} new entries inserted.")
+    except Exception as e:
+        logger.error("[SCHEDULER] task_log_audit failed: %s", e, exc_info=True)
 
 
 # ==========================================
@@ -169,13 +193,15 @@ def setup_jobs():
     brief_time = sched_cfg.get("briefing_time", "06:00")
     try:
         bh, bm = map(int, brief_time.split(':'))
-    except Exception:
+    except (ValueError, AttributeError):
+        logger.warning("[SCHEDULER] Invalid briefing_time '%s'; defaulting to 06:00", brief_time)
         bh, bm = 6, 0
 
     backup_time = sched_cfg.get("backup_time", "02:00")
     try:
         bkh, bkm = map(int, backup_time.split(':'))
-    except Exception:
+    except (ValueError, AttributeError):
+        logger.warning("[SCHEDULER] Invalid backup_time '%s'; defaulting to 02:00", backup_time)
         bkh, bkm = 2, 0
 
     harv_hours = sched_cfg.get("harvest_hours", "0,6,12,18")
@@ -195,7 +221,8 @@ def setup_jobs():
             nh, nm = map(int, news_cfg.get("morning_time", "06:30").split(":"))
             ah, am = map(int, news_cfg.get("afternoon_time", "17:30").split(":"))
             eh, em = map(int, news_cfg.get("evening_time", "20:00").split(":"))
-        except Exception:
+        except (ValueError, AttributeError) as e:
+            logger.warning("[SCHEDULER] Invalid news time config: %s; using defaults 06:30/17:30/20:00", e)
             nh, nm = 6, 30
             ah, am = 17, 30
             eh, em = 20, 0
