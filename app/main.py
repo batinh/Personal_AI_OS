@@ -23,12 +23,38 @@ logging.getLogger("uvicorn.error").propagate = True
 logging.getLogger("uvicorn.access").handlers = []
 logging.getLogger("uvicorn.access").propagate = False
 
+_REQUIRED_ENV_VARS = [
+    "GEMINI_API_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID",
+]
+_IMPORTANT_ENV_VARS = [
+    "STRAVA_CLIENT_ID",
+    "STRAVA_CLIENT_SECRET",
+    "STRAVA_REFRESH_TOKEN",
+    "ADMIN_USERNAME",
+    "ADMIN_PASSWORD",
+    "VERIFY_TOKEN",
+]
+
+
+def _validate_env() -> None:
+    missing_required = [v for v in _REQUIRED_ENV_VARS if not os.getenv(v)]
+    missing_important = [v for v in _IMPORTANT_ENV_VARS if not os.getenv(v)]
+    if missing_required:
+        logger.error("[STARTUP] Missing REQUIRED env vars — core features will fail: %s", missing_required)
+    if missing_important:
+        logger.warning("[STARTUP] Missing IMPORTANT env vars — some features degraded: %s", missing_important)
+
+
 # 2. Lifespan context manager (replaces deprecated @app.on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle handler."""
     # --- STARTUP ---
     logger.info("🚀 Personal AI OS is starting up...")
+
+    _validate_env()
 
     # Initialize database schema
     init_db()
