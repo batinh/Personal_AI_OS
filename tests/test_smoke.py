@@ -141,6 +141,28 @@ class TestNewsAgentImports(unittest.TestCase):
         from app.agents.news.telegram_handler import handle_news_chat  # noqa: F401
 
 
+class TestSDKContracts(unittest.TestCase):
+    """SDK parameter unit contracts — catch wrong units before they hit production."""
+
+    def test_gemini_http_options_timeout_unit_unchanged(self):
+        """Regression: HttpOptions.timeout is MILLISECONDS not seconds.
+        If SDK upgrades change the unit, this fails immediately.
+        Incident: timeout=30 → 30ms → X-Server-Timeout:1 → 400 rejected (2026-04-21)."""
+        import pathlib, sys as _sys
+        types_path = None
+        for p in _sys.path:
+            candidate = pathlib.Path(p) / "google" / "genai" / "types.py"
+            if candidate.exists():
+                types_path = candidate
+                break
+        self.assertIsNotNone(types_path, "google-genai not installed")
+        src = types_path.read_text(encoding="utf-8")
+        self.assertIn(
+            "milliseconds", src,
+            "HttpOptions.timeout unit changed in SDK — audit all genai.Client() usages."
+        )
+
+
 class TestLoggingConfImports(unittest.TestCase):
     """Logging infrastructure symbols — used at startup and by console router."""
 

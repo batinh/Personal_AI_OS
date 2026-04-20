@@ -214,6 +214,12 @@ Before each change:
 
 **One change per commit. Never batch phases.**
 
+**SDK Parameter Audit** (mandatory for any phase touching third-party SDK calls):
+- Before adding a numeric parameter to an SDK call, verify the unit from source:
+  `python3 -c "import pathlib, sys; [print((pathlib.Path(p)/'google'/'genai'/'types.py').read_text()) for p in sys.path if (pathlib.Path(p)/'google'/'genai'/'types.py').exists()][:1]"`
+- Confirm: seconds vs milliseconds vs bytes — from source, not just docs.
+- After adding, run `python -m pytest tests/test_sdk_contracts.py -v` to gate the value.
+
 ---
 
 ### Phase 0 — Baseline + Hardening (NEW, ~4h)
@@ -642,6 +648,24 @@ REQUIRED_ENV_VARS = [
 
 ### ADR-010: Duplicate Function Elimination Approach (v3)
 **Decision**: Move, don't refactor. When eliminating `analyze_run_with_gemini()` and `send_message_with_retry()` duplicates, perform PURE MOVES with zero logic changes. The consolidation is a separate commit from any logic improvement.
+
+### ADR-011: SDK Parameter Units Must Be Verified From Source (Post-Incident 2026-04-21)
+**Incident**: During P1.1 (Gemini timeout), `HttpOptions(timeout=30)` was added thinking 30 = seconds. The `google-genai` SDK uses **milliseconds**. Result: 30ms timeout → `X-Server-Timeout: 1` → Google API rejected all calls with `400 INVALID_ARGUMENT: Manually set deadline 1s is too short`. Broke Morning Briefing, News Agent, and News Memory — silently until logs were reviewed.
+
+**Root cause**: Standard Python convention is seconds (`requests`, `httpx`, `asyncio`). The `google-genai` SDK breaks this convention without prominent documentation.
+
+**Affected files** (all introduced in the same refactor batch):
+- `app/agents/coach/agent.py`: `timeout=120` → fixed to `timeout=120000` (2 min)
+- `app/agents/news/agent.py`: `timeout=30` → fixed to `timeout=30000` (30s)
+- `app/agents/news/memory.py`: `timeout=30` → fixed to `timeout=30000` (30s)
+
+**Decision**: Before adding any numeric parameter to a third-party SDK call:
+1. Read the field definition from source (`inspect` or filesystem read of `.py` file)
+2. Confirm the unit explicitly
+3. Add the value with a `# Ns in ms` comment to make the unit visible
+4. Add/update `tests/test_sdk_contracts.py` to assert the value is in the safe range
+
+**Test gate added**: `tests/test_sdk_contracts.py` — 4 tests that statically audit all `HttpOptions(timeout=N)` literals in the codebase and assert `N >= 10_000` (minimum safe: 10s = 10_000ms). Also added to `test_smoke.py` as `TestSDKContracts`.
 
 ---
 

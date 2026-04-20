@@ -126,6 +126,8 @@ assertion in `tests/test_smoke.py` under the matching class.
 - Scheduler tasks: `def` not `async def` — BackgroundScheduler is a thread pool
 - File paths: `Path(__file__).resolve().parent...` — never relative (Docker breaks them)
 - Context building: always `build_agent_context()` — never duplicate
+- **`HttpOptions.timeout` is MILLISECONDS** (not seconds). `timeout=30000` = 30s. Incident: `timeout=30` → 30ms → X-Server-Timeout:1 → 400 rejected (2026-04-21). Always write `# Ns in ms` comment. Gate: `tests/test_sdk_contracts.py`.
+- SDK numeric params: verify unit from source before using — Python convention (seconds) ≠ google-genai convention (milliseconds).
 - User ID: `get_primary_user_id()` from `app.core.user_context` — not `os.getenv` directly
 - Tool routing: add Vietnamese write-intent keywords to `_WRITE_INTENT_KEYWORDS` in `agent.py`
 - `ENABLE_MEMORY_DEBUG=true` enables verbose memory extraction logging

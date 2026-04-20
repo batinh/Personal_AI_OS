@@ -40,7 +40,7 @@ from app.agents.news.memory import load_news_memory
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
-client = genai.Client(http_options=types.HttpOptions(timeout=30))
+client = genai.Client(http_options=types.HttpOptions(timeout=30000))  # 30s in ms
 
 # Chunking is handled by send_telegram_msg() in notification.py (HTML-balanced, multi-message).
 # Do NOT truncate here — truncation would cut mid-tag and lose content.

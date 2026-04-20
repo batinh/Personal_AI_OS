@@ -19,7 +19,7 @@ from google.genai import types
 from app.core.database import get_news_state, set_news_state
 from app.core.logging_conf import get_module_logger
 
-_client = genai.Client(http_options=types.HttpOptions(timeout=30))
+_client = genai.Client(http_options=types.HttpOptions(timeout=30000))  # 30s in ms
 
 logger = get_module_logger("news")
 
