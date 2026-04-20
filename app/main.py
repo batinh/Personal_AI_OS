@@ -1,5 +1,6 @@
 import os
 import logging
+import signal
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -36,6 +37,19 @@ _IMPORTANT_ENV_VARS = [
     "ADMIN_PASSWORD",
     "VERIFY_TOKEN",
 ]
+
+
+def _handle_sigterm(signum, frame) -> None:
+    logger.info("[SHUTDOWN] SIGTERM received — stopping scheduler and handing off to uvicorn.")
+    try:
+        from app.services.scheduler import scheduler as _sched
+        if _sched.running:
+            _sched.shutdown(wait=False)
+    except Exception as e:
+        logger.error("[SHUTDOWN] Error stopping scheduler on SIGTERM: %s", e)
+
+
+signal.signal(signal.SIGTERM, _handle_sigterm)
 
 
 def _validate_env() -> None:
