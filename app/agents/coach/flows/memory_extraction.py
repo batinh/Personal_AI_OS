@@ -14,7 +14,7 @@ from app.core.schemas import MemoryExtractionResult
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client(http_options=types.HttpOptions(timeout=30))
+client = genai.Client()
 
 
 def extract_implicit_memory(user_id_str: str):

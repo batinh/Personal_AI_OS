@@ -29,7 +29,7 @@ from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client(http_options=types.HttpOptions(timeout=30))
+client = genai.Client()
 
 
 def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):

@@ -27,7 +27,7 @@ from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client(http_options=types.HttpOptions(timeout=30))
+client = genai.Client()
 
 
 def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
