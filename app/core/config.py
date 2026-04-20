@@ -1,8 +1,11 @@
 import json
+import logging
 import os
 import shutil
 import time
 from dotenv import load_dotenv
+
+_logger = logging.getLogger("config")
 
 # Load environment variables from the root directory
 load_dotenv()
@@ -36,7 +39,8 @@ def load_config() -> dict:
                 _config_cache = json.load(f)
                 _config_cache_time = now
                 return _config_cache
-        except Exception:
+        except Exception as e:
+            _logger.error("[CONFIG] Failed to parse %s: %s — running with empty config", CONFIG_PATH, e)
             return {}
     return {}
 
