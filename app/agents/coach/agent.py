@@ -46,7 +46,7 @@ from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client(http_options=types.HttpOptions(timeout=120))
+client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
 
 # ==========================================
 # 🛡️ RESILIENCE PATTERN: EXPONENTIAL BACKOFF
