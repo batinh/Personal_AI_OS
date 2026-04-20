@@ -46,7 +46,7 @@ from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client(http_options=types.HttpOptions(timeout=30))
+client = genai.Client(http_options=types.HttpOptions(timeout=120))
 
 # ==========================================
 # 🛡️ RESILIENCE PATTERN: EXPONENTIAL BACKOFF
@@ -62,16 +62,17 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             return chat_session.send_message(message)
         except Exception as e:
             error_msg = str(e)
-            if "503" in error_msg or "429" in error_msg or "Unavailable" in error_msg:
+            _RETRYABLE = ("503", "429", "Unavailable", "timed out", "timeout", "ssl", "SSL", "handshake")
+            if any(token in error_msg for token in _RETRYABLE):
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt  # Wait 1s, 2s, 4s...
-                    logger.warning(f"[API RESILIENCE] Google Server overloaded (503/429). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
+                    logger.warning(f"[API RESILIENCE] Transient error ({error_msg[:80]}). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
-                    logger.error("[API RESILIENCE] Max retries reached. Google Server is completely down.")
+                    logger.error("[API RESILIENCE] Max retries reached. Last error: %s", error_msg[:120])
                     raise e
             else:
-                # If it is a different error (e.g., invalid API Key), raise immediately without retrying
+                # Non-retryable error (e.g., invalid API Key) — fail immediately
                 raise e
 
 # ==========================================
