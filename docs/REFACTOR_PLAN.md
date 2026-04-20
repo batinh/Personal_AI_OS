@@ -1,11 +1,12 @@
 # Architecture Refactoring Plan — Personal_AI_OS (v2)
 
-**Date**: 2026-04-19
+**Date**: 2026-04-20 (v3)
 **Auditors**:
 - v1 — Principal Systems Architect (Claude Sonnet 4.6)
 - v2 — Independent review + extension (Claude Opus 4.7)
+- v3 — 3-agent orchestration: architect + code-reviewer + tdd-guide (Claude Opus 4.7, 2026-04-20)
 
-**Scope**: Full codebase audit across 5 pillars + verification of v1 findings against current code.
+**Scope**: Full codebase audit across 5 pillars + verification of v1/v2 findings + deep security/error-handling review + TDD gap analysis.
 **Status**: APPROVED — pending implementation. **Stability, predictability, documentation, and zero negative side effects are non-negotiable.**
 
 ---
@@ -27,6 +28,20 @@
 8. **MEDIUM**: Test infrastructure not pinned in `requirements.txt` (relies on system pytest)
 9. **MEDIUM**: Docker runs as root, no `tini` for PID 1 — SIGTERM doesn't propagate cleanly
 10. **MEDIUM**: No log scrubbing filter — single bad `logger.info(config)` leaks tokens
+
+**v3 additions** (3-agent orchestration, 2026-04-20):
+
+11. **CRITICAL**: Admin credentials default to `"admin"/"123456"` if env vars unset — hardcoded in routers
+12. **CRITICAL**: ALL scheduler tasks (`task_morning_briefing`, `task_auto_harvest`, etc.) have ZERO exception handling — one crash silently kills the job, no recovery
+13. **HIGH**: `analyze_run_with_gemini()` defined in BOTH `agent.py` and `flows/run_analysis.py` — DRY violation, bug fixes don't propagate
+14. **HIGH**: `send_message_with_retry()` defined in BOTH `agent.py` and `utils.py` — same issue
+15. **HIGH**: No timeout on Strava/Telegram HTTP calls (`requests.get/post` in strava_client, notification.py) — hangs indefinitely on API degradation
+16. **MEDIUM**: Config cache `_config_cache = {}` invalidation not thread-safe — race condition under concurrent requests
+17. **MEDIUM**: `await request.json()` in both webhook endpoints not wrapped in `JSONDecodeError` catch — returns 500 instead of 400
+18. **MEDIUM**: Partial failure rollback incomplete in `harvest._ingest_one_activity()` — step 5 (RAG) runs even if step 3 (fetch detail) failed, creating DB/RAG inconsistency
+19. **LOW**: Timezone string `os.getenv("TZ", "Asia/Ho_Chi_Minh")` duplicated 5+ times across modules — should be `get_timezone()` in `app/core/timezone_utils.py`
+
+**Test gap (TDD agent)**: 45 concrete test stubs generated for 8 untested critical paths → `tests/test_untested_critical_paths.md`
 
 ---
 
@@ -60,6 +75,9 @@
 | HIGH | WebhookBackgroundTasks lost on container crash — no persistence guarantee | `app/routers/webhooks.py` | 150 |
 | MEDIUM | 3 redundant prompt builders for news agent (DRY violation) | `app/agents/news/prompts.py` | — |
 | MEDIUM | Copy-paste flow pattern repeated in 3 coach flows | `app/agents/coach/flows/` | — |
+| HIGH **(v3)** | `analyze_run_with_gemini()` defined in both `agent.py:192` and `flows/run_analysis.py:35` | `app/agents/coach/agent.py` | 192 |
+| HIGH **(v3)** | `send_message_with_retry()` defined in both `agent.py:54` and `utils.py:358` | `app/agents/coach/agent.py` | 54 |
+| MEDIUM **(v3)** | Partial-failure rollback incomplete in `_ingest_one_activity()` — RAG writes even when fetch fails | `app/agents/coach/harvest.py` | 57 |
 
 **Coach Agent God Module** — Handles run analysis, morning briefing, weekly reflection, chat, memory extraction, and message retry — all in one file. Any change risks breaking unrelated flows. Untestable in isolation.
 
@@ -79,7 +97,9 @@
 | CRITICAL | No Gemini API timeout — slow call hangs scheduler indefinitely | All agent files | — |
 | HIGH | Single-thread BackgroundScheduler: one long job blocks all subsequent cron jobs | `app/services/scheduler.py` | — |
 | HIGH **(v2)** | SQLite connection opened per query; no pool, lock contention risk | `app/core/database.py` | 20 |
+| HIGH **(v3)** | No timeout on `requests.get/post` in Strava client and notification.py — hangs indefinitely | `app/agents/coach/strava_client.py:48,70` | 48 |
 | MEDIUM | Config cache (60s TTL) causes stale state when admin updates settings | `app/core/config.py` | 16 |
+| MEDIUM **(v3)** | `_config_cache = {}` invalidation not thread-safe — race condition under concurrent load | `app/core/config.py` | 18 |
 | MEDIUM | HTML chunking is O(n²) for large messages with deeply nested tags | `app/core/notification.py` | 77 |
 
 **ThreadPoolExecutor Blocking** — `app/agents/news/agent.py:510`:
@@ -104,11 +124,14 @@ Spawning threads inside async doesn't yield the event loop. Under 5+ concurrent 
 | Severity | Finding | File | Line |
 |----------|---------|------|------|
 | CRITICAL | ~15 `except Exception: pass` — silently swallows failures | Multiple | — |
+| CRITICAL **(v3)** | ALL scheduler tasks (8 functions) have ZERO try/except — one crash silently kills the job | `app/services/scheduler.py` | 29,49,58,78,85,92,102,149 |
 | HIGH | No SIGTERM handler — Docker `stop` force-kills active Gemini calls after 10s | `app/main.py` | — |
 | HIGH | Missing env var validation at startup | `app/core/user_context.py` | 10 |
 | HIGH | 50-line in-memory log buffer — logs lost on container crash | `app/core/logging_conf.py` | 7 |
+| HIGH **(v3)** | Scheduler `setup_jobs()` bare `except Exception: pass` on time parsing — silently uses wrong schedule | `app/services/scheduler.py` | 172,178,198 |
 | MEDIUM **(v2)** | No baseline metrics — improvements unverifiable | — | — |
 | MEDIUM **(v2)** | No log scrubbing filter — risk of secret leak via misplaced log | `app/core/logging_conf.py` | — |
+| MEDIUM **(v3)** | `await request.json()` not wrapped — `JSONDecodeError` returns 500, not 400 | `app/routers/webhooks.py` | 144,168 |
 
 **Swallowed Exceptions** — Critical paths with silent failures: `app/services/backup.py:36`, `app/core/notification.py:333`, `app/routers/webhooks.py:116` (logged but not surfaced).
 
@@ -129,6 +152,8 @@ Spawning threads inside async doesn't yield the event loop. Under 5+ concurrent 
 | CRITICAL | Telegram payload risk — token exposure if full payload accidentally logged | `app/core/notification.py` | 197 |
 | HIGH | No webhook rate limiting — flood → BackgroundTask explosion → OOM | `app/routers/webhooks.py` | 143 |
 | HIGH | No Strava HMAC signature verification on POST events | `app/routers/webhooks.py` | 161 |
+| CRITICAL **(v3)** | Admin credentials default to hardcoded `"admin"/"123456"` if env vars unset | `app/routers/admin.py:28`, `console.py:46`, `audit.py:31` | 28 |
+| HIGH **(v3)** | No input schema validation on Strava webhook payload — `object_id` not validated as positive int | `app/routers/webhooks.py` | 146 |
 | MEDIUM | Admin UI missing CSRF protection | `app/routers/admin.py` | — |
 | MEDIUM | `data/config.json` world-readable; contains internal settings | `data/config.json` | — |
 | MEDIUM **(v2)** | Docker runs as root; no `tini` for PID 1 SIGTERM forwarding | `Dockerfile` | — |
@@ -153,6 +178,8 @@ Spawning threads inside async doesn't yield the event loop. Under 5+ concurrent 
 | MEDIUM | 7+ magic numbers hardcoded without rationale | Multiple | — |
 | MEDIUM | Background extraction threads dropped on SIGTERM (`daemon=True`) | `app/agents/news/memory.py` | 142 |
 | MEDIUM **(v2)** | `requirements.txt` missing pinned `pytest`, `pytest-cov`, `pytest-asyncio` | `requirements.txt` | — |
+| MEDIUM **(v3)** | Missing type hints on public functions — `split_html_preserving_tags`, `memorize`, etc. | `app/core/notification.py:77`, `app/agents/news/agent.py:125` | — |
+| LOW **(v3)** | Timezone `os.getenv("TZ","Asia/Ho_Chi_Minh")` copy-pasted 5+ times — extract to `timezone_utils.py` | Multiple | — |
 
 **Magic Numbers**
 
@@ -231,6 +258,38 @@ Before each change:
 **File**: `docs/RUNBOOK.md`
 **Change**: Add `## Baseline Metrics (2026-04-20)` section with the numbers from P0.4. Used as regression tripwire for all subsequent phases.
 
+#### P0.6 — Harden Admin Credentials (30min) **(NEW v3 — CRITICAL)**
+
+**Files**: `app/routers/admin.py:28`, `app/routers/console.py:46`, `app/routers/audit.py:31`
+**Change**: Remove hardcoded `"admin"/"123456"` defaults. Fail-fast at app startup if `ADMIN_USERNAME` or `ADMIN_PASSWORD` not set (min 12 chars).
+```python
+# BEFORE (insecure)
+env_user = os.getenv("ADMIN_USERNAME", "admin")
+env_pass = os.getenv("ADMIN_PASSWORD", "123456")
+# AFTER
+env_user = os.getenv("ADMIN_USERNAME")
+env_pass = os.getenv("ADMIN_PASSWORD")
+if not env_user or not env_pass or len(env_pass) < 12:
+    raise ValueError("ADMIN_USERNAME and ADMIN_PASSWORD (min 12 chars) must be set")
+```
+**Test**: `test_admin_credentials.py` — missing env → ValueError; correct creds → 200; wrong creds → 401.
+**Side effect risk**: NONE for correctly deployed instances. **Must set env vars before deploying.**
+
+#### P0.7 — Wrap ALL Scheduler Tasks in try/except (1h) **(NEW v3 — CRITICAL)**
+
+**File**: `app/services/scheduler.py`
+**Change**: 8 task functions (`task_morning_briefing`, `task_auto_harvest`, `task_weekly_reflection`, `task_morning_news`, `task_afternoon_news`, `task_evening_news`, `task_proactive_coach_check`, `task_log_audit`) have ZERO exception handling. Wrap each in:
+```python
+def task_morning_briefing():
+    try:
+        # existing code
+    except Exception as e:
+        logger.error("[SCHEDULER] task_morning_briefing failed: %s", e, exc_info=True)
+```
+Also fix `setup_jobs()` bare `except Exception: pass` at lines 172, 178, 198 — add `logger.warning()` with the malformed value.
+**Test**: Mock task body to raise; assert error logged, scheduler keeps running.
+**Side effect risk**: ZERO — only adds logging + prevents silent crash propagation.
+
 ---
 
 ### Phase 1 — Critical Fixes (Week 1, ~7h)
@@ -289,6 +348,22 @@ REQUIRED_ENV_VARS = [
 **Test**: 11 requests in 60s → 12th returns 429.
 **Side effect risk**: None for normal Strava traffic (1–5 events/day).
 
+#### P1.6 — Add HTTP Timeouts on All External Calls (1h) **(NEW v3)**
+
+**Files**: `app/agents/coach/strava_client.py`, `app/core/notification.py`
+**Change**: Every `requests.get()` and `requests.post()` call missing `timeout=` parameter. Add `timeout=10` (Strava) and `timeout=15` (Telegram, higher for file uploads).
+**Test**: Mock `requests` to raise `Timeout`; assert caller logs error and returns gracefully.
+**Side effect risk**: LOW — if a legitimate call takes >10s (unlikely), it now fails fast with a retry.
+
+#### P1.7 — Strava Webhook Pydantic Schema + JSONDecodeError (1h) **(NEW v3)**
+
+**File**: `app/routers/webhooks.py`
+**Change**:
+1. Add `StravaWebhook(BaseModel)` with `object_id: int = Field(..., gt=0)`, `object_type: str`.
+2. Wrap `await request.json()` in `try/except json.JSONDecodeError` → return 400.
+**Test**: Invalid JSON → 400. `object_id=-1` → 422. Valid → 200.
+**Side effect risk**: LOW — validates what Strava actually sends; no legitimate events should fail.
+
 ---
 
 ### Phase 2 — Architecture (Week 2-3, ~26h)
@@ -303,6 +378,15 @@ REQUIRED_ENV_VARS = [
 **Test**: Mock; assert all topics processed; assert no thread pool created.
 **Side effect risk**: MEDIUM. Concurrency model changes. Deploy + monitor scheduler 48h.
 **Rollback trigger**: Missing topics in news output OR scheduler latency increase >20%.
+
+#### P2.1b — Eliminate Duplicate Function Definitions (2h) **(NEW v3)**
+
+**Files**: `app/agents/coach/agent.py`, `app/agents/coach/flows/run_analysis.py`, `app/agents/coach/utils.py`
+**Change**:
+- `analyze_run_with_gemini()`: canonical location → `flows/run_analysis.py`. Remove from `agent.py`. Update all callers to import from `flows.run_analysis`.
+- `send_message_with_retry()`: canonical location → `utils.py`. Remove from `agent.py`. Verify all callers already use `utils`.
+**Test**: Smoke test imports pass. Existing tests pass unchanged.
+**Side effect risk**: LOW — pure import path change. Do NOT change any logic during this move.
 
 #### P2.2 — Split Coach Agent into 4 Modules (8h)
 
@@ -469,6 +553,8 @@ REQUIRED_ENV_VARS = [
 - [ ] P0.3 Dockerfile USER appuser + tini
 - [ ] P0.4 Capture 24h baseline
 - [ ] P0.5 Document baseline in RUNBOOK.md
+- [ ] P0.6 Harden admin credentials — remove "admin"/"123456" defaults **(v3 CRITICAL)**
+- [ ] P0.7 Wrap all 8 scheduler tasks in try/except **(v3 CRITICAL)**
 
 ### Phase 1
 - [ ] P1.1 Gemini timeout + retry
@@ -476,9 +562,12 @@ REQUIRED_ENV_VARS = [
 - [ ] P1.3 SIGTERM signal handler
 - [ ] P1.4 Fix swallowed exceptions
 - [ ] P1.5 Webhook rate limiting
+- [ ] P1.6 Add HTTP timeouts on Strava/Telegram external calls **(v3)**
+- [ ] P1.7 Strava webhook Pydantic schema + JSONDecodeError handling **(v3)**
 
 ### Phase 2
 - [ ] P2.1 asyncio.gather for news topics
+- [ ] P2.1b Eliminate duplicate function definitions (analyze_run_with_gemini, send_message_with_retry) **(v3)**
 - [ ] P2.2 Split coach agent into 4 modules
 - [ ] P2.3 Unify news prompt builders
 - [ ] P2.4 Database-backed task queue (3 stages)
@@ -491,6 +580,19 @@ REQUIRED_ENV_VARS = [
 - [ ] P3.4 Strava HMAC verification
 - [ ] P3.5 Log scrubbing filter (NEW)
 - [ ] P3.6 Lock-protected counters (NEW)
+- [ ] P3.7 Add `threading.Lock()` to config cache invalidation **(v3)**
+- [ ] P3.8 Extract `get_timezone()` to `app/core/timezone_utils.py` **(v3)**
+- [ ] P3.9 Add return type hints to all public agent/service functions **(v3)**
+
+### Test Coverage (v3 — TDD Agent)
+- [ ] T1 Strava webhook signature validation tests (`tests/test_webhooks.py`)
+- [ ] T2 Admin credential validation tests (`tests/test_admin.py`)
+- [ ] T3 Scheduler task exception recovery tests (`tests/test_scheduler.py`)
+- [ ] T4 Webhook JSON decode error tests (`tests/test_webhooks.py`)
+- [ ] T5 Database OperationalError retry tests (`tests/test_database.py`)
+- [ ] T6 Config time-string parsing failure tests (`tests/test_config.py`)
+- [ ] T7 Multi-tenant user ID isolation tests (`tests/test_database.py`)
+- Reference: `tests/test_untested_critical_paths.md` — 45 concrete test stubs ready to implement
 
 ---
 
@@ -498,11 +600,12 @@ REQUIRED_ENV_VARS = [
 
 | Phase | Effort | Calendar |
 |-------|--------|----------|
-| Phase 0 | 4h | Week 0 (3 days incl. baseline capture) |
-| Phase 1 | 7h | Week 1 |
-| Phase 2 | 26h | Week 2–3 |
-| Phase 3 | 14h | Week 3–4 |
-| **Total** | **51h** | **~6.5 working days, deployed across 4–5 weeks** |
+| Phase 0 | 4h + 1.5h (v3) = **5.5h** | Week 0 (3 days incl. baseline capture) |
+| Phase 1 | 7h + 2h (v3) = **9h** | Week 1 |
+| Phase 2 | 26h + 2h (v3) = **28h** | Week 2–3 |
+| Phase 3 | 14h + 3h (v3) = **17h** | Week 3–4 |
+| Tests (v3) | **8h** | Parallel to Phase 1–2 |
+| **Total** | **67.5h** | **~8.5 working days, deployed across 4–5 weeks** |
 
 ---
 
@@ -527,6 +630,19 @@ REQUIRED_ENV_VARS = [
 ### ADR-006: Database (NEW)
 **Decision**: SQLite stays. Postgres migration ONLY if multi-user (>100 active users) becomes a requirement. Until then, SQLite + WAL + connection pooling (Phase 4 item) is sufficient.
 
+### ADR-007: Credential Hardening Strategy (v3)
+**Decision**: Fail-fast at startup if admin credentials not set (no defaults). This means any deployment that was relying on the `"admin"/"123456"` defaults will break — intentionally. Set `ADMIN_USERNAME` + `ADMIN_PASSWORD` in `.env` before deploying P0.6.
+**Why not soft warning?**: A soft warning doesn't prevent exposure. Fail-fast is the only safe option.
+
+### ADR-008: Scheduler Exception Strategy (v3)
+**Decision**: Each task wraps its body in `try/except Exception: logger.error(...)`. Exceptions are NOT re-raised (APScheduler would remove the job from the schedule if an exception propagates). Recovery is via logging + next scheduled invocation. No dead-letter queue needed at this scale.
+
+### ADR-009: Test Coverage Gate Timing (v3)
+**Decision**: `pytest --cov-fail-under=80` gate added AFTER Phase 1 test work completes (T1–T5), NOT in Phase 0. Adding it now would block all PRs due to existing coverage gaps.
+
+### ADR-010: Duplicate Function Elimination Approach (v3)
+**Decision**: Move, don't refactor. When eliminating `analyze_run_with_gemini()` and `send_message_with_retry()` duplicates, perform PURE MOVES with zero logic changes. The consolidation is a separate commit from any logic improvement.
+
 ---
 
 ## Rollback Reference
@@ -543,4 +659,6 @@ bash scripts/fetch-logs.sh -l ERROR --since 1h
 
 ---
 
-*v2 generated 2026-04-19 by Opus 4.7 reviewing Sonnet 4.6's v1 plan. Update this file as items are completed. Always run `python -m pytest tests/test_smoke.py -v` before any deploy.*
+*v2 generated 2026-04-19 by Opus 4.7 reviewing Sonnet 4.6's v1 plan.*
+*v3 generated 2026-04-20 by 3-agent orchestration (architect + code-reviewer + tdd-guide, all Opus 4.7). 19 total findings added; 4 new ADRs; 10 new phase items; 45 TDD stubs in `tests/test_untested_critical_paths.md`.*
+*Always run `python -m pytest tests/test_smoke.py -v` before any deploy.*
