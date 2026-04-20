@@ -45,6 +45,9 @@ class TestRouterImports(unittest.TestCase):
     def test_audit_router_importable(self):
         from app.routers.audit import router  # noqa: F401
 
+    def test_admin_auth_importable(self):
+        from app.core.admin_auth import verify_admin  # noqa: F401
+
 
 class TestServiceImports(unittest.TestCase):
     """Services must be importable — scheduler registers jobs at startup."""

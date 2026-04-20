@@ -3,12 +3,9 @@
 # Merges: admin (settings, system control) + dashboard (metrics, charts, training log) + memory view
 
 import json
-import os
-import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Request, Form, Depends, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import APIRouter, Request, Form, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 
@@ -22,6 +19,7 @@ from app.core.logging_conf import (
 )
 from app.core.state import state
 from app.core.user_context import get_primary_user_id
+from app.core.admin_auth import verify_admin
 from app.core.database import (
     get_db_connection,
     get_training_loads,
@@ -36,31 +34,12 @@ templates = Jinja2Templates(directory="templates")
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("admin")
 
-# ==========================================
-# 🔐 AUTHENTICATION
-# ==========================================
-security = HTTPBasic()
-
-
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) -> str:
-    env_user = os.getenv("ADMIN_USERNAME", "admin")
-    env_pass = os.getenv("ADMIN_PASSWORD", "123456")
-    is_user_ok = secrets.compare_digest(credentials.username, env_user)
-    is_pass_ok = secrets.compare_digest(credentials.password, env_pass)
-    if not (is_user_ok and is_pass_ok):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sai tài khoản hoặc mật khẩu!",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
 
 # ==========================================
 # 🖥️ UNIFIED CONSOLE — GET
 # ==========================================
 @router.get("/console", response_class=HTMLResponse)
-async def console_page(request: Request, tab: str = "overview", username: str = Depends(verify_credentials)):
+async def console_page(request: Request, tab: str = "overview", username: str = Depends(verify_admin)):
     """Render the TinhN AI OS unified control console."""
     config = load_config()
     chat_id = get_primary_user_id()
@@ -143,7 +122,7 @@ async def console_save(
     email_enabled: Optional[str] = Form(None),
     debug_mode: Optional[str] = Form(None),
     model_name: str = Form("models/gemini-flash-latest"),
-    username: str = Depends(verify_credentials),
+    username: str = Depends(verify_admin),
 ):
     config = load_config()
     config["system_instruction"] = system_instruction
@@ -177,7 +156,7 @@ async def console_save(
 
 
 @router.get("/console/save", include_in_schema=False)
-async def console_save_redirect(username: str = Depends(verify_credentials)):
+async def console_save_redirect(username: str = Depends(verify_admin)):
     return RedirectResponse(url="/console?tab=settings", status_code=303)
 
 
@@ -187,7 +166,7 @@ async def console_save_redirect(username: str = Depends(verify_credentials)):
 @router.post("/console/save-news")
 async def console_save_news(
     request: Request,
-    username: str = Depends(verify_credentials),
+    username: str = Depends(verify_admin),
 ):
     """Save news agent configuration from the console News tab."""
     form = await request.form()
@@ -242,7 +221,7 @@ _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 @router.post("/console/save-log-levels")
 async def console_save_log_levels(
     request: Request,
-    username: str = Depends(verify_credentials),
+    username: str = Depends(verify_admin),
 ):
     """Save per-domain log level configuration from the console Logging tab."""
     form = await request.form()
@@ -266,7 +245,7 @@ async def console_save_log_levels(
 # ⚙️ SYSTEM ACTIONS
 # ==========================================
 @router.post("/console/toggle")
-async def console_toggle(username: str = Depends(verify_credentials)):
+async def console_toggle(username: str = Depends(verify_admin)):
     state.service_active = not state.service_active
     status_str = "RESUMED" if state.service_active else "PAUSED"
     logger.info(f"[CONSOLE] User '{username}' triggered Service {status_str}")
@@ -274,7 +253,7 @@ async def console_toggle(username: str = Depends(verify_credentials)):
 
 
 @router.get("/console/test-email")
-async def console_test_email(username: str = Depends(verify_credentials)):
+async def console_test_email(username: str = Depends(verify_admin)):
     try:
         cfg = load_config()
         send_html_email(
@@ -293,7 +272,7 @@ async def console_test_email(username: str = Depends(verify_credentials)):
 # Keep old /admin and /dashboard URLs working
 # ==========================================
 @router.get("/admin", include_in_schema=False)
-async def legacy_admin_redirect(username: str = Depends(verify_credentials)):
+async def legacy_admin_redirect(username: str = Depends(verify_admin)):
     return RedirectResponse(url="/console?tab=settings", status_code=301)
 
 

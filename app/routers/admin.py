@@ -1,16 +1,14 @@
-import os
-import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Request, Form, Depends, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import APIRouter, Request, Form, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.config import load_config, save_config
 from app.core.notification import send_html_email
-from app.core.logging_conf import log_capture_string 
+from app.core.logging_conf import log_capture_string
 from app.core.state import state
+from app.core.admin_auth import verify_admin
 from app.services.scheduler import reload_scheduler
 
 router = APIRouter()
@@ -19,33 +17,11 @@ from app.core.logging_conf import get_module_logger
 logger = get_module_logger("admin")
 
 # ==========================================
-# 🔐 AUTHENTICATION SETUP
-# ==========================================
-security = HTTPBasic()
-
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) -> str:
-    """Validate Username and Password against environment variables."""
-    env_user = os.getenv("ADMIN_USERNAME", "admin")
-    env_pass = os.getenv("ADMIN_PASSWORD", "123456")
-    
-    # Use secrets.compare_digest to prevent Timing Attacks (Enhanced Security)
-    is_user_ok = secrets.compare_digest(credentials.username, env_user)
-    is_pass_ok = secrets.compare_digest(credentials.password, env_pass)
-    
-    if not (is_user_ok and is_pass_ok):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sai tài khoản hoặc mật khẩu!", # [ZONE 3] UI Text remains VN
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-# ==========================================
 # 🌐 ADMIN ROUTES
 # ==========================================
 
 @router.get("/admin", response_class=HTMLResponse)
-async def admin_dashboard(request: Request, username: str = Depends(verify_credentials)):
+async def admin_dashboard(request: Request, username: str = Depends(verify_admin)):
     """Render the Admin Dashboard interface."""
     logs_text = "\n".join(list(log_capture_string))
     
@@ -77,7 +53,7 @@ async def save_settings(
     email_enabled: Optional[str] = Form(None),
     debug_mode: Optional[str] = Form(None),
     model_name: str = Form("models/gemini-flash-latest"),
-    username: str = Depends(verify_credentials)
+    username: str = Depends(verify_admin)
 ):
     """Process configuration saving form from Admin UI."""
     config = load_config()
@@ -124,7 +100,7 @@ async def save_settings(
     return RedirectResponse(url="/admin", status_code=303)
 
 @router.get("/admin/save", include_in_schema=False)
-async def catch_accidental_get_save(username: str = Depends(verify_credentials)):
+async def catch_accidental_get_save(username: str = Depends(verify_admin)):
     """
     Error 405 Trap: If a user accidentally refreshes (F5) or types /admin/save directly (GET),
     gracefully redirect them back to the Admin home instead of throwing an error.
@@ -133,7 +109,7 @@ async def catch_accidental_get_save(username: str = Depends(verify_credentials))
     return RedirectResponse(url="/admin", status_code=303)
 
 @router.get("/admin/test-email")
-async def test_email_route(username: str = Depends(verify_credentials)):
+async def test_email_route(username: str = Depends(verify_admin)):
     """Send a test email to verify SMTP connection."""
     try:
         cfg = load_config()
@@ -148,7 +124,7 @@ async def test_email_route(username: str = Depends(verify_credentials)):
         return {"status": "error", "message": str(e)}
 
 @router.post("/admin/toggle")
-async def toggle_service(username: str = Depends(verify_credentials)):
+async def toggle_service(username: str = Depends(verify_admin)):
     """Enable/Disable AI service (Pause/Resume)."""
     state.service_active = not state.service_active
     status = "RESUMED" if state.service_active else "PAUSED"
