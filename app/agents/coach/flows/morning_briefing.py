@@ -1,6 +1,5 @@
 import os
 from app.core.user_context import get_primary_user_id
-import pytz
 from datetime import datetime
 
 from google import genai
@@ -15,6 +14,7 @@ from app.agents.coach.utils import (
     calculate_acwr, calculate_training_phase, debug_log_prompt,
     get_formatted_weekly_context, send_message_with_retry, build_agent_context,
 )
+from app.core.timezone_utils import get_local_tz
 from app.agents.coach.prompts import (
     build_system_instruction, get_shared_context_block, build_standup_prompt,
 )
@@ -37,7 +37,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     Can be triggered by Scheduler (Cron) or Telegram Webhook.
     """
     logger.info("[COACH AGENT] Starting Morning Briefing reasoning flow...")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = get_primary_user_id()
     user_id_str = str(chat_id)

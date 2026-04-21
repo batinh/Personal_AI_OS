@@ -8,6 +8,7 @@ import os
 import pandas as pd
 
 from app.core.logging_conf import get_module_logger
+from app.core.timezone_utils import get_local_tz
 
 logger = get_module_logger("coach")
 
@@ -332,7 +333,7 @@ def get_formatted_weekly_context(user_id: str) -> str:
     Format the weekly volume context into a string block for AI Prompts.
     Shared across both Scheduler (Morning Standup) and Agent (Telegram Chat) flows.
     """
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     
     # Calculate the Monday of the current week
@@ -449,7 +450,7 @@ def build_agent_context(user_id: str, config: dict, now: datetime = None) -> Age
     from app.core.database import get_training_loads, get_weekly_volume
     from app.agents.coach.prompts import build_system_instruction, get_shared_context_block
 
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     if now is None:
         now = datetime.now(tz)
 

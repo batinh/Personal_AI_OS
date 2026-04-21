@@ -2,7 +2,6 @@ import os
 import json
 import re
 import unicodedata
-import pytz
 import uuid
 import time
 from datetime import datetime, timedelta
@@ -23,6 +22,7 @@ from app.core.database import (
 )
 from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context, send_message_with_retry
 from app.services.rag_memory import rag_db
+from app.core.timezone_utils import get_local_tz
 
 # [REFACTOR] Import builder functions
 from app.agents.coach.prompts import (
@@ -168,7 +168,7 @@ def _is_degenerate_response(text: str | None) -> bool:
 # --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)
@@ -261,7 +261,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     Can be triggered by Scheduler (Cron) or Telegram Webhook.
     """
     logger.info("[COACH AGENT] Starting Morning Briefing reasoning flow...")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)
@@ -393,7 +393,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         return
 
     # 1. Calculate Context (fast vs standard path)
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     phase_info = calculate_training_phase(config.get("race_date", ""))
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
     countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race."
@@ -525,7 +525,7 @@ def generate_weekly_reflection(config: dict):
     Strictly follows Data Injection (no tool calling for data gathering).
     """
     logger.info("[COACH AGENT] Generating Weekly Self-Reflection...")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)

@@ -1,7 +1,6 @@
 import os
 from app.core.user_context import get_primary_user_id
 import json
-import pytz
 from datetime import datetime
 
 from google import genai
@@ -25,6 +24,7 @@ from app.agents.coach.prompts import (
 from app.agents.coach.tools import update_todays_plan, set_actual_weekly_target
 from app.agents.coach.metrics_engine import build_run_metrics_block
 from app.core.schemas import RunAnalysisResult
+from app.core.timezone_utils import get_local_tz
 from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
@@ -34,7 +34,7 @@ client = genai.Client()
 
 def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = get_primary_user_id()
     user_id_str = str(chat_id)

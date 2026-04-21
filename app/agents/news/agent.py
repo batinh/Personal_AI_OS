@@ -19,7 +19,6 @@ Telegram routing:
 """
 import logging
 import os
-import pytz
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -28,6 +27,7 @@ from google.genai import types
 
 from app.core.notification import send_telegram_msg
 from app.core.user_context import get_primary_user_id
+from app.core.timezone_utils import get_local_tz
 from app.agents.news.prompts import (
     build_news_system_instruction,
     build_session_prompt,
@@ -70,8 +70,7 @@ def _get_model(config: dict) -> str:
 
 
 def _now_date_str() -> str:
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
-    return datetime.now(tz).strftime("%d/%m/%Y")
+    return datetime.now(get_local_tz()).strftime("%d/%m/%Y")
 
 
 def _resolve_topics(config: dict) -> list[dict]:

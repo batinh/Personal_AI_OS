@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import pytz
 
 from app.core.logging_conf import get_module_logger
+from app.core.timezone_utils import get_local_tz
 logger = get_module_logger("database")
 
 # --- Absolute path anchored to this file's location ---
@@ -787,8 +788,8 @@ def get_weekly_volume(user_id: str, target_date: datetime = None) -> float:
     - user_id: Athlete ID.
     - target_date: Any date falling within the target week. If None, defaults to today.
     """
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
-    
+    tz = get_local_tz()
+
     if target_date is None:
         target_date = datetime.now(tz)
     elif target_date.tzinfo is None:
