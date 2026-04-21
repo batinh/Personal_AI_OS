@@ -252,5 +252,89 @@ class TestCorruptedConfig(unittest.TestCase):
             cfg_mod._EXAMPLE_CONFIG_PATH = original_example
 
 
+class TestConfigThreadSafety(unittest.TestCase):
+    """P3.7: threading.Lock added to config cache — verify no data races under concurrent access."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._config_path = os.path.join(self._tmpdir, "data", "config.json")
+        os.makedirs(os.path.dirname(self._config_path))
+
+        import app.core.config as cfg_mod
+        cfg_mod._config_cache = {}
+        cfg_mod._config_cache_time = 0.0
+        self._original_path = cfg_mod.CONFIG_PATH
+        self._original_example = cfg_mod._EXAMPLE_CONFIG_PATH
+        cfg_mod.CONFIG_PATH = self._config_path
+        cfg_mod._EXAMPLE_CONFIG_PATH = os.path.join(self._tmpdir, "config.example.json")
+        with open(self._config_path, "w") as f:
+            json.dump({"thread_test": True, "counter": 0}, f)
+
+    def tearDown(self):
+        import app.core.config as cfg_mod
+        cfg_mod.CONFIG_PATH = self._original_path
+        cfg_mod._EXAMPLE_CONFIG_PATH = self._original_example
+        cfg_mod._config_cache = {}
+        cfg_mod._config_cache_time = 0.0
+        shutil.rmtree(self._tmpdir)
+
+    def test_concurrent_load_config_returns_consistent_data(self):
+        """Many threads reading load_config() simultaneously must all get the same result."""
+        import threading
+        import app.core.config as cfg_mod
+
+        results = []
+        errors = []
+
+        def reader():
+            try:
+                results.append(cfg_mod.load_config())
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=reader) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 20)
+        for r in results:
+            self.assertTrue(r.get("thread_test"))
+
+    def test_concurrent_save_and_load_no_corruption(self):
+        """Interleaved save_config + load_config from multiple threads must not corrupt data."""
+        import threading
+        import app.core.config as cfg_mod
+
+        errors = []
+
+        def writer(n: int):
+            try:
+                cfg_mod.save_config({"value": n})
+            except Exception as e:
+                errors.append(e)
+
+        def reader():
+            try:
+                data = cfg_mod.load_config()
+                # Just verify it's a dict and not corrupted (partial write)
+                assert isinstance(data, dict)
+            except Exception as e:
+                errors.append(e)
+
+        threads = []
+        for i in range(5):
+            threads.append(threading.Thread(target=writer, args=(i,)))
+            threads.append(threading.Thread(target=reader))
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [])
+
+
 if __name__ == "__main__":
     unittest.main()

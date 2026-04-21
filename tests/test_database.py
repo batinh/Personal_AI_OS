@@ -383,5 +383,72 @@ class TestHistoricalTrainingLoads(_TempDbMixin, unittest.TestCase):
                 self.assertAlmostEqual(result["optimal_max"][i], round(chronic * 1.3, 2), places=1)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. MULTI-TENANT RUN ACTIVITY ISOLATION (T7)
+# ══════════════════════════════════════════════════════════════════════════════
+class TestMultiTenantRunActivityIsolation(_TempDbMixin, unittest.TestCase):
+    """Run activities and training loads must be fully isolated by user_id."""
+
+    def _make_run(self, activity_id: str, distance_km: float, trimp: float):
+        from datetime import datetime
+        return {
+            "activity_id": activity_id,
+            "name": f"Run {activity_id}",
+            "start_date": datetime.now().strftime("%Y-%m-%dT06:00:00"),
+            "distance_km": distance_km,
+            "moving_time_min": 60.0,
+            "avg_hr": 140,
+            "max_hr": 165,
+            "suffer_score": 60,
+            "trimp_score": trimp,
+        }
+
+    def test_training_loads_isolated_by_user(self):
+        """get_training_loads('user_a') must not include user_b's trimp."""
+        database.save_run_activity("user_a", self._make_run("run_a1", 10.0, 100.0))
+        database.save_run_activity("user_b", self._make_run("run_b1", 5.0, 50.0))
+
+        loads_a = database.get_training_loads("user_a")
+        loads_b = database.get_training_loads("user_b")
+
+        # user_a has 100 trimp; user_b has 50 trimp — they must not bleed
+        self.assertAlmostEqual(loads_a["acute_load_7d"], 100.0, places=0)
+        self.assertAlmostEqual(loads_b["acute_load_7d"], 50.0, places=0)
+
+    def test_weekly_mileage_isolated_by_user(self):
+        """avg_weekly_mileage counts only the requesting user's runs."""
+        database.save_run_activity("user_a", self._make_run("dist_a", 20.0, 80.0))
+        database.save_run_activity("user_b", self._make_run("dist_b", 8.0, 30.0))
+
+        loads_a = database.get_training_loads("user_a")
+        loads_b = database.get_training_loads("user_b")
+
+        # avg_weekly_mileage = total_28d / 4
+        self.assertAlmostEqual(loads_a["avg_weekly_mileage"], 20.0 / 4, places=1)
+        self.assertAlmostEqual(loads_b["avg_weekly_mileage"], 8.0 / 4, places=1)
+
+    def test_recent_logs_isolated_by_user(self):
+        """get_recent_runs_log only returns that user's runs (returned as formatted string)."""
+        database.save_run_activity("user_a", self._make_run("log_a", 12.0, 90.0))
+        database.save_run_activity("user_b", self._make_run("log_b", 6.0, 45.0))
+
+        log_a = database.get_recent_runs_log("user_a", limit=10)
+        log_b = database.get_recent_runs_log("user_b", limit=10)
+
+        self.assertIn("log_a", log_a)
+        self.assertNotIn("log_b", log_a)
+        self.assertIn("log_b", log_b)
+        self.assertNotIn("log_a", log_b)
+
+    def test_empty_user_returns_zero_loads(self):
+        """A user with no runs always gets zero loads — no data leaks from other users."""
+        database.save_run_activity("user_a", self._make_run("only_a", 15.0, 120.0))
+
+        loads_b = database.get_training_loads("user_b")
+
+        self.assertAlmostEqual(loads_b["acute_load_7d"], 0.0, places=0)
+        self.assertAlmostEqual(loads_b["avg_weekly_mileage"], 0.0, places=0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
