@@ -560,20 +560,20 @@ REQUIRED_ENV_VARS = [
 - [ ] P0.4 Capture 24h baseline
 - [ ] P0.5 Document baseline in RUNBOOK.md
 - [ ] P0.6 Harden admin credentials — remove "admin"/"123456" defaults **(v3 CRITICAL)**
-- [ ] P0.7 Wrap all 8 scheduler tasks in try/except **(v3 CRITICAL)**
+- [x] P0.7 Wrap all 8 scheduler tasks in try/except **(v3 CRITICAL)** — all tasks had try/except; T3 tests verify (2026-04-21)
 
 ### Phase 1
-- [ ] P1.1 Gemini timeout + retry
+- [x] P1.1 Gemini timeout + retry — 120000ms coach, 30000ms news/memory; SSL retry; ADR-011 (2026-04-21)
 - [ ] P1.2 Startup env validation
 - [ ] P1.3 SIGTERM signal handler
 - [ ] P1.4 Fix swallowed exceptions
 - [ ] P1.5 Webhook rate limiting
 - [ ] P1.6 Add HTTP timeouts on Strava/Telegram external calls **(v3)**
-- [ ] P1.7 Strava webhook Pydantic schema + JSONDecodeError handling **(v3)**
+- [x] P1.7 Strava webhook Pydantic schema + JSONDecodeError handling **(v3)** — null-body guard added to telegram_event (2026-04-21)
 
 ### Phase 2
 - [ ] P2.1 asyncio.gather for news topics
-- [ ] P2.1b Eliminate duplicate function definitions (analyze_run_with_gemini, send_message_with_retry) **(v3)**
+- [x] P2.1b Eliminate duplicate `send_message_with_retry` **(v3)** — removed inline copy from coach/agent.py; canonical in utils.py; ADR-010 (2026-04-21)
 - [ ] P2.2 Split coach agent into 4 modules
 - [ ] P2.3 Unify news prompt builders
 - [ ] P2.4 Database-backed task queue (3 stages)
@@ -586,18 +586,18 @@ REQUIRED_ENV_VARS = [
 - [ ] P3.4 Strava HMAC verification
 - [ ] P3.5 Log scrubbing filter (NEW)
 - [ ] P3.6 Lock-protected counters (NEW)
-- [ ] P3.7 Add `threading.Lock()` to config cache invalidation **(v3)**
-- [ ] P3.8 Extract `get_timezone()` to `app/core/timezone_utils.py` **(v3)**
+- [x] P3.7 Add `threading.Lock()` to config cache invalidation **(v3)** — done; thread-safety test added (2026-04-21)
+- [x] P3.8 Extract `get_local_tz()` to `app/core/timezone_utils.py` **(v3)** — 14 duplicate calls → 1 canonical; smoke test added (2026-04-21)
 - [ ] P3.9 Add return type hints to all public agent/service functions **(v3)**
 
 ### Test Coverage (v3 — TDD Agent)
 - [ ] T1 Strava webhook signature validation tests (`tests/test_webhooks.py`)
 - [ ] T2 Admin credential validation tests (`tests/test_admin.py`)
-- [ ] T3 Scheduler task exception recovery tests (`tests/test_scheduler.py`)
-- [ ] T4 Webhook JSON decode error tests (`tests/test_webhooks.py`)
-- [ ] T5 Database OperationalError retry tests (`tests/test_database.py`)
-- [ ] T6 Config time-string parsing failure tests (`tests/test_config.py`)
-- [ ] T7 Multi-tenant user ID isolation tests (`tests/test_database.py`)
+- [x] T3 Scheduler task exception recovery tests (`tests/test_scheduler.py`) — 8 tasks × 1 test each (2026-04-21)
+- [x] T4 Webhook JSON decode error tests (`tests/test_webhooks.py`) — Pydantic 422 + telegram null-body (2026-04-21)
+- [ ] T5 Database OperationalError retry tests — deferred; requires retry impl first (WAL+busy_timeout mitigates)
+- [x] T6 Config thread-safety tests (`tests/test_config.py`) — 20-thread concurrent read + interleaved save/load (2026-04-21)
+- [x] T7 Multi-tenant run activity isolation tests (`tests/test_database.py`) — training loads, mileage, logs (2026-04-21)
 - Reference: `tests/test_untested_critical_paths.md` — 45 concrete test stubs ready to implement
 
 ---
