@@ -4,7 +4,10 @@ Shared Gemini response utilities.
 import re as _re
 
 
-_THOUGHT_PREFIX_RE = _re.compile(r"^thought[\n\r ]\w", _re.IGNORECASE)
+# Matches "thought", "thoughtful", "thoughtfully", "thoughts", etc. — any word
+# starting with "thought" followed by whitespace.  Incident 2026-04-21: Gemini
+# emitted "thoughtful\n..." and the narrower pattern ^thought[\n\r ]\w missed it.
+_THOUGHT_PREFIX_RE = _re.compile(r"^thought\w*[\n\r ]", _re.IGNORECASE)
 
 
 def extract_text(response) -> str | None:

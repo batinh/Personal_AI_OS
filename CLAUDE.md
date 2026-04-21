@@ -5,6 +5,7 @@
 ## Commands
 ```bash
 python -m pytest tests/test_smoke.py -v        # smoke only — run FIRST (< 2s)
+python -m pytest tests/test_e2e_local.py -v   # E2E: HTTP flows without Docker — run after refactor
 python -m pytest tests/ -q                      # full suite (gate before commit — 0 failures)
 python -m pytest tests/test_<module>.py -v     # targeted module
 python -m pytest tests/test_telegram_chunking.py -v  # after any notification.py change
@@ -71,13 +72,19 @@ Every code change must pass this gate before deploying to T440:
           Catches ImportError and missing symbols before any logic runs.
           Run this first — fastest feedback (< 2s).
 
-2. UNIT   python -m pytest tests/ -q
+2. E2E    python -m pytest tests/test_e2e_local.py -v
+          28 HTTP-level tests: health, Strava webhook flow, Telegram routing,
+          scheduler startup, timezone utils, config concurrency.
+          Run after any refactor to prove end-to-end paths still work.
+          No Docker required — uses FastAPI TestClient.
+
+3. UNIT   python -m pytest tests/ -q
           Full suite: unit + integration tests. 0 failures required.
 
-3. DEPLOY bash scripts/pre-deploy-check.sh
+4. DEPLOY bash scripts/pre-deploy-check.sh
           Runs: pytest suite + config loads + docker compose syntax.
 
-4. T440   bash scripts/deploy-t440.sh
+5. T440   bash scripts/deploy-t440.sh
           git pull + docker rebuild + health check (90s timeout) +
           E2E curl smoke tests (/health, /console, /admin, /webhook,
           scheduler running, no errors in last 50 log lines).
