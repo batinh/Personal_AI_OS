@@ -180,6 +180,8 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
     except (json.JSONDecodeError, Exception):
         logger.warning("[WEBHOOK] Malformed JSON in telegram-webhook body; ignoring.")
         return {"status": "ok"}
+    if not isinstance(data, dict):
+        return {"status": "ok"}
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
         text = data["message"].get("text", "")
