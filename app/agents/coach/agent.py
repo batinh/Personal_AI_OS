@@ -21,7 +21,7 @@ from app.core.database import (
     insert_memory, get_all_active_memories, get_weekly_target, # [ARCHITECTURE UPDATE] Using global deduplication
     get_run_metrics_from_db,
 )
-from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
+from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context, send_message_with_retry
 from app.services.rag_memory import rag_db
 
 # [REFACTOR] Import builder functions
@@ -51,30 +51,6 @@ client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in
 # ==========================================
 # 🛡️ RESILIENCE PATTERN: EXPONENTIAL BACKOFF
 # ==========================================
-def send_message_with_retry(chat_session, message, max_retries=3):
-    """
-    Wrapper to call Gemini API with an exponential backoff retry mechanism 
-    when the Google Server is overloaded.
-    Gracefully handles 503 (Unavailable) and 429 (Too Many Requests) errors.
-    """
-    for attempt in range(max_retries):
-        try:
-            return chat_session.send_message(message)
-        except Exception as e:
-            error_msg = str(e)
-            _RETRYABLE = ("503", "429", "Unavailable", "timed out", "timeout", "ssl", "SSL", "handshake")
-            if any(token in error_msg for token in _RETRYABLE):
-                if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Wait 1s, 2s, 4s...
-                    logger.warning(f"[API RESILIENCE] Transient error ({error_msg[:80]}). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    logger.error("[API RESILIENCE] Max retries reached. Last error: %s", error_msg[:120])
-                    raise e
-            else:
-                # Non-retryable error (e.g., invalid API Key) — fail immediately
-                raise e
-
 # ==========================================
 # 🚀 PERFORMANCE: TOOL ROUTING BY INTENT
 # ==========================================
