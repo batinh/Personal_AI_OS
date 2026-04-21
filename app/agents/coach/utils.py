@@ -8,6 +8,7 @@ import os
 import pandas as pd
 
 from app.core.logging_conf import get_module_logger
+from app.core.timezone_utils import get_local_tz
 
 logger = get_module_logger("coach")
 
@@ -332,7 +333,7 @@ def get_formatted_weekly_context(user_id: str) -> str:
     Format the weekly volume context into a string block for AI Prompts.
     Shared across both Scheduler (Morning Standup) and Agent (Telegram Chat) flows.
     """
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     
     # Calculate the Monday of the current week
@@ -355,10 +356,18 @@ def get_formatted_weekly_context(user_id: str) -> str:
 # RESILIENCE: EXPONENTIAL BACKOFF FOR GEMINI API
 # =====================================================================
 
+_RETRYABLE_ERRORS = (
+    "503", "429", "Unavailable",       # Google server overload
+    "timed out", "timeout",             # Network/SSL timeout
+    "ssl", "SSL", "handshake",          # TLS handshake failure
+)
+
+
 def send_message_with_retry(chat_session, message, max_retries=3):
     """
-    Wrapper to call Gemini API with an exponential backoff retry mechanism.
-    Handles 503/429 errors and MALFORMED_RESPONSE (truncated output from preview models).
+    Canonical retry wrapper for all Gemini chat calls.
+    Retries on: 503/429, SSL/TLS handshake timeouts, MALFORMED_RESPONSE.
+    Non-retryable errors (invalid API key, etc.) fail immediately.
     """
     for attempt in range(max_retries):
         try:
@@ -372,7 +381,7 @@ def send_message_with_retry(chat_session, message, max_retries=3):
                 pass
             if finish is not None and "MALFORMED" in str(finish):
                 if attempt < max_retries - 1:
-                    logger.warning(f"[API RESILIENCE] MALFORMED_RESPONSE from Gemini, response truncated. Retrying... (Attempt {attempt + 1}/{max_retries})")
+                    logger.warning(f"[API RESILIENCE] MALFORMED_RESPONSE — response truncated. Retrying... (Attempt {attempt + 1}/{max_retries})")
                     continue
                 logger.error("[API RESILIENCE] MALFORMED_RESPONSE persists after all retries.")
 
@@ -384,11 +393,8 @@ def send_message_with_retry(chat_session, message, max_retries=3):
                     req_preview = (message or "")[:2000]
                     resp_text = getattr(response, "text", None)
                     resp_preview = (resp_text or "")[:2000]
-                    # candidates preview if available
                     try:
-                        cand_preview = None
-                        if getattr(response, "candidates", None):
-                            cand_preview = str(response.candidates[0])[:1000]
+                        cand_preview = str(response.candidates[0])[:1000] if getattr(response, "candidates", None) else None
                     except Exception:
                         cand_preview = None
                     logger.debug(f"[API DEBUG] Request preview={req_preview!r}")
@@ -399,17 +405,23 @@ def send_message_with_retry(chat_session, message, max_retries=3):
                 logger.debug("[API DEBUG] Failed to build request/response preview")
 
             return response
+
         except Exception as e:
             error_msg = str(e)
-            if "503" in error_msg or "429" in error_msg or "Unavailable" in error_msg:
+            exc_type = type(e).__name__
+            if any(token in error_msg for token in _RETRYABLE_ERRORS):
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Wait 1s, 2s, 4s...
-                    logger.warning(f"[API RESILIENCE] Google Server overloaded (503/429). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
+                    wait_time = 2 ** attempt
+                    logger.warning(
+                        "[API RESILIENCE] Transient error %s: %s. Retrying in %ds... (Attempt %d/%d)",
+                        exc_type, error_msg[:120], wait_time, attempt + 1, max_retries,
+                    )
                     time.sleep(wait_time)
                 else:
-                    logger.error("[API RESILIENCE] Max retries reached. Google Server is completely down.")
+                    logger.error("[API RESILIENCE] Max retries exhausted. %s: %s", exc_type, error_msg[:120])
                     raise e
             else:
+                logger.debug("[API RESILIENCE] Non-retryable error %s: %s", exc_type, error_msg[:120])
                 raise e
 
 # =====================================================================
@@ -438,7 +450,7 @@ def build_agent_context(user_id: str, config: dict, now: datetime = None) -> Age
     from app.core.database import get_training_loads, get_weekly_volume
     from app.agents.coach.prompts import build_system_instruction, get_shared_context_block
 
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     if now is None:
         now = datetime.now(tz)
 

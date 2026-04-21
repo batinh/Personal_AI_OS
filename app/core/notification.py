@@ -198,7 +198,7 @@ def send_telegram_msg(chat_id, text):
         except Exception:
             pass
         try:
-            resp = requests.post(url, json=payload)
+            resp = requests.post(url, json=payload, timeout=15)
             try:
                 logger.debug(f"[TELEGRAM][POST_JSON] response_status={resp.status_code}, response_text={resp.text}")
             except Exception:
@@ -215,7 +215,7 @@ def send_telegram_msg(chat_id, text):
         except Exception:
             pass
         try:
-            resp = requests.post(url, files=files, data=data)
+            resp = requests.post(url, files=files, data=data, timeout=30)
             try:
                 logger.debug(f"[TELEGRAM][POST_FILES] response_status={resp.status_code}, response_text={resp.text}")
             except Exception:

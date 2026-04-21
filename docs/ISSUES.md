@@ -48,6 +48,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 | [ISS-F08](#iss-f08--templateresponse-api-broke-after-starlette-upgrade) | bug | `TemplateResponse` API broke after Starlette upgrade | High | AI | 2026-03-xx | 2026-03-xx | `6ae9683` | `routers/*.py` |
 | [ISS-010](#iss-010--url-cross-contamination-in-news-briefing) | bug | URL cross-contamination — wrong links on news articles | High | U+AI | 2026-04-14 | 2026-04-14 | `2d31b53` | `app/agents/news/agent.py`, `prompts.py` |
 | [ISS-011](#iss-011--on-demand-news-query-via-news-query) | feature | On-demand news query via `@news <query>` | Medium | U | 2026-04-14 | 2026-04-14 | `2d31b53` | `app/agents/news/agent.py`, `telegram_handler.py` |
+| [ISS-012](#iss-012--gemini-thoughtful-preamble-leaks-into-telegram-news-briefing) | bug | Gemini "thoughtful\n..." preamble leaks into Telegram news briefing | High | U | 2026-04-21 | 2026-04-21 | (current) | `app/core/gemini_utils.py` |
 
 ---
 
@@ -293,3 +294,22 @@ User wants to send `@news trending AI` or `@news tình hình kinh tế hôm nay`
 2. `build_on_demand_system_instruction()` and `build_on_demand_prompt(query, date)` added to `prompts.py`.
 3. `handle_news_chat()` in `telegram_handler.py` simplified to delegate entirely to `generate_on_demand_briefing()`; memory extraction runs in background daemon thread via `run_extract_in_background()`.
 4. `genai.Client` ownership moved to `memory.py` as module-level `_client` — removes coupling between `telegram_handler` and Gemini client initialisation.
+
+---
+
+### ISS-012 — Gemini "thoughtful\n..." preamble leaks into Telegram news briefing
+
+**Type:** bug · **Priority:** High · **Reporter:** U · **Date:** 2026-04-21
+**Module:** `app/core/gemini_utils.py`
+
+**Symptom:**
+Evening news briefing at 20:00 on 2026-04-21 sent a Telegram message containing the model's internal reasoning chain starting with "thoughtful\nNews Curator (specialist in analyzing a specific topic)...\nSelf-Correction/Reality Check:..." followed by search queries like `Let's search for "chạy bộ thể thao news"`. The actual news content (📊 Phân tích:...) appeared after the leaked reasoning.
+
+**Root cause:**
+`_THOUGHT_PREFIX_RE` regex in `gemini_utils.py` was `^thought[\n\r ]\w` — matches "thought\n..." but not "thoughtful\n...". Gemini emitted "thoughtful" as its opener (not the bare word "thought"), so `strip_thought_preamble` passed the text through unchanged.
+
+**Fix:**
+Changed regex to `^thought\w*[\n\r ]` — matches any word starting with "thought" ("thought", "thoughtful", "thoughtfully", "thoughts") followed by whitespace. The anchor search (`📊`, HTML tags) then correctly locates the real content start.
+
+**Regression test:**
+`tests/test_news_agent_thinking.py::TestStripThoughtPreamble::test_strips_thoughtful_preamble` — reproduces the exact production incident text.

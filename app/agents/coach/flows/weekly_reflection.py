@@ -1,6 +1,5 @@
 import os
 from app.core.user_context import get_primary_user_id
-import pytz
 from datetime import datetime, timedelta
 
 from google import genai
@@ -14,6 +13,7 @@ from app.agents.coach.utils import (
     calculate_acwr, calculate_training_phase, debug_log_prompt,
     get_formatted_weekly_context, send_message_with_retry, build_agent_context,
 )
+from app.core.timezone_utils import get_local_tz
 from app.agents.coach.prompts import (
     build_system_instruction, get_shared_context_block, build_weekly_reflection_prompt,
 )
@@ -36,7 +36,7 @@ def generate_weekly_reflection(config: dict):
     Strictly follows Data Injection (no tool calling for data gathering).
     """
     logger.info("[COACH AGENT] Generating Weekly Self-Reflection...")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = get_primary_user_id()
     user_id_str = str(chat_id)

@@ -19,7 +19,6 @@ Telegram routing:
 """
 import logging
 import os
-import pytz
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -28,6 +27,7 @@ from google.genai import types
 
 from app.core.notification import send_telegram_msg
 from app.core.user_context import get_primary_user_id
+from app.core.timezone_utils import get_local_tz
 from app.agents.news.prompts import (
     build_news_system_instruction,
     build_session_prompt,
@@ -40,7 +40,7 @@ from app.agents.news.memory import load_news_memory
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(timeout=30000))  # 30s in ms
 
 # Chunking is handled by send_telegram_msg() in notification.py (HTML-balanced, multi-message).
 # Do NOT truncate here — truncation would cut mid-tag and lose content.
@@ -70,8 +70,7 @@ def _get_model(config: dict) -> str:
 
 
 def _now_date_str() -> str:
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
-    return datetime.now(tz).strftime("%d/%m/%Y")
+    return datetime.now(get_local_tz()).strftime("%d/%m/%Y")
 
 
 def _resolve_topics(config: dict) -> list[dict]:

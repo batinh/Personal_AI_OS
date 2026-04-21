@@ -289,5 +289,87 @@ class TestSetupJobs(unittest.TestCase):
         self.assertEqual(mock_sched.add_job.call_count, 6)
 
 
+# ==========================================
+# Exception Recovery (T3)
+# ==========================================
+class TestSchedulerTaskExceptionRecovery(unittest.TestCase):
+    """Scheduler tasks must swallow all exceptions — BackgroundScheduler cannot handle propagated errors."""
+
+    def test_morning_briefing_exception_does_not_propagate(self):
+        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
+             patch("app.services.scheduler.load_config", return_value=_make_config()), \
+             patch("app.services.scheduler.get_today_weather", return_value="OK"), \
+             patch("app.services.scheduler.generate_morning_briefing", side_effect=Exception("AI timeout")):
+            from app.services.scheduler import task_morning_briefing
+            try:
+                task_morning_briefing()
+            except Exception:
+                self.fail("task_morning_briefing should not propagate exceptions")
+
+    def test_auto_harvest_exception_does_not_propagate(self):
+        with patch("app.services.scheduler.harvest_data", side_effect=Exception("Strava 503")):
+            from app.services.scheduler import task_auto_harvest
+            try:
+                task_auto_harvest()
+            except Exception:
+                self.fail("task_auto_harvest should not propagate exceptions")
+
+    def test_weekly_reflection_exception_does_not_propagate(self):
+        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
+             patch("app.services.scheduler.load_config", return_value=_make_config()), \
+             patch("app.services.scheduler.extract_implicit_memory", side_effect=Exception("DB error")):
+            from app.services.scheduler import task_weekly_reflection
+            try:
+                task_weekly_reflection()
+            except Exception:
+                self.fail("task_weekly_reflection should not propagate exceptions")
+
+    def test_morning_news_exception_does_not_propagate(self):
+        with patch("app.services.scheduler.load_config", return_value=_make_config()), \
+             patch("app.services.scheduler.generate_news_briefing", side_effect=Exception("Gemini 429")):
+            from app.services.scheduler import task_morning_news
+            try:
+                task_morning_news()
+            except Exception:
+                self.fail("task_morning_news should not propagate exceptions")
+
+    def test_afternoon_news_exception_does_not_propagate(self):
+        with patch("app.services.scheduler.load_config", return_value=_make_config()), \
+             patch("app.services.scheduler.generate_news_briefing", side_effect=Exception("timeout")):
+            from app.services.scheduler import task_afternoon_news
+            try:
+                task_afternoon_news()
+            except Exception:
+                self.fail("task_afternoon_news should not propagate exceptions")
+
+    def test_evening_news_exception_does_not_propagate(self):
+        with patch("app.services.scheduler.load_config", return_value=_make_config()), \
+             patch("app.services.scheduler.generate_news_briefing", side_effect=Exception("SSL error")):
+            from app.services.scheduler import task_evening_news
+            try:
+                task_evening_news()
+            except Exception:
+                self.fail("task_evening_news should not propagate exceptions")
+
+    def test_proactive_coach_check_exception_does_not_propagate(self):
+        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
+             patch("app.services.scheduler.load_config", return_value=_make_config()), \
+             patch("app.services.scheduler.get_training_loads", side_effect=Exception("DB locked")):
+            from app.services.scheduler import task_proactive_coach_check
+            try:
+                task_proactive_coach_check()
+            except Exception:
+                self.fail("task_proactive_coach_check should not propagate exceptions")
+
+    def test_log_audit_exception_does_not_propagate(self):
+        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
+             patch("app.services.scheduler.run_audit", side_effect=Exception("IO error")):
+            from app.services.scheduler import task_log_audit
+            try:
+                task_log_audit()
+            except Exception:
+                self.fail("task_log_audit should not propagate exceptions")
+
+
 if __name__ == "__main__":
     unittest.main()

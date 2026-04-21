@@ -7,42 +7,25 @@ POST /audit/api/entries/{id}/acknowledge → mark as acknowledged
 POST /audit/api/entries/{id}/resolve     → mark as resolved
 POST /audit/api/run  → trigger manual audit scan
 """
-import os
-import secrets
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.templating import Jinja2Templates
 
 from app.core.database import get_audit_entries, update_audit_status, get_audit_stats
 from app.core.user_context import get_primary_user_id
+from app.core.admin_auth import verify_admin
 from app.services.log_auditor import run_audit
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("audit")
 router = APIRouter(prefix="/audit", tags=["Audit"])
 templates = Jinja2Templates(directory="templates")
-_security = HTTPBasic()
-
-
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(_security)) -> str:
-    env_user = os.getenv("ADMIN_USERNAME", "admin")
-    env_pass = os.getenv("ADMIN_PASSWORD", "123456")
-    ok = secrets.compare_digest(credentials.username, env_user) and \
-         secrets.compare_digest(credentials.password, env_pass)
-    if not ok:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sai tài khoản hoặc mật khẩu!",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
 
 
 @router.get("", response_class=HTMLResponse)
-async def audit_page(request: Request, _=Depends(verify_credentials)):
+async def audit_page(request: Request, _=Depends(verify_admin)):
     """Render audit dashboard HTML page."""
     return templates.TemplateResponse(request, "audit.html", {})
 
@@ -53,7 +36,7 @@ async def list_entries(
     category: Optional[str] = Query(None),
     severity: Optional[str] = Query(None, description="error|warning|info"),
     limit: int = Query(200, ge=1, le=1000),
-    _=Depends(verify_credentials),
+    _=Depends(verify_admin),
 ):
     """Return audit entries as JSON with optional filters."""
     user_id = str(get_primary_user_id())
@@ -69,21 +52,21 @@ async def list_entries(
 
 
 @router.post("/api/entries/{entry_id}/acknowledge")
-async def acknowledge_entry(entry_id: int, _=Depends(verify_credentials)):
+async def acknowledge_entry(entry_id: int, _=Depends(verify_admin)):
     """Mark an audit entry as acknowledged."""
     ok = update_audit_status(entry_id, "acknowledged")
     return {"success": ok, "id": entry_id, "status": "acknowledged"}
 
 
 @router.post("/api/entries/{entry_id}/resolve")
-async def resolve_entry(entry_id: int, _=Depends(verify_credentials)):
+async def resolve_entry(entry_id: int, _=Depends(verify_admin)):
     """Mark an audit entry as resolved."""
     ok = update_audit_status(entry_id, "resolved")
     return {"success": ok, "id": entry_id, "status": "resolved"}
 
 
 @router.post("/api/run")
-async def run_audit_now(_=Depends(verify_credentials)):
+async def run_audit_now(_=Depends(verify_admin)):
     """Trigger an immediate audit scan and return count of new entries."""
     user_id = str(get_primary_user_id())
     count = run_audit(user_id)

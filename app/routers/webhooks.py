@@ -1,6 +1,21 @@
 from fastapi import APIRouter, Request, BackgroundTasks
+import json
 import os
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
 from app.core.user_context import get_primary_user_id
+
+
+class StravaWebhookPayload(BaseModel):
+    object_type: str
+    object_id: int = Field(..., gt=0)
+    aspect_type: str
+    owner_id: Optional[int] = None
+    subscription_id: Optional[int] = None
+    event_time: Optional[int] = None
+    updates: Optional[dict[str, Any]] = None
 
 from app.core.config import load_config
 from app.core.notification import send_telegram_msg, send_html_email
@@ -140,20 +155,15 @@ def run_strava_workflow(activity_id: str):
             logger.info(f"[*] Sent Telegram notification for Activity {activity_id}")     
 
 @router.post("/webhook")
-async def strava_event(request: Request, background_tasks: BackgroundTasks):
-    data = await request.json()
-    
-    if data.get("object_type") == "activity":
-        activity_id = str(data.get("object_id"))
-        
-        # 1. Catch CREATE activity event
-        if data.get("aspect_type") == "create":
+async def strava_event(payload: StravaWebhookPayload, background_tasks: BackgroundTasks):
+    if payload.object_type == "activity":
+        activity_id = str(payload.object_id)
+
+        if payload.aspect_type == "create":
             background_tasks.add_task(run_strava_workflow, activity_id)
-            
-        # 2. [ARCHITECTURE UPDATE] Catch DELETE activity event
-        elif data.get("aspect_type") == "delete":
+        elif payload.aspect_type == "delete":
             background_tasks.add_task(handle_deleted_activity, activity_id)
-            
+
     return {"status": "ok"}
 
 @router.get("/webhook")
@@ -165,7 +175,13 @@ def verify_strava(request: Request):
 # --- TELEGRAM WORKFLOW ---
 @router.post("/telegram-webhook")
 async def telegram_event(request: Request, background_tasks: BackgroundTasks):
-    data = await request.json()
+    try:
+        data = await request.json()
+    except (json.JSONDecodeError, Exception):
+        logger.warning("[WEBHOOK] Malformed JSON in telegram-webhook body; ignoring.")
+        return {"status": "ok"}
+    if not isinstance(data, dict):
+        return {"status": "ok"}
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
         text = data["message"].get("text", "")

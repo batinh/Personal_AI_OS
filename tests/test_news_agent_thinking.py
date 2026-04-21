@@ -178,6 +178,28 @@ class TestStripThoughtPreamble(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertTrue(result.startswith("✅"))
 
+    def test_strips_thoughtful_preamble(self):
+        # Incident 2026-04-21: Gemini emitted "thoughtful\n..." — old regex missed it.
+        preamble = (
+            "thoughtful\nNews Curator (specialist in analyzing a specific topic).\n"
+            "🏃 Running & Sports.\nApril 21, 2026, evening.\n"
+            "Search for actual news in the last 24-48 hours...\n"
+            "    • Self-Correction: Today is actually May 2024...\n"
+            "Let's search for \"chạy bộ thể thao news\".\n"
+        )
+        answer = "📊 Phân tích: Thị trường chạy bộ đang bùng nổ."
+        result = _strip_thought_preamble(preamble + answer)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("📊"), f"Expected 📊 anchor, got: {result[:80]!r}")
+        self.assertNotIn("thoughtful", result)
+        self.assertNotIn("Self-Correction", result)
+
+    def test_strips_thoughts_plural(self):
+        text = "thoughts\nSome reasoning\n📰 The actual news"
+        result = _strip_thought_preamble(text)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith("📰"))
+
     def test_empty_string_passes_through(self):
         self.assertEqual(_strip_thought_preamble(""), "")
 

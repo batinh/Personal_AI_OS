@@ -2,7 +2,6 @@ import os
 import json
 import re
 import unicodedata
-import pytz
 import uuid
 import time
 from datetime import datetime, timedelta
@@ -21,8 +20,9 @@ from app.core.database import (
     insert_memory, get_all_active_memories, get_weekly_target, # [ARCHITECTURE UPDATE] Using global deduplication
     get_run_metrics_from_db,
 )
-from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
+from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context, send_message_with_retry
 from app.services.rag_memory import rag_db
+from app.core.timezone_utils import get_local_tz
 
 # [REFACTOR] Import builder functions
 from app.agents.coach.prompts import (
@@ -46,34 +46,11 @@ from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
 
 # ==========================================
 # 🛡️ RESILIENCE PATTERN: EXPONENTIAL BACKOFF
 # ==========================================
-def send_message_with_retry(chat_session, message, max_retries=3):
-    """
-    Wrapper to call Gemini API with an exponential backoff retry mechanism 
-    when the Google Server is overloaded.
-    Gracefully handles 503 (Unavailable) and 429 (Too Many Requests) errors.
-    """
-    for attempt in range(max_retries):
-        try:
-            return chat_session.send_message(message)
-        except Exception as e:
-            error_msg = str(e)
-            if "503" in error_msg or "429" in error_msg or "Unavailable" in error_msg:
-                if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Wait 1s, 2s, 4s...
-                    logger.warning(f"[API RESILIENCE] Google Server overloaded (503/429). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    logger.error("[API RESILIENCE] Max retries reached. Google Server is completely down.")
-                    raise e
-            else:
-                # If it is a different error (e.g., invalid API Key), raise immediately without retrying
-                raise e
-
 # ==========================================
 # 🚀 PERFORMANCE: TOOL ROUTING BY INTENT
 # ==========================================
@@ -191,7 +168,7 @@ def _is_degenerate_response(text: str | None) -> bool:
 # --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)
@@ -284,7 +261,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     Can be triggered by Scheduler (Cron) or Telegram Webhook.
     """
     logger.info("[COACH AGENT] Starting Morning Briefing reasoning flow...")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)
@@ -416,7 +393,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         return
 
     # 1. Calculate Context (fast vs standard path)
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     phase_info = calculate_training_phase(config.get("race_date", ""))
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
     countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race."
@@ -548,7 +525,7 @@ def generate_weekly_reflection(config: dict):
     Strictly follows Data Injection (no tool calling for data gathering).
     """
     logger.info("[COACH AGENT] Generating Weekly Self-Reflection...")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    tz = get_local_tz()
     now = datetime.now(tz)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)

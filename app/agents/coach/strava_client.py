@@ -45,7 +45,7 @@ class StravaClient:
             'grant_type': 'refresh_token'
         }
         try:
-            response = requests.post(self.auth_url, data=payload)
+            response = requests.post(self.auth_url, data=payload, timeout=10)
             response.raise_for_status()
             data = response.json()
             self._cached_token = data.get('access_token')
@@ -67,7 +67,7 @@ class StravaClient:
         headers = {"Authorization": f"Bearer {token}"}
         url = f"{self.base_url}/activities/{activity_id}/streams?keys={STRAVA_STREAM_KEYS}&key_by_type=true"
         try:
-            r = requests.get(url, headers=headers)
+            r = requests.get(url, headers=headers, timeout=10)
             if r.status_code != 200:
                 logger.warning(f"[STRAVA] Streams response {r.status_code} for {activity_id}")
                 return None
@@ -91,7 +91,7 @@ class StravaClient:
         try:
             # 1. Fetch Activity Detail (Contains Laps, Splits, Best Efforts)
             act_url = f"{self.base_url}/activities/{activity_id}"
-            act_res = requests.get(act_url, headers=headers)
+            act_res = requests.get(act_url, headers=headers, timeout=10)
             if act_res.status_code != 200:
                 logger.error(f"[STRAVA] Error fetching activity: {act_res.text}")
                 return None, None, None, None
@@ -181,7 +181,7 @@ class StravaClient:
         payload = {'description': description}
 
         try:
-            response = requests.put(url, headers=headers, json=payload)
+            response = requests.put(url, headers=headers, json=payload, timeout=10)
             if response.status_code == 200:
                 logger.info(f"[STRAVA] Description updated for {activity_id}")
                 return True
@@ -199,7 +199,7 @@ class StravaClient:
         headers = {"Authorization": f"Bearer {token}"}
         
         try:
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 return {
@@ -220,7 +220,7 @@ class StravaClient:
         params = {"per_page": limit}
 
         try:
-            response = requests.get(url, headers=headers, params=params)
+            response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code == 200:
                 return response.json()
         except Exception as e:
@@ -239,7 +239,7 @@ class StravaClient:
         page = 1
         while True:
             try:
-                resp = requests.get(url, headers=headers, params={"per_page": per_page, "page": page})
+                resp = requests.get(url, headers=headers, params={"per_page": per_page, "page": page}, timeout=10)
                 if resp.status_code == 429:
                     logger.warning("[STRAVA] Rate limited during paginated fetch; stopping.")
                     break

@@ -280,6 +280,65 @@ class TestTelegramWebhook(unittest.TestCase):
         mock_chat.assert_called_once_with("12345", "", {})
 
 
+class TestWebhookPayloadValidation(unittest.TestCase):
+    """T4: Malformed and edge-case payloads must not crash the server."""
+
+    def setUp(self):
+        from app.main import app
+        self.client = TestClient(app, raise_server_exceptions=False)
+
+    def test_strava_webhook_malformed_json_rejected(self):
+        """Pydantic schema on /webhook rejects malformed JSON with 422."""
+        resp = self.client.post(
+            "/webhook",
+            content="{invalid json, no closing brace",
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertIn(resp.status_code, [400, 422])
+
+    def test_strava_webhook_missing_required_fields_rejected(self):
+        """/webhook requires object_type/object_id/aspect_type — empty body → 422."""
+        resp = self.client.post("/webhook", json={})
+        self.assertIn(resp.status_code, [400, 422])
+
+    def test_strava_webhook_null_body_rejected(self):
+        """null body is not a valid Pydantic payload → 422."""
+        resp = self.client.post(
+            "/webhook",
+            content="null",
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertIn(resp.status_code, [400, 422])
+
+    def test_strava_webhook_zero_object_id_rejected(self):
+        """StravaWebhookPayload enforces object_id > 0 via Field(gt=0)."""
+        resp = self.client.post("/webhook", json={
+            "object_type": "activity",
+            "aspect_type": "create",
+            "object_id": 0,
+        })
+        self.assertIn(resp.status_code, [400, 422])
+
+    def test_telegram_webhook_malformed_json_returns_ok(self):
+        """/telegram-webhook explicitly swallows JSON errors and returns 200."""
+        resp = self.client.post(
+            "/telegram-webhook",
+            content='{"unclosed": "object',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"status": "ok"})
+
+    def test_telegram_webhook_null_body_returns_ok(self):
+        """/telegram-webhook treats null body as 'no message' and returns ok."""
+        resp = self.client.post(
+            "/telegram-webhook",
+            content="null",
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(resp.status_code, 200)
+
+
 class TestDuplicateWebhookResilience(unittest.TestCase):
     """Strava may send duplicate create events for the same activity."""
 
