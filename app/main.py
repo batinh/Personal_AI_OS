@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 # --- IMPORTS (Modular Structure) ---
 from app.core.database import init_db, DB_PATH
 from app.core.config import load_config, CONFIG_PATH
-from app.routers import webhooks, admin, dashboard, console, audit
+from app.routers import webhooks, admin, dashboard, console, audit, metrics
 from app.services.scheduler import start_scheduler, scheduler
 from app.core.logging_conf import setup_logging, apply_log_levels
 
@@ -71,6 +71,7 @@ app.include_router(console.router)   # Unified console (replaces admin + dashboa
 app.include_router(admin.router)     # Legacy — redirects to /console
 app.include_router(dashboard.router) # Legacy — redirects to /console
 app.include_router(audit.router)     # Log audit dashboard
+app.include_router(metrics.router)   # UT coverage metrics
 
 
 # 5. Health check endpoint for Docker and uptime monitoring

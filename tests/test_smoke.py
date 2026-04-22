@@ -48,6 +48,9 @@ class TestRouterImports(unittest.TestCase):
     def test_audit_router_importable(self):
         from app.routers.audit import router  # noqa: F401
 
+    def test_metrics_router_importable(self):
+        from app.routers.metrics import router  # noqa: F401
+
     def test_admin_auth_importable(self):
         from app.core.admin_auth import verify_admin  # noqa: F401
 
@@ -60,6 +63,9 @@ class TestServiceImports(unittest.TestCase):
 
     def test_telegram_router_importable(self):
         from app.services.telegram_router import route_message  # noqa: F401
+
+    def test_coverage_metrics_importable(self):
+        from app.services.coverage_metrics import load_coverage_report, report_to_dict  # noqa: F401
 
 
 class TestCoachAgentImports(unittest.TestCase):
