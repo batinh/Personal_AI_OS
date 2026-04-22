@@ -875,6 +875,7 @@
     document.getElementById('topbarTitle').innerHTML = titles[tabName] || tabName;
     // Update URL without reload
     history.replaceState(null, '', '/console?tab=' + tabName);
+    if (tabName === 'metrics') loadMetrics();
   }
 
   // Prevent sidebar links from reloading — intercept clicks
@@ -1071,12 +1072,6 @@
     }).join('');
   }
 
-  // Intercept metrics tab to lazy-load data
-  const _origSwitchTab = switchTab;
-  function switchTab(tabName) {
-    _origSwitchTab(tabName);
-    if (tabName === 'metrics') loadMetrics();
-  }
 </script>
 
 </body>
