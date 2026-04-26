@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import threading
 import unicodedata
 import uuid
 import time
@@ -23,6 +24,7 @@ from app.core.database import (
 from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context, send_message_with_retry
 from app.services.rag_memory import rag_db
 from app.core.timezone_utils import get_local_tz
+from app.core.user_context import get_primary_user_id
 
 # [REFACTOR] Import builder functions
 from app.agents.coach.prompts import (
@@ -170,7 +172,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dic
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
     tz = get_local_tz()
     now = datetime.now(tz)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     user_id_str = str(chat_id)
     
     # 1. Prepare Context data
@@ -226,7 +228,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dic
     # 3. Call Gemini with Native Schema
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-flash-latest"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst, # Explicit System Instruction separation
                 temperature=0.7,
@@ -263,7 +265,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     logger.info("[COACH AGENT] Starting Morning Briefing reasoning flow...")
     tz = get_local_tz()
     now = datetime.now(tz)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     user_id_str = str(chat_id)
 
     # 1. Gather Data (Data Injection Pattern)
@@ -332,7 +334,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     # 3. Execution (Resilience Pattern)
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-flash-latest"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 # [PERF] Slim tool set for morning briefing — read-only is sufficient
@@ -475,7 +477,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         # Fast path caps output to keep greetings/simple Q&A concise
         max_tokens = 512 if intent == "fast" else 1200
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-flash-latest"),
             history=formatted_history[:-1], # Pass previous history
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
@@ -494,7 +496,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
                 int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
             )
             retry_session = client.chats.create(
-                model=config.get("model_name", "models/gemini-2.0-flash"),
+                model=config.get("model_name", "models/gemini-flash-latest"),
                 history=formatted_history[:-1],
                 config=types.GenerateContentConfig(
                     system_instruction=standard_inst,
@@ -512,6 +514,9 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         save_message(chat_id, "user", text)
         save_message(chat_id, "model", reply)
         send_telegram_msg(chat_id, reply)
+
+        if intent != "fast":
+            threading.Thread(target=extract_implicit_memory, args=(chat_id,), daemon=True).start()
     except Exception as e:
         logger.error(f"[TELEGRAM] Chat Error: {e}")
         # [ZONE 3] User-facing notification remains in Vietnamese
@@ -527,7 +532,7 @@ def generate_weekly_reflection(config: dict):
     logger.info("[COACH AGENT] Generating Weekly Self-Reflection...")
     tz = get_local_tz()
     now = datetime.now(tz)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     user_id_str = str(chat_id)
 
     # 1. Gather Context (Data Injection Pattern)
@@ -576,7 +581,7 @@ def generate_weekly_reflection(config: dict):
     # 3. Call Gemini with Action Tool allowed
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-flash-latest"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,

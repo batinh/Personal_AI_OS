@@ -29,7 +29,7 @@ from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
 
 
 def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):
@@ -97,7 +97,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dic
     # 3. Call Gemini with Native Schema
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-flash-latest"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,  # Explicit System Instruction separation
                 temperature=0.7,

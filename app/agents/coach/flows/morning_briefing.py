@@ -27,7 +27,7 @@ from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
 
 
 def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
@@ -112,7 +112,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     # 3. Execution (Resilience Pattern)
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-flash-latest"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 # [FIX BUG] Cung cấp đầy đủ các Tool mà System Prompt yêu cầu để tránh KeyError
