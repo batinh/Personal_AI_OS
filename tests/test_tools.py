@@ -250,3 +250,190 @@ class TestToolRouting(unittest.TestCase):
     def test_case_insensitive_routing(self):
         tools = self._select("HỦY buổi chạy sáng nay")
         self.assertEqual(len(tools), self._read_count + self._write_count)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. get_run_stream_csv
+# ══════════════════════════════════════════════════════════════════════════════
+class TestGetRunStreamCsv(unittest.TestCase):
+
+    @patch("app.agents.coach.tools.get_run_activity_raw")
+    def test_no_raw_activity_returns_not_found(self, mock_raw):
+        from app.agents.coach.tools import get_run_stream_csv
+        mock_raw.return_value = None
+        result = get_run_stream_csv("act1")
+        self.assertIn("Không tìm thấy", result)
+
+    @patch("app.agents.coach.tools.get_run_activity_raw")
+    def test_no_stream_file_path_returns_not_found(self, mock_raw):
+        from app.agents.coach.tools import get_run_stream_csv
+        mock_raw.return_value = {"stream_file_path": ""}
+        result = get_run_stream_csv("act1")
+        self.assertIn("Không tìm thấy", result)
+
+    @patch("app.agents.coach.tools.load_activity_stream_from_file")
+    @patch("app.agents.coach.tools.get_run_activity_raw")
+    def test_unloadable_payload_returns_error(self, mock_raw, mock_load):
+        from app.agents.coach.tools import get_run_stream_csv
+        mock_raw.return_value = {"stream_file_path": "/data/act1.json"}
+        mock_load.return_value = None
+        result = get_run_stream_csv("act1")
+        self.assertIn("Không thể đọc", result)
+
+    @patch("app.agents.coach.tools.get_stream_arrays")
+    @patch("app.agents.coach.tools.load_activity_stream_from_file")
+    @patch("app.agents.coach.tools.get_run_activity_raw")
+    def test_empty_arrays_returns_empty_message(self, mock_raw, mock_load, mock_arrays):
+        from app.agents.coach.tools import get_run_stream_csv
+        mock_raw.return_value = {"stream_file_path": "/data/act1.json"}
+        mock_load.return_value = {"time": [], "heartrate": []}
+        mock_arrays.return_value = {}
+        result = get_run_stream_csv("act1")
+        self.assertIn("rỗng", result)
+
+    @patch("app.agents.coach.tools.get_stream_arrays")
+    @patch("app.agents.coach.tools.load_activity_stream_from_file")
+    @patch("app.agents.coach.tools.get_run_activity_raw")
+    def test_happy_path_returns_csv_header(self, mock_raw, mock_load, mock_arrays):
+        from app.agents.coach.tools import get_run_stream_csv
+        mock_raw.return_value = {"stream_file_path": "/data/act1.json"}
+        mock_load.return_value = {"time": [0, 1, 2]}
+        mock_arrays.return_value = {
+            "time": [0, 1, 2],
+            "velocity_smooth": [3.0, 3.1, 3.2],
+            "heartrate": [148, 150, 152],
+            "cadence": [86, 87, 88],
+        }
+        result = get_run_stream_csv("act1")
+        self.assertIn("t(s)", result)
+        self.assertIn("HR", result)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. get_run_computed_metrics
+# ══════════════════════════════════════════════════════════════════════════════
+class TestGetRunComputedMetrics(unittest.TestCase):
+
+    @patch("app.agents.coach.tools.get_run_metrics_from_db")
+    def test_not_found_returns_not_found_message(self, mock_db):
+        from app.agents.coach.tools import get_run_computed_metrics
+        mock_db.return_value = {}
+        result = get_run_computed_metrics("act1", "u1")
+        self.assertIn("Chưa có metrics", result)
+
+    @patch("app.agents.coach.tools.build_run_metrics_block")
+    @patch("app.agents.coach.tools.get_run_metrics_from_db")
+    def test_block_is_returned_when_found(self, mock_db, mock_block):
+        from app.agents.coach.tools import get_run_computed_metrics
+        mock_db.return_value = {"avg_cadence_spm": 172.0}
+        mock_block.return_value = "Cadence: 172 spm | TSS: 55"
+        result = get_run_computed_metrics("act1", "u1")
+        self.assertIn("Cadence", result)
+
+    @patch("app.agents.coach.tools.build_run_metrics_block")
+    @patch("app.agents.coach.tools.get_run_metrics_from_db")
+    def test_none_block_returns_fallback(self, mock_db, mock_block):
+        from app.agents.coach.tools import get_run_computed_metrics
+        mock_db.return_value = {"avg_cadence_spm": 172.0}
+        mock_block.return_value = None
+        result = get_run_computed_metrics("act1", "u1")
+        self.assertIn("None", result)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 11. get_metric_trend
+# ══════════════════════════════════════════════════════════════════════════════
+class TestGetMetricTrend(unittest.TestCase):
+
+    @patch("app.agents.coach.tools.get_metric_trend_data")
+    def test_empty_data_returns_no_data_message(self, mock_data):
+        from app.agents.coach.tools import get_metric_trend
+        mock_data.return_value = []
+        result = get_metric_trend("u1", "avg_cadence_spm")
+        self.assertIn("Không có dữ liệu", result)
+
+    @patch("app.agents.coach.tools.get_metric_trend_data")
+    def test_with_data_formats_output(self, mock_data):
+        from app.agents.coach.tools import get_metric_trend
+        mock_data.return_value = [
+            {"date": "2026-04-15", "value": 172.0},
+            {"date": "2026-04-10", "value": 170.5},
+        ]
+        result = get_metric_trend("u1", "avg_cadence_spm")
+        self.assertIn("avg_cadence_spm", result)
+        self.assertIn("2026-04-15", result)
+
+    @patch("app.agents.coach.tools.get_metric_trend_data")
+    def test_custom_days_parameter_passed_through(self, mock_data):
+        from app.agents.coach.tools import get_metric_trend
+        mock_data.return_value = []
+        get_metric_trend("u1", "avg_cadence_spm", days=14)
+        mock_data.assert_called_once_with("u1", "avg_cadence_spm", 14)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 12. get_volume_for_week
+# ══════════════════════════════════════════════════════════════════════════════
+class TestGetVolumeForWeek(unittest.TestCase):
+
+    @patch("app.agents.coach.tools.get_monthly_volume")
+    def test_no_week_runs_returns_fallback_monthly(self, mock_monthly):
+        from app.agents.coach.tools import get_volume_for_week
+        mock_monthly.return_value = {
+            "total_distance_km": 45.0,
+            "total_runs": 5,
+            "runs": [],
+        }
+        result = get_volume_for_week("u1", 2026, 15)
+        self.assertIn("45.0 km", result)
+
+    @patch("app.agents.coach.tools.get_monthly_volume")
+    def test_output_contains_week_number(self, mock_monthly):
+        from app.agents.coach.tools import get_volume_for_week
+        mock_monthly.return_value = {"total_distance_km": 30.0, "total_runs": 3, "runs": []}
+        result = get_volume_for_week("u1", 2026, 10)
+        self.assertIn("10", result)
+        self.assertIn("2026", result)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 13. get_volume_summary
+# ══════════════════════════════════════════════════════════════════════════════
+class TestGetVolumeSummary(unittest.TestCase):
+
+    @patch("app.agents.coach.tools.get_monthly_volume")
+    def test_period_month_returns_monthly_summary(self, mock_monthly):
+        from app.agents.coach.tools import get_volume_summary
+        mock_monthly.return_value = {
+            "total_distance_km": 120.5,
+            "total_runs": 14,
+            "total_moving_time_min": 660,
+        }
+        result = get_volume_summary("u1", "month", 2026, month=4)
+        self.assertIn("120.5 km", result)
+        self.assertIn("14", result)
+
+    @patch("app.agents.coach.tools.get_yearly_volume")
+    def test_period_year_returns_yearly_summary(self, mock_yearly):
+        from app.agents.coach.tools import get_volume_summary
+        mock_yearly.return_value = {
+            "total_distance_km": 800.0,
+            "total_runs": 90,
+            "total_moving_time_min": 4500,
+            "monthly_breakdown": {3: {"distance_km": 120.0, "runs": 12}},
+        }
+        result = get_volume_summary("u1", "year", 2026)
+        self.assertIn("800.0 km", result)
+        self.assertIn("Tháng 3", result)
+
+    @patch("app.agents.coach.tools.get_yearly_volume")
+    def test_period_year_no_breakdown_still_works(self, mock_yearly):
+        from app.agents.coach.tools import get_volume_summary
+        mock_yearly.return_value = {
+            "total_distance_km": 500.0,
+            "total_runs": 60,
+            "total_moving_time_min": 3000,
+            "monthly_breakdown": {},
+        }
+        result = get_volume_summary("u1", "year", 2025)
+        self.assertIn("500.0 km", result)

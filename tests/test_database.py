@@ -450,5 +450,280 @@ class TestMultiTenantRunActivityIsolation(_TempDbMixin, unittest.TestCase):
         self.assertAlmostEqual(loads_b["avg_weekly_mileage"], 0.0, places=0)
 
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. RUN ACTIVITY RAW (stream storage)
+# ══════════════════════════════════════════════════════════════════════════════
+class TestRunActivityRaw(_TempDbMixin, unittest.TestCase):
+
+    def test_get_nonexistent_returns_none(self):
+        self.assertIsNone(database.get_run_activity_raw("ghost_act"))
+
+    def test_save_and_retrieve_raw_activity(self):
+        database.save_run_activity_raw(
+            activity_id="raw1",
+            user_id="u1",
+            activity_name="Morning Run",
+            full_meta={"type": "Run"},
+            stream_csv="",
+            stream_file_path="/data/raw1.json",
+        )
+        result = database.get_run_activity_raw("raw1")
+        self.assertIsNotNone(result)
+        self.assertEqual(result["activity_name"], "Morning Run")
+        self.assertEqual(result["stream_file_path"], "/data/raw1.json")
+
+    def test_full_meta_is_deserialized(self):
+        database.save_run_activity_raw(
+            activity_id="raw2",
+            user_id="u1",
+            activity_name="Test",
+            full_meta={"key": "value"},
+            stream_csv="",
+            stream_file_path="",
+        )
+        result = database.get_run_activity_raw("raw2")
+        self.assertIsInstance(result["full_meta"], dict)
+        self.assertEqual(result["full_meta"]["key"], "value")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. COMPUTED METRICS
+# ══════════════════════════════════════════════════════════════════════════════
+class TestComputedMetrics(_TempDbMixin, unittest.TestCase):
+
+    _BASE_RUN = {
+        "activity_id": "met1",
+        "name": "Tempo",
+        "start_date": "2026-04-01T07:00:00",
+        "distance_km": 12.0,
+        "moving_time_min": 60.0,
+        "avg_hr": 155,
+        "max_hr": 172,
+        "suffer_score": 90,
+        "trimp_score": 70.0,
+    }
+
+    def setUp(self):
+        super().setUp()
+        database.save_run_activity("u1", self._BASE_RUN)
+
+    def test_upsert_returns_true(self):
+        ok = database.upsert_run_computed_metrics("met1", "u1", {"avg_cadence_spm": 172.0})
+        self.assertTrue(ok)
+
+    def test_empty_metrics_returns_false(self):
+        ok = database.upsert_run_computed_metrics("met1", "u1", {})
+        self.assertFalse(ok)
+
+    def test_unknown_columns_filtered_out(self):
+        ok = database.upsert_run_computed_metrics("met1", "u1", {"invalid_col": 99})
+        self.assertFalse(ok)
+
+    def test_get_metrics_after_upsert(self):
+        database.upsert_run_computed_metrics("met1", "u1", {"avg_cadence_spm": 172.0, "training_stress_score": 58.5})
+        result = database.get_run_metrics_from_db("met1", "u1")
+        self.assertAlmostEqual(result["avg_cadence_spm"], 172.0)
+        self.assertAlmostEqual(result["training_stress_score"], 58.5)
+
+    def test_get_metrics_missing_activity_returns_empty(self):
+        result = database.get_run_metrics_from_db("nonexistent", "u1")
+        self.assertEqual(result, {})
+
+    def test_get_metrics_wrong_user_returns_empty(self):
+        database.upsert_run_computed_metrics("met1", "u1", {"avg_cadence_spm": 172.0})
+        result = database.get_run_metrics_from_db("met1", "u2")
+        self.assertEqual(result, {})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 11. METRIC TREND DATA
+# ══════════════════════════════════════════════════════════════════════════════
+class TestMetricTrendData(_TempDbMixin, unittest.TestCase):
+
+    def _insert_run_with_metric(self, activity_id, start_date, cadence):
+        database.save_run_activity("u1", {
+            "activity_id": activity_id,
+            "name": f"Run {activity_id}",
+            "start_date": start_date,
+            "distance_km": 10.0,
+            "moving_time_min": 55.0,
+            "avg_hr": 148,
+            "max_hr": 165,
+            "suffer_score": 70,
+            "trimp_score": 60.0,
+        })
+        database.upsert_run_computed_metrics(activity_id, "u1", {"avg_cadence_spm": cadence})
+
+    def test_unknown_metric_returns_empty(self):
+        rows = database.get_metric_trend_data("u1", "nonexistent_metric")
+        self.assertEqual(rows, [])
+
+    def test_no_data_returns_empty(self):
+        rows = database.get_metric_trend_data("u1", "avg_cadence_spm", days=28)
+        self.assertEqual(rows, [])
+
+    def test_returns_rows_with_metric_value(self):
+        self._insert_run_with_metric("trd1", "2026-04-15T07:00:00", 174.0)
+        rows = database.get_metric_trend_data("u1", "avg_cadence_spm", days=365)
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0]["avg_cadence_spm"], 174.0)
+
+    def test_rows_have_expected_keys(self):
+        self._insert_run_with_metric("trd2", "2026-04-15T07:00:00", 170.0)
+        rows = database.get_metric_trend_data("u1", "avg_cadence_spm", days=365)
+        self.assertIn("activity_id", rows[0])
+        self.assertIn("start_date", rows[0])
+
+    def test_user_isolation(self):
+        self._insert_run_with_metric("trd3", "2026-04-15T07:00:00", 168.0)
+        rows = database.get_metric_trend_data("u2", "avg_cadence_spm", days=365)
+        self.assertEqual(rows, [])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 12. MONTHLY AND YEARLY VOLUME
+# ══════════════════════════════════════════════════════════════════════════════
+class TestVolumeStats(_TempDbMixin, unittest.TestCase):
+
+    def _insert_run(self, activity_id, start_date, distance_km, user_id="u1"):
+        database.save_run_activity(user_id, {
+            "activity_id": activity_id,
+            "name": f"Run {activity_id}",
+            "start_date": start_date,
+            "distance_km": distance_km,
+            "moving_time_min": 60.0,
+            "avg_hr": 148,
+            "max_hr": 165,
+            "suffer_score": 70,
+            "trimp_score": 60.0,
+        })
+
+    def test_monthly_volume_empty_user(self):
+        result = database.get_monthly_volume("nobody", 2026, 4)
+        self.assertEqual(result["run_count"], 0)
+        self.assertEqual(result["total_km"], 0.0)
+
+    def test_monthly_volume_sums_correctly(self):
+        self._insert_run("mv1", "2026-04-05T07:00:00", 10.0)
+        self._insert_run("mv2", "2026-04-12T07:00:00", 15.0)
+        result = database.get_monthly_volume("u1", 2026, 4)
+        self.assertEqual(result["run_count"], 2)
+        self.assertAlmostEqual(result["total_km"], 25.0)
+
+    def test_monthly_volume_excludes_other_months(self):
+        self._insert_run("mv3", "2026-03-31T07:00:00", 20.0)  # March
+        self._insert_run("mv4", "2026-04-01T07:00:00", 10.0)  # April
+        result = database.get_monthly_volume("u1", 2026, 4)
+        self.assertEqual(result["run_count"], 1)
+        self.assertAlmostEqual(result["total_km"], 10.0)
+
+    def test_monthly_volume_december_boundary(self):
+        self._insert_run("mv5", "2026-12-31T07:00:00", 12.0)
+        self._insert_run("mv6", "2027-01-01T07:00:00", 8.0)
+        result = database.get_monthly_volume("u1", 2026, 12)
+        self.assertEqual(result["run_count"], 1)
+        self.assertAlmostEqual(result["total_km"], 12.0)
+
+    def test_yearly_volume_empty_user(self):
+        result = database.get_yearly_volume("nobody", 2026)
+        self.assertEqual(result["run_count"], 0)
+        self.assertEqual(result["total_km"], 0.0)
+
+    def test_yearly_volume_sums_all_months(self):
+        self._insert_run("yv1", "2026-01-10T07:00:00", 10.0)
+        self._insert_run("yv2", "2026-06-20T07:00:00", 20.0)
+        result = database.get_yearly_volume("u1", 2026)
+        self.assertEqual(result["run_count"], 2)
+        self.assertAlmostEqual(result["total_km"], 30.0)
+
+    def test_yearly_volume_monthly_breakdown_present(self):
+        self._insert_run("yv3", "2026-03-15T07:00:00", 15.0)
+        result = database.get_yearly_volume("u1", 2026)
+        self.assertIn("monthly_breakdown", result)
+        self.assertIsInstance(result["monthly_breakdown"], list)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. CORE MEMORY — insert, dedup, get_all_active, archive
+# ══════════════════════════════════════════════════════════════════════════════
+class TestCoreMemory(_TempDbMixin, unittest.TestCase):
+    UID = "mem_user"
+
+    def test_insert_new_memory(self):
+        database.insert_memory(self.UID, "coach", "goal", "Run 5k in 25min")
+        memories = database.get_all_active_memories(self.UID)
+        facts = [m["fact"] for m in memories]
+        self.assertIn("Run 5k in 25min", facts)
+
+    def test_duplicate_insert_does_not_create_second_row(self):
+        database.insert_memory(self.UID, "coach", "goal", "Run 5k in 25min")
+        database.insert_memory(self.UID, "coach", "goal", "Run 5k in 25min")
+        memories = database.get_all_active_memories(self.UID)
+        matching = [m for m in memories if m["fact"] == "Run 5k in 25min"]
+        self.assertEqual(len(matching), 1)
+
+    def test_get_all_active_memories_empty(self):
+        result = database.get_all_active_memories(self.UID)
+        self.assertEqual(result, [])
+
+    def test_get_all_active_memories_multiple(self):
+        database.insert_memory(self.UID, "coach", "goal", "First fact")
+        database.insert_memory(self.UID, "coach", "sleep", "Second fact")
+        memories = database.get_all_active_memories(self.UID)
+        self.assertEqual(len(memories), 2)
+
+    def test_archived_memory_not_returned(self):
+        database.insert_memory(self.UID, "coach", "goal", "To archive")
+        memories = database.get_all_active_memories(self.UID)
+        mem_id = memories[0]["id"]
+        database.archive_memory(self.UID, mem_id)
+        after = database.get_all_active_memories(self.UID)
+        facts = [m["fact"] for m in after]
+        self.assertNotIn("To archive", facts)
+
+    def test_archive_returns_true(self):
+        database.insert_memory(self.UID, "coach", "goal", "Fact")
+        memories = database.get_all_active_memories(self.UID)
+        result = database.archive_memory(self.UID, memories[0]["id"])
+        self.assertTrue(result)
+
+    def test_archive_wrong_user_no_effect(self):
+        database.insert_memory(self.UID, "coach", "goal", "Fact")
+        memories = database.get_all_active_memories(self.UID)
+        mem_id = memories[0]["id"]
+        database.archive_memory("other_user", mem_id)
+        after = database.get_all_active_memories(self.UID)
+        self.assertEqual(len(after), 1)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. NEWS AGENT STATE — get/set key-value store
+# ══════════════════════════════════════════════════════════════════════════════
+class TestNewsAgentState(_TempDbMixin, unittest.TestCase):
+    UID = "news_user"
+
+    def test_get_missing_key_returns_none(self):
+        result = database.get_news_state(self.UID, "last_run")
+        self.assertIsNone(result)
+
+    def test_set_and_get_roundtrip(self):
+        database.set_news_state(self.UID, "last_run", "2026-04-22T06:30:00")
+        result = database.get_news_state(self.UID, "last_run")
+        self.assertEqual(result, "2026-04-22T06:30:00")
+
+    def test_set_overwrites_existing(self):
+        database.set_news_state(self.UID, "topic", "AI")
+        database.set_news_state(self.UID, "topic", "Finance")
+        result = database.get_news_state(self.UID, "topic")
+        self.assertEqual(result, "Finance")
+
+    def test_different_users_isolated(self):
+        database.set_news_state("user_a", "key", "value_a")
+        database.set_news_state("user_b", "key", "value_b")
+        self.assertEqual(database.get_news_state("user_a", "key"), "value_a")
+        self.assertEqual(database.get_news_state("user_b", "key"), "value_b")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

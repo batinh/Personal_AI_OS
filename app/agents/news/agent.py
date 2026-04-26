@@ -143,159 +143,6 @@ def _extract_grounding_urls(candidates: list) -> list[tuple[str, str]]:
 _DOC_THEM_RE = re.compile(r'<a\s+href=["\'][^"\']*["\']>\s*Đọc thêm\s*</a>', re.IGNORECASE)
 
 
-def _inject_links_by_article(text: str, candidates: list) -> tuple[str, int]:
-    """
-    Post-process model output to inject per-article grounding URLs inline.
-
-    Finds each 📰 article block and inserts the relevant grounding URL after the
-    article's content. Uses grounding_supports segment.text matching for accuracy;
-    falls back to sequential chunk order if supports are unavailable or don't match.
-
-    Returns (updated_text, count_injected).
-    """
-    if not text:
-        return text, 0
-
-    chunks: list = []
-    supports: list = []
-    for cand in candidates:
-        meta = getattr(cand, "grounding_metadata", None)
-        if not meta:
-            continue
-        c = list(getattr(meta, "grounding_chunks", None) or [])
-        if c:
-            chunks = c
-            supports = list(getattr(meta, "grounding_supports", None) or [])
-            break
-
-    if not chunks:
-        return text, 0
-
-    def _chunk_uri(idx: int) -> str:
-        if 0 <= idx < len(chunks):
-            web = getattr(chunks[idx], "web", None)
-            return getattr(web, "uri", "") or ""
-        return ""
-
-    # Sequential deduped URL fallback
-    seen: set[str] = set()
-    seq_urls: list[str] = []
-    for chunk in chunks:
-        web = getattr(chunk, "web", None)
-        uri = getattr(web, "uri", "") or ""
-        if uri and uri not in seen:
-            seen.add(uri)
-            seq_urls.append(uri)
-
-    # Strip wrong/homepage URLs the model may have written
-    clean = _DOC_THEM_RE.sub("", text)
-
-    art_re = re.compile(r'📰')
-
-    def _build_ranges(src: str) -> list[tuple[int, int]]:
-        starts = [m.start() for m in art_re.finditer(src)]
-        if not starts:
-            return []
-        ranges = []
-        for i, s in enumerate(starts):
-            end = starts[i + 1] if i + 1 < len(starts) else len(src)
-            trend_m = re.search(r'\n📈', src[s:end])
-            if trend_m:
-                end = s + trend_m.start()
-            ranges.append((s, end))
-        return ranges
-
-    orig_ranges = _build_ranges(text)
-    clean_ranges = _build_ranges(clean)
-
-    if not orig_ranges or len(orig_ranges) != len(clean_ranges):
-        return clean, 0
-
-    def _url_by_segment_text(art_text: str) -> str:
-        """Find URL whose support segment.text appears inside this article."""
-        for sup in supports:
-            seg = getattr(sup, "segment", None)
-            seg_text = getattr(seg, "text", "") or ""
-            if seg_text and seg_text in art_text:
-                idxs = getattr(sup, "grounding_chunk_indices", []) or []
-                for idx in idxs:
-                    uri = _chunk_uri(idx)
-                    if uri:
-                        return uri
-        return ""
-
-    n = len(orig_ranges)
-    article_urls: list[str] = []
-    for i in range(n):
-        orig_art_text = text[orig_ranges[i][0]:orig_ranges[i][1]]
-        url = _url_by_segment_text(orig_art_text) if supports else ""
-        if not url and i < len(seq_urls):
-            url = seq_urls[i]
-        article_urls.append(url)
-
-    # Insert links in reverse order so earlier positions stay valid
-    result = clean
-    injected = 0
-    for i in range(n - 1, -1, -1):
-        url = article_urls[i]
-        if not url:
-            continue
-        art_start, art_end = clean_ranges[i]
-        content = result[art_start:art_end]
-        insert_pos = art_start + len(content.rstrip())
-        result = result[:insert_pos] + f'\n<a href="{url}">Đọc thêm</a>' + result[insert_pos:]
-        injected += 1
-
-    return result, injected
-
-
-def _inject_grounding_urls_into_text(text: str, grounding_urls: list[tuple[str, str]]) -> tuple[str, int]:
-    """
-    Inject grounding URLs sequentially into 📰 article blocks in the model output.
-
-    Uses pre-extracted (title, uri) URL list. Falls back to sequential assignment
-    when per-article matching via grounding_supports is unavailable.
-
-    Returns (updated_text, count_injected).
-    """
-    if not text or not grounding_urls:
-        return text, 0
-
-    seq_urls = [uri for _, uri in grounding_urls if uri]
-    if not seq_urls:
-        return text, 0
-
-    clean = _DOC_THEM_RE.sub("", text)
-
-    art_re = re.compile(r'📰')
-    starts = [m.start() for m in art_re.finditer(clean)]
-    if not starts:
-        return clean, 0
-
-    ranges: list[tuple[int, int]] = []
-    for i, s in enumerate(starts):
-        end = starts[i + 1] if i + 1 < len(starts) else len(clean)
-        trend_m = re.search(r'\n📈', clean[s:end])
-        if trend_m:
-            end = s + trend_m.start()
-        ranges.append((s, end))
-
-    result = clean
-    injected = 0
-    for i in range(len(ranges) - 1, -1, -1):
-        if i >= len(seq_urls):
-            continue
-        url = seq_urls[i]
-        art_start, art_end = ranges[i]
-        # recalculate position since we're modifying result in-place (reverse order)
-        content = result[art_start:art_end]
-        insert_pos = art_start + len(content.rstrip())
-        result = result[:insert_pos] + f'\n<a href="{url}">Đọc thêm</a>' + result[insert_pos:]
-        injected += 1
-
-    return result, injected
-
-
 def _build_sources_block(urls: list[tuple[str, str]], max_sources: int = 3) -> str:
     """Fallback sources block when no 📰 markers found in model output."""
     if not urls:
@@ -329,7 +176,7 @@ def _call_gemini_with_search(
         system_instruction=system_inst,
         tools=_SEARCH_TOOL,
         max_output_tokens=max_tokens,
-        thinking_config=types.ThinkingConfig(thinking_budget=1024),
+        thinking_config=types.ThinkingConfig(thinking_budget=0),  # 0 = disable thinking output
     )
     try:
         response = client.models.generate_content(
@@ -369,9 +216,9 @@ def _call_gemini_with_search(
             for c in candidates
         )
         if not grounding_used:
-            logger.warning("[NEWS] Gemini did not invoke google_search — response may use training data only.")
-        else:
-            logger.info("[NEWS] Grounded call completed. grounding_used=True")
+            logger.warning("[NEWS] Gemini did not invoke google_search — rejecting training-data response.")
+            return None, []
+        logger.info("[NEWS] Grounded call completed. grounding_used=True")
 
         grounding_urls = _extract_grounding_urls(candidates)
         for title, uri in grounding_urls:
@@ -398,28 +245,6 @@ def _call_gemini_with_search(
     except Exception as e:
         logger.warning(f"[NEWS] Gemini call failed: {e}")
         return None, []
-
-
-def _call_knowledge_only(model: str, system_inst: str, prompt: str) -> str | None:
-    """Fallback: call Gemini without search grounding (knowledge-only digest)."""
-    try:
-        fallback_prompt = (
-            prompt
-            + "\n\n(Lưu ý: tính năng tìm kiếm tạm thời không khả dụng. "
-            "Hãy tổng hợp dựa trên kiến thức hiện có của bạn, không cần kèm link nếu không chắc chắn.)"
-        )
-        response = client.models.generate_content(
-            model=model,
-            contents=fallback_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_inst,
-                max_output_tokens=2000,
-            ),
-        )
-        return response.text or None
-    except Exception as e:
-        logger.error(f"[NEWS] Knowledge-only fallback also failed: {e}")
-        return None
 
 
 # ==========================================
@@ -456,15 +281,13 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
         )
         return topic, None
 
-    # Inject real grounding URLs into inline "Đọc thêm" links the model generated.
-    # If the model wrote no links at all, fall back to a compact sources block.
-    body, replaced = _inject_grounding_urls_into_text(block.strip(), grounding_urls)
-    if replaced == 0:
-        fallback = _build_sources_block(grounding_urls)
-        if fallback:
-            body = body + "\n\n" + fallback
+    # Strip any LLM-written URLs (unreliable), then append real grounding sources block.
+    body = _DOC_THEM_RE.sub("", block.strip())
+    sources = _build_sources_block(grounding_urls)
+    if sources:
+        body = body + "\n\n" + sources
     formatted = f"{emoji} <b>{topic_name.upper()}</b>\n\n{body}"
-    logger.info(f"[NEWS-TOPIC] Got {len(block)} chars, {len(grounding_urls)} sources, {replaced} links replaced for '{topic_name}'")
+    logger.info(f"[NEWS-TOPIC] Got {len(block)} chars, {len(grounding_urls)} sources for '{topic_name}'")
     return topic, formatted
 
 
@@ -578,13 +401,12 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
         send_telegram_msg(chat_id, "⚠️ Không tìm thấy kết quả cho yêu cầu này. Thử lại sau.")
         return None
 
-    reply, replaced = _inject_grounding_urls_into_text(reply, grounding_urls)
-    if replaced == 0:
-        fallback = _build_sources_block(grounding_urls)
-        if fallback:
-            reply = reply.rstrip() + "\n\n" + fallback
+    reply = _DOC_THEM_RE.sub("", reply)
+    sources = _build_sources_block(grounding_urls)
+    if sources:
+        reply = reply.rstrip() + "\n\n" + sources
 
-    logger.info(f"[NEWS-ONDEMAND] Reply length={len(reply)}, sources={len(grounding_urls)}, links_replaced={replaced}")
+    logger.info(f"[NEWS-ONDEMAND] Reply length={len(reply)}, sources={len(grounding_urls)}")
     send_telegram_msg(chat_id, reply)
     logger.info(f"[NEWS-ONDEMAND] Sent reply to chat_id={chat_id}")
     return reply
@@ -607,19 +429,13 @@ def _generate_legacy_briefing(config: dict, session: str, chat_id: str, model: s
 
     reply, grounding_urls = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
     if not reply:
-        logger.info("[NEWS] Legacy grounded search empty — falling back to knowledge-only.")
-        reply = _call_knowledge_only(model, system_inst, prompt)
-        grounding_urls = []
-
-    if not reply:
-        logger.error(f"[NEWS] Both calls failed for {session}. Skipping send.")
+        logger.error(f"[NEWS] Grounded call failed for {session}. Skipping send.")
         return
 
-    reply, replaced = _inject_grounding_urls_into_text(reply, grounding_urls)
-    if replaced == 0:
-        fallback = _build_sources_block(grounding_urls)
-        if fallback:
-            reply = reply.rstrip() + "\n\n" + fallback
+    reply = _DOC_THEM_RE.sub("", reply)
+    sources = _build_sources_block(grounding_urls)
+    if sources:
+        reply = reply.rstrip() + "\n\n" + sources
 
     if len(reply) > _MAX_TELEGRAM_CHARS:
         reply = reply[:_MAX_TELEGRAM_CHARS] + "..."

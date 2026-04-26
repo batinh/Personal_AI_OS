@@ -331,5 +331,264 @@ class TestCalculateTrImpGender(unittest.TestCase):
         self.assertEqual(result["taper_factor"], 0.0)
 
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. LTHR ZONES (Joe Friel)
+# ══════════════════════════════════════════════════════════════════════════════
+class TestCalculateLthrZones(unittest.TestCase):
+    from app.agents.coach.utils import calculate_lthr_zones
+
+    def _zones(self):
+        from app.agents.coach.utils import calculate_lthr_zones
+        return calculate_lthr_zones(160)
+
+    def test_returns_seven_zones(self):
+        zones = self._zones()
+        self.assertEqual(len(zones), 7)
+        for key in ["zone1", "zone2", "zone3", "zone4", "zone5a", "zone5b", "zone5c"]:
+            self.assertIn(key, zones)
+
+    def test_zone1_max_is_70pct_lthr(self):
+        zones = self._zones()
+        self.assertEqual(zones["zone1"]["max"], round(160 * 0.70))
+
+    def test_zone5c_max_is_sentinel(self):
+        zones = self._zones()
+        self.assertGreaterEqual(zones["zone5c"]["max"], 9999)
+
+    def test_zones_have_pct_key(self):
+        zones = self._zones()
+        for v in zones.values():
+            self.assertIn("pct", v)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 11. FORMAT ZONE STRINGS
+# ══════════════════════════════════════════════════════════════════════════════
+class TestFormatZoneStrings(unittest.TestCase):
+
+    def test_format_hr_zones_for_prompt_has_zone_lines(self):
+        from app.agents.coach.utils import calculate_hr_zones, format_hr_zones_for_prompt
+        zones = calculate_hr_zones(185, 55)
+        result = format_hr_zones_for_prompt(zones)
+        self.assertIn("ZONE1", result)
+        self.assertIn("bpm", result)
+        self.assertEqual(result.count("\n"), 4)  # 5 zones → 4 newlines
+
+    def test_format_lthr_zones_for_prompt_has_seven_lines(self):
+        from app.agents.coach.utils import calculate_lthr_zones, format_lthr_zones_for_prompt
+        zones = calculate_lthr_zones(160)
+        result = format_lthr_zones_for_prompt(zones)
+        lines = result.strip().splitlines()
+        self.assertEqual(len(lines), 7)
+        self.assertIn("LTHR", result)
+
+    def test_format_lthr_zone5c_shows_greater_than(self):
+        from app.agents.coach.utils import calculate_lthr_zones, format_lthr_zones_for_prompt
+        result = format_lthr_zones_for_prompt(calculate_lthr_zones(160))
+        self.assertIn(">", result)
+
+    def test_format_power_zones_for_prompt_has_six_lines(self):
+        from app.agents.coach.utils import calculate_power_zones, format_power_zones_for_prompt
+        zones = calculate_power_zones(250)
+        result = format_power_zones_for_prompt(zones)
+        lines = result.strip().splitlines()
+        self.assertEqual(len(lines), 6)
+        self.assertIn("W", result)
+
+    def test_format_power_zones_zone6_shows_greater_than(self):
+        from app.agents.coach.utils import calculate_power_zones, format_power_zones_for_prompt
+        result = format_power_zones_for_prompt(calculate_power_zones(250))
+        self.assertIn(">", result)
+
+    def test_format_pace_zones_for_prompt_has_six_lines(self):
+        from app.agents.coach.utils import calculate_pace_zones, format_pace_zones_for_prompt
+        zones = calculate_pace_zones(310)
+        result = format_pace_zones_for_prompt(zones)
+        lines = result.strip().splitlines()
+        self.assertEqual(len(lines), 6)
+        self.assertIn("/km", result)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 12. POWER ZONES (Stryd)
+# ══════════════════════════════════════════════════════════════════════════════
+class TestCalculatePowerZones(unittest.TestCase):
+
+    def test_returns_six_zones(self):
+        from app.agents.coach.utils import calculate_power_zones
+        zones = calculate_power_zones(250)
+        self.assertEqual(len(zones), 6)
+        for key in ["zone1", "zone2", "zone3", "zone4", "zone5", "zone6"]:
+            self.assertIn(key, zones)
+
+    def test_zone1_max_is_60pct_rftp(self):
+        from app.agents.coach.utils import calculate_power_zones
+        zones = calculate_power_zones(250)
+        self.assertEqual(zones["zone1"]["max"], round(250 * 0.60))
+
+    def test_zone6_max_is_sentinel(self):
+        from app.agents.coach.utils import calculate_power_zones
+        zones = calculate_power_zones(250)
+        self.assertGreaterEqual(zones["zone6"]["max"], 9999)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 13. TRAINING PHASE — race distance branches + taper factors
+# ══════════════════════════════════════════════════════════════════════════════
+class TestTrainingPhaseDistanceBranches(unittest.TestCase):
+
+    def _future(self, weeks):
+        return (datetime.now() + timedelta(weeks=weeks)).strftime("%Y-%m-%d")
+
+    def test_full_marathon_taper_3_weeks(self):
+        # 42km race, 2 weeks out → inside taper window (taper_w=3)
+        result = calculate_training_phase(self._future(2), race_distance_km=42.0)
+        self.assertIn("Taper Phase", result["phase"])
+
+    def test_10k_taper_1_week(self):
+        # 10km race, 1 week out → taper (taper_w=1)
+        result = calculate_training_phase(self._future(1), race_distance_km=10.0)
+        self.assertIn("Taper Phase", result["phase"])
+
+    def test_5k_base_phase_many_weeks_out(self):
+        # 5km race, 20 weeks out → Base Phase (taper+peak+build = 1+2+3 = 6 weeks)
+        result = calculate_training_phase(self._future(20), race_distance_km=5.0)
+        self.assertIn("Base Phase", result["phase"])
+
+    def test_taper_factor_050_at_week_minus_2_hm(self):
+        # Half marathon taper_w=2 → week -2 gets factor 0.50
+        result = calculate_training_phase(self._future(2), race_distance_km=21.0)
+        self.assertEqual(result["taper_factor"], 0.50)
+
+    def test_taper_factor_075_at_week_minus_3_marathon(self):
+        # Full marathon taper_w=3 → week -3 gets factor 0.75
+        result = calculate_training_phase(self._future(3), race_distance_km=42.0)
+        self.assertEqual(result["taper_factor"], 0.75)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 14. send_message_with_retry — retry paths
+# ══════════════════════════════════════════════════════════════════════════════
+class TestSendMessageWithRetry(unittest.TestCase):
+
+    def _mock_session(self, responses):
+        """Build a mock chat session that returns responses in sequence."""
+        from unittest.mock import MagicMock
+        session = MagicMock()
+        session.send_message.side_effect = responses
+        return session
+
+    def test_success_on_first_attempt(self):
+        from app.agents.coach.utils import send_message_with_retry
+        from unittest.mock import MagicMock
+        resp = MagicMock()
+        resp.candidates = []
+        session = self._mock_session([resp])
+        result = send_message_with_retry(session, "hello")
+        self.assertEqual(result, resp)
+
+    def test_retries_on_transient_503(self):
+        from app.agents.coach.utils import send_message_with_retry
+        from unittest.mock import MagicMock
+        good_resp = MagicMock()
+        good_resp.candidates = []
+        session = self._mock_session([
+            Exception("503 Service Unavailable"),
+            good_resp,
+        ])
+        result = send_message_with_retry(session, "msg", max_retries=3)
+        self.assertEqual(result, good_resp)
+        self.assertEqual(session.send_message.call_count, 2)
+
+    def test_raises_after_max_retries_exceeded(self):
+        from app.agents.coach.utils import send_message_with_retry
+        session = self._mock_session([Exception("503 Service Unavailable")] * 3)
+        with self.assertRaises(Exception):
+            send_message_with_retry(session, "msg", max_retries=3)
+
+    def test_non_retryable_error_raises_immediately(self):
+        from app.agents.coach.utils import send_message_with_retry
+        session = self._mock_session([Exception("PERMISSION_DENIED: invalid key")])
+        with self.assertRaises(Exception):
+            send_message_with_retry(session, "msg", max_retries=3)
+        self.assertEqual(session.send_message.call_count, 1)
+
+    def test_malformed_response_retries(self):
+        from app.agents.coach.utils import send_message_with_retry
+        from unittest.mock import MagicMock
+        malformed = MagicMock()
+        malformed.candidates = [MagicMock(finish_reason="MALFORMED_RESPONSE")]
+        good = MagicMock()
+        good.candidates = []
+        session = self._mock_session([malformed, good])
+        result = send_message_with_retry(session, "msg", max_retries=3)
+        self.assertEqual(result, good)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 15. build_agent_context — assembly with mocked dependencies
+# ══════════════════════════════════════════════════════════════════════════════
+class TestBuildAgentContext(unittest.TestCase):
+
+    def _build(self, config=None):
+        from app.agents.coach.utils import build_agent_context
+        from datetime import datetime
+        import pytz
+        cfg = config or {
+            "race_date": "",
+            "race_distance_km": 21.1,
+            "max_hr": 185,
+            "rest_hr": 55,
+            "lthr_bpm": 0,
+            "rftp_watts": 0,
+            "threshold_pace_per_km": 0,
+            "gender": "male",
+            "system_instruction": "",
+            "user_profile": "",
+        }
+        now = datetime(2026, 4, 15, 8, 0, tzinfo=pytz.UTC)
+        return build_agent_context("u1", cfg, now=now)
+
+    @patch("app.core.database.get_training_loads", return_value={"acute_load_7d": 100, "chronic_load_28d": 400, "avg_weekly_mileage": 50})
+    @patch("app.core.database.get_weekly_volume", return_value=30.0)
+    @patch("app.core.database.get_weekly_target", return_value=None)
+    @patch("app.agents.coach.utils.get_formatted_weekly_context", return_value="mock weekly ctx")
+    @patch("app.agents.coach.prompts.build_system_instruction", return_value="mock sys")
+    @patch("app.agents.coach.prompts.get_shared_context_block", return_value="mock shared")
+    def test_returns_agent_context(self, *_):
+        from app.agents.coach.utils import AgentContext
+        ctx = self._build()
+        self.assertIsInstance(ctx, AgentContext)
+        self.assertEqual(ctx.user_id, "u1")
+
+    @patch("app.core.database.get_training_loads", return_value={"acute_load_7d": 0, "chronic_load_28d": 0, "avg_weekly_mileage": 0})
+    @patch("app.core.database.get_weekly_volume", return_value=0.0)
+    @patch("app.core.database.get_weekly_target", return_value=None)
+    @patch("app.agents.coach.utils.get_formatted_weekly_context", return_value="")
+    @patch("app.agents.coach.prompts.build_system_instruction", return_value="sys")
+    @patch("app.agents.coach.prompts.get_shared_context_block", return_value="ctx")
+    def test_acwr_text_no_chronic_data(self, *_):
+        ctx = self._build()
+        self.assertIn("No Chronic", ctx.acwr_text)
+
+    @patch("app.core.database.get_training_loads", return_value={"acute_load_7d": 100, "chronic_load_28d": 400, "avg_weekly_mileage": 50})
+    @patch("app.core.database.get_weekly_volume", return_value=25.0)
+    @patch("app.core.database.get_weekly_target", return_value=None)
+    @patch("app.agents.coach.utils.get_formatted_weekly_context", return_value="")
+    @patch("app.agents.coach.prompts.build_system_instruction", return_value="sys")
+    @patch("app.agents.coach.prompts.get_shared_context_block", return_value="ctx")
+    def test_lthr_zones_used_when_configured(self, *_):
+        cfg = {
+            "race_date": "", "race_distance_km": 21.1,
+            "max_hr": 185, "rest_hr": 55,
+            "lthr_bpm": 165,  # triggers Joe Friel zones
+            "rftp_watts": 0, "threshold_pace_per_km": 0,
+            "gender": "male", "system_instruction": "", "user_profile": "",
+        }
+        ctx = self._build(config=cfg)
+        self.assertIn("ZONE1", ctx.hr_zones_text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
