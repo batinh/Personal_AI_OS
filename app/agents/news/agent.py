@@ -20,7 +20,7 @@ Telegram routing:
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime
 
 from google import genai
@@ -47,8 +47,10 @@ client = genai.Client(http_options=types.HttpOptions(timeout=30000))  # 30s in m
 # Chunking is handled by send_telegram_msg() in notification.py (HTML-balanced, multi-message).
 # Do NOT truncate here — truncation would cut mid-tag and lose content.
 
-# Max parallel topic workers
+# Max parallel topic workers — overridable via config["news_agent"]["max_topic_workers"]
 _MAX_TOPIC_WORKERS = 4
+# Per-topic timeout in seconds — overridable via config["news_agent"]["topic_timeout_seconds"]
+_TOPIC_TIMEOUT_S = 30
 
 
 # ==========================================
@@ -334,24 +336,38 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
         send_telegram_msg(chat_id, ERR_001)
         return
 
-    logger.info(f"[NEWS] Starting parallel briefing: {len(topics)} topics, session={session}")
+    max_workers = int(news_cfg.get("max_topic_workers", _MAX_TOPIC_WORKERS))
+    topic_timeout_s = int(news_cfg.get("topic_timeout_seconds", _TOPIC_TIMEOUT_S))
+    logger.info(
+        "[NEWS] Starting parallel briefing: %d topics, session=%s, workers=%d, timeout=%ds",
+        len(topics), session, max_workers, topic_timeout_s,
+    )
     _t_start = time.monotonic()
 
     # Run all topic calls in parallel
     results: dict[int, str] = {}  # index → block, preserves topic order
-    with ThreadPoolExecutor(max_workers=min(_MAX_TOPIC_WORKERS, len(topics))) as executor:
+    completed_count = 0
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(topics))) as executor:
         future_map = {
             executor.submit(_call_topic, topic, session, date_str, model): idx
             for idx, topic in enumerate(topics)
         }
-        for future in as_completed(future_map):
-            idx = future_map[future]
-            try:
-                _, block = future.result()
-                if block:
-                    results[idx] = block
-            except Exception as e:
-                logger.error(f"[NEWS-TOPIC] Worker error for topic index {idx}: {e}")
+        try:
+            for future in as_completed(future_map, timeout=topic_timeout_s):
+                completed_count += 1
+                idx = future_map[future]
+                try:
+                    _, block = future.result()
+                    if block:
+                        results[idx] = block
+                except Exception as e:
+                    logger.error(f"[NEWS-TOPIC] Worker error for topic index {idx}: {e}")
+        except FuturesTimeoutError:
+            timed_out = len(future_map) - completed_count
+            logger.warning(
+                "[NEWS-TOPIC] %d topic(s) timed out after %ds — skipping",
+                timed_out, topic_timeout_s,
+            )
 
     duration_ms = int((time.monotonic() - _t_start) * 1000)
 

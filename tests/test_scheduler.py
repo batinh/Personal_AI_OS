@@ -290,6 +290,103 @@ class TestSetupJobs(unittest.TestCase):
 
 
 # ==========================================
+# _is_late_trigger
+# ==========================================
+
+class TestIsLateTrigger(unittest.TestCase):
+    """Unit tests for FR-1.13 / NFR-11 — late trigger skip logic."""
+
+    def _cfg(self, morning="06:30", skip=30):
+        return {
+            "news_agent": {
+                "morning_time": morning,
+                "afternoon_time": "17:30",
+                "evening_time": "20:00",
+                "late_trigger_skip_minutes": skip,
+            }
+        }
+
+    def _mock_now(self, hour, minute):
+        from app.services.scheduler import TZ_VN
+        from datetime import datetime
+        dt = datetime(2026, 4, 26, hour, minute, 0, tzinfo=TZ_VN)
+        return dt
+
+    def test_on_time_not_late(self):
+        """Trigger exactly at scheduled time is allowed."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(6, 30)
+            assert _is_late_trigger("morning", self._cfg()) is False
+
+    def test_within_skip_window_not_late(self):
+        """Trigger 29 min after schedule (< 30 min skip) → allowed."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(6, 59)
+            assert _is_late_trigger("morning", self._cfg()) is False
+
+    def test_exactly_at_skip_boundary_not_late(self):
+        """Trigger exactly at skip_minutes → not late (> not >=)."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(7, 0)
+            assert _is_late_trigger("morning", self._cfg()) is False
+
+    def test_one_minute_past_boundary_is_late(self):
+        """Trigger 31 min after schedule (> 30 min skip) → late."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(7, 1)
+            assert _is_late_trigger("morning", self._cfg()) is True
+
+    def test_custom_skip_minutes(self):
+        """Respects non-default late_trigger_skip_minutes."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(7, 16)  # 46 min late
+            assert _is_late_trigger("morning", self._cfg(skip=60)) is False
+            mock_dt.now.return_value = self._mock_now(7, 31)  # 61 min late
+            assert _is_late_trigger("morning", self._cfg(skip=60)) is True
+
+    def test_invalid_time_string_returns_false(self):
+        """Malformed schedule time → returns False (fail open, don't skip)."""
+        from app.services.scheduler import _is_late_trigger
+        cfg = {"news_agent": {"morning_time": "bad-time", "late_trigger_skip_minutes": 30}}
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(10, 0)
+            assert _is_late_trigger("morning", cfg) is False
+
+    def test_no_config_uses_defaults(self):
+        """Empty config uses default schedule times and skip_minutes=30."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(7, 1)  # 31 min after 06:30 default
+            assert _is_late_trigger("morning", {}) is True
+
+    def test_midnight_crossing_evening_to_morning(self):
+        """Current time 00:30 for morning session at 06:30 → diff is negative → not late."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(0, 30)
+            assert _is_late_trigger("morning", self._cfg()) is False
+
+    def test_afternoon_session(self):
+        """Works correctly for afternoon session."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(18, 1)  # 31 min after 17:30
+            assert _is_late_trigger("afternoon", self._cfg()) is True
+
+    def test_evening_session(self):
+        """Works correctly for evening session."""
+        from app.services.scheduler import _is_late_trigger
+        with patch("app.services.scheduler.datetime") as mock_dt:
+            mock_dt.now.return_value = self._mock_now(20, 29)  # 29 min after 20:00
+            assert _is_late_trigger("evening", self._cfg()) is False
+
+
+# ==========================================
 # Exception Recovery (T3)
 # ==========================================
 class TestSchedulerTaskExceptionRecovery(unittest.TestCase):

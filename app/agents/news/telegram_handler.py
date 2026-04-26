@@ -67,7 +67,7 @@ RATE_WINDOW = 3600  # seconds in 1 hour
 _rate_limit_store: dict[str, list[float]] = {}
 
 
-def _check_rate_limit(chat_id: str) -> bool:
+def _check_rate_limit(chat_id: str, limit: int = RATE_LIMIT) -> bool:
     """
     Returns True if the request is allowed, False if rate limited.
 
@@ -77,7 +77,7 @@ def _check_rate_limit(chat_id: str) -> bool:
     now = time.time()
     timestamps = _rate_limit_store.get(chat_id, [])
     recent = [t for t in timestamps if now - t < RATE_WINDOW]
-    if len(recent) >= RATE_LIMIT:
+    if len(recent) >= limit:
         return False
     recent.append(now)
     _rate_limit_store[chat_id] = recent
@@ -157,7 +157,8 @@ def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
         send_telegram_msg(chat_id, _HELP_MSG)
         return
 
-    if not _check_rate_limit(chat_id):
+    rate_limit = int(news_cfg.get("ondemand_rate_limit_per_hour", RATE_LIMIT))
+    if not _check_rate_limit(chat_id, limit=rate_limit):
         logger.warning(f"[NEWS-CHAT] Rate limit exceeded for chat_id={chat_id}")
         send_telegram_msg(chat_id, ERR_003)
         return
