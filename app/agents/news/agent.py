@@ -19,6 +19,7 @@ Telegram routing:
 """
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -37,6 +38,7 @@ from app.agents.news.prompts import (
     build_on_demand_prompt,
 )
 from app.agents.news.memory import load_news_memory
+from app.agents.news.telegram_handler import ERR_001, ERR_002
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
@@ -178,6 +180,7 @@ def _call_gemini_with_search(
         max_output_tokens=max_tokens,
         thinking_config=types.ThinkingConfig(thinking_budget=0),  # 0 = disable thinking output
     )
+    _t0 = time.monotonic()
     try:
         response = client.models.generate_content(
             model=model,
@@ -211,16 +214,22 @@ def _call_gemini_with_search(
             if str(fr) in ("FinishReason.MAX_TOKENS", "MAX_TOKENS"):
                 logger.warning("[NEWS] finish_reason=MAX_TOKENS — response may be truncated. Increase max_output_tokens.")
 
+        latency_ms = int((time.monotonic() - _t0) * 1000)
         grounding_used = any(
             getattr(c, "grounding_metadata", None) is not None
             for c in candidates
         )
         if not grounding_used:
-            logger.warning("[NEWS] Gemini did not invoke google_search — rejecting training-data response.")
+            logger.warning(
+                "[NEWS] Grounding not invoked — REJECTING training-data response. latency_ms=%d", latency_ms
+            )
             return None, []
-        logger.info("[NEWS] Grounded call completed. grounding_used=True")
 
         grounding_urls = _extract_grounding_urls(candidates)
+        logger.info(
+            "[NEWS] Grounded call completed. grounding_used=True source_count=%d latency_ms=%d",
+            len(grounding_urls), latency_ms,
+        )
         for title, uri in grounding_urls:
             logger.info("[NEWS-SOURCE] %s: %s", title, uri)
 
@@ -321,11 +330,12 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     topics = _resolve_topics(config)
 
     if not topics:
-        logger.warning("[NEWS] No topics configured. Falling back to legacy single-call.")
-        _generate_legacy_briefing(config, session, chat_id, model, date_str)
+        logger.warning("[NEWS] No topics configured. Sending ERR_001.")
+        send_telegram_msg(chat_id, ERR_001)
         return
 
     logger.info(f"[NEWS] Starting parallel briefing: {len(topics)} topics, session={session}")
+    _t_start = time.monotonic()
 
     # Run all topic calls in parallel
     results: dict[int, str] = {}  # index → block, preserves topic order
@@ -343,9 +353,15 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
             except Exception as e:
                 logger.error(f"[NEWS-TOPIC] Worker error for topic index {idx}: {e}")
 
+    duration_ms = int((time.monotonic() - _t_start) * 1000)
+
     if not results:
-        logger.warning("[NEWS] All topic calls failed. Falling back to legacy single-call.")
-        _generate_legacy_briefing(config, session, chat_id, model, date_str)
+        logger.error(
+            "[NEWS] All topic calls failed — briefing not sent. "
+            "session=%s topics_attempted=%d topics_succeeded=0 duration_ms=%d",
+            session, len(topics), duration_ms,
+        )
+        send_telegram_msg(chat_id, ERR_001)
         return
 
     # Merge in topic order
@@ -353,7 +369,11 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     blocks = [results[i] for i in sorted(results)]
     message = header + "\n\n" + "\n\n─────\n\n".join(blocks)
 
-    logger.info(f"[NEWS] Merged message length={len(message)}")
+    logger.info(
+        "[NEWS] Briefing assembled. session=%s topics_attempted=%d topics_succeeded=%d "
+        "chars_sent=%d duration_ms=%d",
+        session, len(topics), len(results), len(message), duration_ms,
+    )
     logger.info(f"[TELEGRAM] Prepared message length={len(message)}; head={message[:80]!r}; tail={message[-60:]!r}")
     send_telegram_msg(chat_id, message)
     logger.info(f"[NEWS] Sent {session} briefing to chat_id={chat_id}")
@@ -398,7 +418,7 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
             f"[NEWS-ONDEMAND] Reply too short or empty ({len(reply) if reply else 0} chars) "
             "— likely training-data stub without search. Sending error fallback."
         )
-        send_telegram_msg(chat_id, "⚠️ Không tìm thấy kết quả cho yêu cầu này. Thử lại sau.")
+        send_telegram_msg(chat_id, ERR_002)
         return None
 
     reply = _DOC_THEM_RE.sub("", reply)

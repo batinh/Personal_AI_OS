@@ -50,6 +50,11 @@
         "morning_time": "06:30",
         "afternoon_time": "17:30",
         "evening_time": "20:00",
+        "late_trigger_skip_minutes": 30,
+        "max_topic_workers": 4,
+        "topic_timeout_seconds": 30,
+        "ondemand_rate_limit_per_hour": 10,
+        "max_sources_per_topic": 3,
         "telegram_chat_id": "",
         "topics": [
             { "name": "AI & Công nghệ", "emoji": "🤖" },

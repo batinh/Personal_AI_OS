@@ -5,6 +5,7 @@ from app.agents.news.agent import (
     generate_news_briefing,
     generate_on_demand_briefing,
 )
+from app.agents.news.telegram_handler import ERR_001, ERR_002, ERR_003
 
 _ENABLED_CFG = {
     "news_agent": {
@@ -41,7 +42,7 @@ class TestGenerateNewsBriefingNoChatId:
 
 
 class TestGenerateNewsBriefingNoTopics:
-    def test_no_topics_calls_legacy(self):
+    def test_no_topics_sends_err001(self):
         cfg = {
             "news_agent": {
                 "enabled": True,
@@ -50,9 +51,10 @@ class TestGenerateNewsBriefingNoTopics:
                 "interest_profile": {},
             }
         }
-        with patch("app.agents.news.agent._generate_legacy_briefing") as mock_legacy:
+        with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
             generate_news_briefing(cfg, "morning")
-        mock_legacy.assert_called_once()
+        mock_send.assert_called_once()
+        assert mock_send.call_args[0][1] == ERR_001
 
 
 class TestGenerateNewsBriefingHappyPath:
@@ -78,14 +80,15 @@ class TestGenerateNewsBriefingHappyPath:
         text = mock_send.call_args[0][1]
         assert "22/04/2026" in text
 
-    def test_all_topics_fail_falls_back_to_legacy(self):
+    def test_all_topics_fail_sends_err001(self):
         with patch(
             "app.agents.news.agent._call_topic",
             side_effect=RuntimeError("topic failed"),
         ):
-            with patch("app.agents.news.agent._generate_legacy_briefing") as mock_legacy:
+            with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
                 generate_news_briefing(_ENABLED_CFG, "morning")
-        mock_legacy.assert_called_once()
+        mock_send.assert_called_once()
+        assert mock_send.call_args[0][1] == ERR_001
 
 
 class TestGenerateOnDemandBriefingDisabled:
@@ -186,3 +189,35 @@ class TestGenerateLegacyBriefing:
                             )
         sent_text = mock_send.call_args[0][1]
         assert "Nguồn block" in sent_text
+
+
+class TestOnDemandShortReplyUsesConstant:
+    def test_short_reply_sends_err002_constant(self):
+        with patch(
+            "app.agents.news.agent._call_gemini_with_search",
+            return_value=("short", []),
+        ):
+            with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
+                generate_on_demand_briefing("query", "123", _ENABLED_CFG)
+        assert mock_send.call_args[0][1] == ERR_002
+
+
+class TestGenerateNewsBriefingStructuredLog:
+    def test_all_fail_sends_err001_not_legacy(self):
+        """Behavioral: all topics fail → ERR_001 sent, _generate_legacy_briefing NOT called."""
+        with patch("app.agents.news.agent._call_topic", return_value=({"name": "AI"}, None)):
+            with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
+                with patch("app.agents.news.agent._generate_legacy_briefing") as mock_legacy:
+                    generate_news_briefing(_ENABLED_CFG, "morning")
+        mock_send.assert_called_once()
+        assert mock_send.call_args[0][1] == ERR_001
+        mock_legacy.assert_not_called()
+
+    def test_empty_topics_sends_err001_not_legacy(self):
+        cfg = {"news_agent": {"enabled": True, "telegram_chat_id": "777", "topics": []}}
+        with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
+            with patch("app.agents.news.agent._generate_legacy_briefing") as mock_legacy:
+                generate_news_briefing(cfg, "morning")
+        mock_send.assert_called_once()
+        assert mock_send.call_args[0][1] == ERR_001
+        mock_legacy.assert_not_called()

@@ -149,6 +149,17 @@ class TestNewsAgentImports(unittest.TestCase):
     def test_news_chat_handler_importable(self):
         from app.agents.news.telegram_handler import handle_news_chat  # noqa: F401
 
+    def test_news_error_constants_importable(self):
+        from app.agents.news.telegram_handler import (  # noqa: F401
+            ERR_001, ERR_002, ERR_003, ERR_004, ERR_005, ERR_006, ERR_007,
+        )
+
+    def test_rate_limit_importable(self):
+        from app.agents.news.telegram_handler import _check_rate_limit, RATE_LIMIT, RATE_WINDOW  # noqa: F401
+
+    def test_scheduler_late_trigger_importable(self):
+        from app.services.scheduler import _is_late_trigger  # noqa: F401
+
 
 class TestSDKContracts(unittest.TestCase):
     """SDK parameter unit contracts — catch wrong units before they hit production."""

@@ -1,6 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from datetime import datetime
 
 from app.core.user_context import get_primary_user_id
 from app.core.config import load_config
@@ -83,11 +84,51 @@ def task_weekly_reflection():
 # ==========================================
 # 📰 NEWS BRIEFINGS
 # ==========================================
+
+_NEWS_SESSION_TIMES = {
+    "morning": "morning_time",
+    "afternoon": "afternoon_time",
+    "evening": "evening_time",
+}
+
+_NEWS_SESSION_DEFAULTS = {
+    "morning": "06:30",
+    "afternoon": "17:30",
+    "evening": "20:00",
+}
+
+
+def _is_late_trigger(session: str, config: dict) -> bool:
+    """
+    Returns True if the task fired more than late_trigger_skip_minutes after its scheduled time.
+    Used to skip stale triggers — e.g., a reboot at 07:15 would fire the 06:30 job immediately.
+    """
+    news_cfg = config.get("news_agent", {})
+    skip_minutes = int(news_cfg.get("late_trigger_skip_minutes", 30))
+    time_key = _NEWS_SESSION_TIMES.get(session, "morning_time")
+    scheduled_time_str = news_cfg.get(time_key, _NEWS_SESSION_DEFAULTS[session])
+    try:
+        sh, sm = map(int, scheduled_time_str.split(":"))
+    except (ValueError, AttributeError):
+        return False
+    now = datetime.now(TZ_VN)
+    scheduled_minutes = sh * 60 + sm
+    current_minutes = now.hour * 60 + now.minute
+    diff = current_minutes - scheduled_minutes
+    # Wrap midnight crossing
+    if diff < -720:
+        diff += 1440
+    return diff > skip_minutes
+
+
 def task_morning_news():
     """Morning news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering morning news briefing...")
         config = load_config()
+        if _is_late_trigger("morning", config):
+            logger.warning("[SCHEDULER] Briefing skipped — trigger late for morning session.")
+            return
+        logger.info("[SCHEDULER] Triggering morning news briefing...")
         generate_news_briefing(config, session="morning")
     except Exception as e:
         logger.error("[SCHEDULER] task_morning_news failed: %s", e, exc_info=True)
@@ -96,8 +137,11 @@ def task_morning_news():
 def task_afternoon_news():
     """Afternoon news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering afternoon news briefing...")
         config = load_config()
+        if _is_late_trigger("afternoon", config):
+            logger.warning("[SCHEDULER] Briefing skipped — trigger late for afternoon session.")
+            return
+        logger.info("[SCHEDULER] Triggering afternoon news briefing...")
         generate_news_briefing(config, session="afternoon")
     except Exception as e:
         logger.error("[SCHEDULER] task_afternoon_news failed: %s", e, exc_info=True)
@@ -106,8 +150,11 @@ def task_afternoon_news():
 def task_evening_news():
     """Evening news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering evening news briefing...")
         config = load_config()
+        if _is_late_trigger("evening", config):
+            logger.warning("[SCHEDULER] Briefing skipped — trigger late for evening session.")
+            return
+        logger.info("[SCHEDULER] Triggering evening news briefing...")
         generate_news_briefing(config, session="evening")
     except Exception as e:
         logger.error("[SCHEDULER] task_evening_news failed: %s", e, exc_info=True)

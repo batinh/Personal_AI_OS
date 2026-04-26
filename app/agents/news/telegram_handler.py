@@ -6,12 +6,30 @@ Also handles free-text messages routed here via @news / @tin prefix.
 
 Zone 3: function names/logic = English, user-facing messages = Vietnamese.
 """
+import time
 from app.core.notification import send_telegram_msg
 from app.core.user_context import get_primary_user_id
 from app.agents.news.memory import run_extract_in_background
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
+
+# ==========================================
+# ERROR MESSAGE CATALOG (Section 4 of PRD)
+# Tests MUST import these constants — do NOT assert on literal strings.
+# ==========================================
+
+ERR_001 = "⚠️ Không lấy được tin tức thực tế lúc này. Thử lại sau."
+ERR_002 = "⚠️ Không tìm thấy kết quả cho yêu cầu này. Thử lại sau."
+ERR_003 = "⚠️ Bạn đã gửi quá nhiều yêu cầu. Thử lại sau 1 tiếng."
+ERR_004 = "⚠️ News Agent đang tắt. Bật lại trong phần cài đặt."
+ERR_005 = "❌ Lệnh không hợp lệ: /news {arg}."  # format with .format(arg=...)
+ERR_006 = "❌ Lỗi khi lấy tin {session_label}. Xem log để biết thêm."  # format with .format(...)
+ERR_007 = ERR_002  # on-demand < 100 chars — same message as ERR_002
+
+# ==========================================
+# HELP MESSAGE
+# ==========================================
 
 _HELP_MSG = (
     "📰 <b>News Agent</b>\n\n"
@@ -30,11 +48,6 @@ _HELP_MSG = (
     "<i>Agent học sở thích của bạn qua các cuộc trò chuyện.</i>"
 )
 
-_DISABLED_MSG = (
-    "⚠️ <b>News Agent đang tắt.</b>\n"
-    "Bật lại trong phần cài đặt tại /console?tab=news"
-)
-
 _FLOW_LABELS: dict[str, str] = {
     "morning": "buổi sáng",
     "afternoon": "buổi chiều",
@@ -43,12 +56,41 @@ _FLOW_LABELS: dict[str, str] = {
 
 _VALID_FLOWS = frozenset({"morning", "afternoon", "evening", "help"})
 
+# ==========================================
+# RATE LIMITING (FR-2.7, NFR-14)
+# In-memory counter, resets on server restart — acceptable for v1.0.
+# ==========================================
+
+RATE_LIMIT = 10
+RATE_WINDOW = 3600  # seconds in 1 hour
+
+_rate_limit_store: dict[str, list[float]] = {}
+
+
+def _check_rate_limit(chat_id: str) -> bool:
+    """
+    Returns True if the request is allowed, False if rate limited.
+
+    Slides a 1-hour window over recorded timestamps for the given chat_id.
+    Counter resets automatically as old timestamps age out.
+    """
+    now = time.time()
+    timestamps = _rate_limit_store.get(chat_id, [])
+    recent = [t for t in timestamps if now - t < RATE_WINDOW]
+    if len(recent) >= RATE_LIMIT:
+        return False
+    recent.append(now)
+    _rate_limit_store[chat_id] = recent
+    return True
+
+
+# ==========================================
+# COMMAND HANDLER
+# ==========================================
 
 def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
     """
     Parse /news [morning|afternoon|evening|help] and dispatch to the correct flow.
-
-    Called as a background task from the Telegram webhook handler.
 
     Args:
         chat_id: Telegram chat ID to send feedback to.
@@ -60,7 +102,7 @@ def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
     news_cfg = config.get("news_agent", {})
 
     if not news_cfg.get("enabled", False):
-        send_telegram_msg(chat_id, _DISABLED_MSG)
+        send_telegram_msg(chat_id, ERR_004)
         logger.info("[NEWS-CMD] News agent disabled. Sent disabled message.")
         return
 
@@ -73,7 +115,7 @@ def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
     if sub not in _VALID_FLOWS:
         send_telegram_msg(
             chat_id,
-            f"❌ Lệnh không hợp lệ: <code>/news {sub}</code>\n\n{_HELP_MSG}"
+            ERR_005.format(arg=sub) + f"\n\n{_HELP_MSG}"
         )
         return
 
@@ -84,11 +126,12 @@ def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
         generate_news_briefing(config, session=sub)
     except Exception as e:
         logger.error(f"[NEWS-CMD] Error in '{sub}' flow: {e}")
-        send_telegram_msg(
-            chat_id,
-            f"❌ Lỗi khi lấy tin {label}. Xem log để biết thêm chi tiết."
-        )
+        send_telegram_msg(chat_id, ERR_006.format(session_label=label))
 
+
+# ==========================================
+# CHAT HANDLER
+# ==========================================
 
 def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
     """
@@ -107,11 +150,16 @@ def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
     news_cfg = config.get("news_agent", {})
 
     if not news_cfg.get("enabled", False):
-        send_telegram_msg(chat_id, _DISABLED_MSG)
+        send_telegram_msg(chat_id, ERR_004)
         return
 
     if not text:
         send_telegram_msg(chat_id, _HELP_MSG)
+        return
+
+    if not _check_rate_limit(chat_id):
+        logger.warning(f"[NEWS-CHAT] Rate limit exceeded for chat_id={chat_id}")
+        send_telegram_msg(chat_id, ERR_003)
         return
 
     user_id = str(get_primary_user_id())
@@ -121,6 +169,5 @@ def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
     reply = generate_on_demand_briefing(text, chat_id, config)
 
     if reply:
-        # Extract preference signals in background — non-blocking
         chat_text = f"Người dùng: {text}\nTrợ lý: {reply}"
         run_extract_in_background(user_id, chat_text, model)
