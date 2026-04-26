@@ -26,7 +26,7 @@ from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
 
 
 def generate_weekly_reflection(config: dict):
@@ -92,7 +92,7 @@ def generate_weekly_reflection(config: dict):
     # 3. Call Gemini with Action Tool allowed
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-flash-latest"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,
