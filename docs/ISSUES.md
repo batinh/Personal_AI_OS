@@ -21,7 +21,8 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date | Module |
 |----|------|-------|----------|----------|------|--------|
-| _(no open issues)_ | | | | | | |
+| [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
+| [ISS-014](#iss-014--no-onboarding-guide-for-physiology-config-fields) | feature | No onboarding guide for physiology config fields (LTHR, rFTP) | Low | U+AI | 2026-04-26 | `docs/`, `config.example.json` |
 
 ---
 
@@ -52,7 +53,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 ---
 
-## Detail: Open
+## Detail: Closed
 
 ### ISS-007 — `/news` command sends two messages (loading + result)
 
@@ -313,3 +314,41 @@ Changed regex to `^thought\w*[\n\r ]` — matches any word starting with "though
 
 **Regression test:**
 `tests/test_news_agent_thinking.py::TestStripThoughtPreamble::test_strips_thoughtful_preamble` — reproduces the exact production incident text.
+
+---
+
+## Detail: Open
+
+### ISS-013 — Multi-tenant expansion blocked by single-user design
+
+**Type:** feature · **Priority:** Low · **Reporter:** U+AI · **Date:** 2026-04-26
+**Module:** `app/agents/coach/`
+
+**Symptom:**
+`get_primary_user_id()` is now the canonical resolver for the coach's target user (TD-001 fixed 3 direct `os.getenv("TELEGRAM_CHAT_ID")` calls). However all flows still assume a single primary user. Adding a second user would require per-flow user-ID injection and per-user config loading.
+
+**Context:**
+Noted in Coach Agent PRD v1.0 PO review: "blocks multi-user expansion". Deferred to v1.1 since single-user is the only current requirement.
+
+**Acceptance criteria:**
+- `handle_telegram_chat` routes to the correct user's config and history by `chat_id`
+- Morning briefing / weekly reflection schedulable per-user
+- All DB queries already multi-tenant (`user_id` column required on every table)
+
+---
+
+### ISS-014 — No onboarding guide for physiology config fields (LTHR, rFTP)
+
+**Type:** feature · **Priority:** Low · **Reporter:** U+AI · **Date:** 2026-04-26
+**Module:** `docs/`, `config.example.json`
+
+**Symptom:**
+`config.example.json` exposes `lthr_bpm`, `rftp_watts`, `threshold_pace_per_km` but gives no guidance on how to determine these values. Most users won't have lab results and won't know where to start, causing these fields to stay at `0` (Karvonen fallback).
+
+**Context:**
+Noted in Coach Agent PRD v1.0 PO review: "most users won't configure them". Deferred to v1.1 (nice-to-have).
+
+**Acceptance criteria:**
+- `docs/features/onboarding-physiology.md` explains how to derive LTHR (race result or Garmin estimate), rFTP (Stryd test), and threshold pace (5 km race result formula)
+- `config.example.json` inline comments reference the guide
+- Console admin UI shows field help text when value = 0

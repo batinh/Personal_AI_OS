@@ -592,7 +592,7 @@ Minimal required fields in `data/config.json`:
 
 - [x] **FR-1 (Webhook ingest)**: Webhook → TRIMP → stream metrics → RAG — 15 tests in `test_harvest.py`
 - [x] **FR-2 (Run analysis)**: Structured JSON output, GCS score, Strava update — 9 tests in `test_flow_run_analysis.py`
-- [x] **FR-3 (Morning briefing)**: Cron + tools + Telegram — 3 tests in `test_agent.py::TestGenerateMorningBriefing`
+- [x] **FR-3 (Morning briefing)**: Cron + tools + Telegram — 11 tests in `test_flow_morning_briefing.py` (TD-003 refactor, 2026-04-26)
 - [x] **FR-4 (Interactive chat)**: Fast/standard path, tool routing, commands — 27 tests in `test_agent.py::TestHandleTelegramChat + TestClassifyIntent + TestFoldVietnamese`
 - [x] **FR-5 (Weekly reflection)**: RAG memorize + Telegram — 2 tests in `test_agent.py::TestGenerateWeeklyReflection`
 - [x] **FR-6 (Memory extraction)**: Structured output, category enforcement, status — 5 tests in `test_agent.py::TestExtractImplicitMemory`
@@ -603,7 +603,8 @@ Minimal required fields in `data/config.json`:
 - [x] **FR-11 (Zone models)**: LTHR/Karvonen/Stryd/Daniels — covered in `test_agent.py::TestBuildSystemInstruction`
 - [x] **FR-12 (Strava sync)**: Auto-harvest, manual sync, reconcile — 15 tests in `test_harvest.py`
 - [x] **FR-13 (RAG)**: Memorize + recall + forget — covered in harvest and agent tests
-- [x] **Full suite passing**: 810 passed, 0 failures (as of 2026-04-26)
+- [x] **Full suite passing**: 812 passed, 5 skipped, 0 failures (as of 2026-04-26)
+- [x] **Coverage gate**: 83% (exceeds 80% minimum; ADR-009 gate can now be enabled)
 - [x] **Pre-deploy check**: `bash scripts/pre-deploy-check.sh` → PASS
 - [x] **Zone 1/2/3 compliance**: All new code reviewed
 
@@ -614,6 +615,7 @@ Minimal required fields in `data/config.json`:
 | Test File | Module Under Test | # Tests | Notes |
 |---|---|---|---|
 | `test_agent.py` | `agent.py`, all flows | 35 | Chat, briefing, reflection, memory, prompts |
+| `test_flow_morning_briefing.py` | `flows/morning_briefing.py` | 11 | Full briefing flow, TD-003 context factory |
 | `test_flow_run_analysis.py` | `flows/run_analysis.py` | 9 | Structured output, GCS, plan status |
 | `test_harvest.py` | `harvest.py` | 15 | Webhook ingest, sync, reconcile |
 | `test_metrics_engine.py` | `metrics_engine.py` | 22 | All metric groups, edge cases |

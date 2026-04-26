@@ -2,7 +2,7 @@
 
 **Slug:** `coach-strava-metrics-upgrade`
 **Branch:** `feat/coach-strava-improvement`
-**Status:** Approved — Ready to implement
+**Status:** Implemented — merged to main (`a720bc8`)
 
 ---
 

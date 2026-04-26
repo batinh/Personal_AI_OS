@@ -580,7 +580,7 @@ REQUIRED_ENV_VARS = [
 - [ ] P2.5 Request ID in logs
 
 ### Phase 3
-- [ ] P3.1 Shared coach flow helper
+- [ ] P3.1 Shared coach flow helper — partial: `build_agent_context()` centralises context assembly (TD-003, 2026-04-26); full flow wrapper (`run_coach_flow()`) not yet implemented
 - [ ] P3.2 Named constants for magic numbers
 - [ ] P3.3 Structured JSON logging (flag-gated)
 - [ ] P3.4 Strava HMAC verification
@@ -599,6 +599,8 @@ REQUIRED_ENV_VARS = [
 - [x] T6 Config thread-safety tests (`tests/test_config.py`) — 20-thread concurrent read + interleaved save/load (2026-04-21)
 - [x] T7 Multi-tenant run activity isolation tests (`tests/test_database.py`) — training loads, mileage, logs (2026-04-21)
 - Reference: `tests/test_untested_critical_paths.md` — 45 concrete test stubs ready to implement
+
+**Coverage milestone (2026-04-26):** 83% total — exceeds the 80% minimum from ADR-009. Total suite: 812 passed, 5 skipped (T1/T2/T5 deferred). Per ADR-009, `pytest --cov-fail-under=80` gate can now be enabled.
 
 ---
 
