@@ -11,7 +11,8 @@ Covers generate_morning_briefing():
   - Gemini exception: error logged, no crash
 """
 import unittest
-from unittest.mock import patch, MagicMock, call
+from datetime import datetime, timezone
+from unittest.mock import patch, MagicMock
 
 
 def _make_config():
@@ -26,19 +27,28 @@ def _make_config():
     }
 
 
+def _make_agent_ctx():
+    from app.agents.coach.utils import AgentContext
+    return AgentContext(
+        user_id="123456",
+        now=datetime(2026, 4, 26, 7, 0, tzinfo=timezone.utc),
+        phase_text="Build | Week 3",
+        countdown_text="Còn 7 tuần đến ngày đua.",
+        acwr_text="1.05 (Optimal)",
+        actual_volume=35.0,
+        weekly_decision_context="Week context",
+        system_inst="Sys instruction",
+        shared_context="Shared context",
+    )
+
+
 _PATCHES = [
     "app.agents.coach.flows.morning_briefing.get_primary_user_id",
-    "app.agents.coach.flows.morning_briefing.get_training_loads",
-    "app.agents.coach.flows.morning_briefing.calculate_acwr",
-    "app.agents.coach.flows.morning_briefing.get_weekly_volume",
-    "app.agents.coach.flows.morning_briefing.calculate_training_phase",
+    "app.agents.coach.flows.morning_briefing.build_agent_context",
     "app.agents.coach.flows.morning_briefing.get_plan_for_date",
-    "app.agents.coach.flows.morning_briefing.get_formatted_weekly_context",
     "app.agents.coach.flows.morning_briefing.load_history_for_gemini",
     "app.agents.coach.flows.morning_briefing.get_all_active_memories",
     "app.agents.coach.flows.morning_briefing.get_runs_in_last_days",
-    "app.agents.coach.flows.morning_briefing.build_system_instruction",
-    "app.agents.coach.flows.morning_briefing.get_shared_context_block",
     "app.agents.coach.flows.morning_briefing.build_standup_prompt",
     "app.agents.coach.flows.morning_briefing.debug_log_prompt",
     "app.agents.coach.flows.morning_briefing.send_message_with_retry",
@@ -61,19 +71,11 @@ class TestGenerateMorningBriefing(unittest.TestCase):
             mocks[key] = m
 
         mocks["get_primary_user_id"].return_value = chat_id
-        mocks["get_training_loads"].return_value = {"acute_load_7d": 150, "chronic_load_28d": 140}
-        mocks["calculate_acwr"].return_value = {"acwr": 1.05, "status": "Optimal"}
-        mocks["get_weekly_volume"].return_value = 35.0
-        mocks["calculate_training_phase"].return_value = {
-            "phase": "Build", "microcycle": "Week 3", "weeks_left": 7, "taper_factor": 1.0
-        }
+        mocks["build_agent_context"].return_value = _make_agent_ctx()
         mocks["get_plan_for_date"].return_value = {"workout_title": "Easy Run", "description": "45min easy"}
-        mocks["get_formatted_weekly_context"].return_value = "Week context"
         mocks["load_history_for_gemini"].return_value = history or []
         mocks["get_all_active_memories"].return_value = memories or []
         mocks["get_runs_in_last_days"].return_value = []
-        mocks["build_system_instruction"].return_value = "Sys instruction"
-        mocks["get_shared_context_block"].return_value = "Shared context"
         mocks["build_standup_prompt"].return_value = "Full standup prompt"
         mocks["debug_log_prompt"].return_value = None
 
@@ -175,7 +177,6 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         try:
             from app.agents.coach.flows.morning_briefing import generate_morning_briefing
             generate_morning_briefing(_make_config())
-            # build_standup_prompt must be called with non-default chat_context
             mocks["build_standup_prompt"].assert_called_once()
             kwargs = mocks["build_standup_prompt"].call_args[1]
             chat_ctx = kwargs.get("chat_context", "")
@@ -198,7 +199,6 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         mocks["send_message_with_retry"].side_effect = Exception("Network error")
         try:
             from app.agents.coach.flows.morning_briefing import generate_morning_briefing
-            # Should not raise
             generate_morning_briefing(_make_config())
             mocks["send_telegram_msg"].assert_not_called()
         finally:

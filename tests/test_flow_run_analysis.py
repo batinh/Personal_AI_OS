@@ -9,6 +9,7 @@ Covers analyze_run_with_gemini():
 """
 import json
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 
@@ -34,16 +35,25 @@ def _make_meta_data():
     }
 
 
+def _make_agent_ctx():
+    from app.agents.coach.utils import AgentContext
+    return AgentContext(
+        user_id="123456",
+        now=datetime(2026, 4, 10, 6, 0, tzinfo=timezone.utc),
+        phase_text="Build | Week 2",
+        countdown_text="Còn 8 tuần đến ngày đua.",
+        acwr_text="1.07 (Optimal)",
+        actual_volume=42.0,
+        weekly_decision_context="Week context",
+        system_inst="System instruction",
+        shared_context="Shared context",
+    )
+
+
 _PATCHES = [
     "app.agents.coach.flows.run_analysis.get_primary_user_id",
-    "app.agents.coach.flows.run_analysis.get_training_loads",
-    "app.agents.coach.flows.run_analysis.calculate_acwr",
-    "app.agents.coach.flows.run_analysis.get_weekly_volume",
-    "app.agents.coach.flows.run_analysis.get_formatted_weekly_context",
+    "app.agents.coach.flows.run_analysis.build_agent_context",
     "app.agents.coach.flows.run_analysis.get_plan_for_date",
-    "app.agents.coach.flows.run_analysis.calculate_training_phase",
-    "app.agents.coach.flows.run_analysis.build_system_instruction",
-    "app.agents.coach.flows.run_analysis.get_shared_context_block",
     "app.agents.coach.flows.run_analysis.build_universal_run_analysis_prompt",
     "app.agents.coach.flows.run_analysis.debug_log_prompt",
     "app.agents.coach.flows.run_analysis.update_run_gcs_score",
@@ -69,22 +79,12 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
             key = target.split(".")[-1]
             mocks[key] = m
 
-        # Configure standard returns
         mocks["get_primary_user_id"].return_value = "123456"
-        mocks["get_training_loads"].return_value = {"acute_load_7d": 150, "chronic_load_28d": 140}
-        mocks["calculate_acwr"].return_value = {"acwr": 1.07, "status": "Optimal"}
-        mocks["get_weekly_volume"].return_value = 42.0
-        mocks["get_formatted_weekly_context"].return_value = "Week context"
+        mocks["build_agent_context"].return_value = _make_agent_ctx()
         mocks["get_plan_for_date"].return_value = today_plan
-        mocks["calculate_training_phase"].return_value = {
-            "phase": "Build", "microcycle": "Week 2", "weeks_left": 8, "taper_factor": 1.0
-        }
-        mocks["build_system_instruction"].return_value = "System instruction"
-        mocks["get_shared_context_block"].return_value = "Shared context"
         mocks["build_universal_run_analysis_prompt"].return_value = "Full prompt"
         mocks["debug_log_prompt"].return_value = None
 
-        # Gemini response
         response = MagicMock()
         response.text = json.dumps({"analysis_text": analysis_text, "gcs_score": gcs_score})
         chat_session = MagicMock()
@@ -182,7 +182,6 @@ class TestAnalyzeRunWithGemini(unittest.TestCase):
         try:
             from app.agents.coach.flows.run_analysis import analyze_run_with_gemini
             result = analyze_run_with_gemini("act_1", "Morning 10K", meta, _make_config())
-            # Should not raise; get_plan_for_date called with some date string
             mocks["get_plan_for_date"].assert_called_once()
             date_arg = mocks["get_plan_for_date"].call_args[0][1]
             self.assertRegex(date_arg, r"\d{4}-\d{2}-\d{2}")

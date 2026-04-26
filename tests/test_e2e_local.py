@@ -377,11 +377,15 @@ class TestE2ETimezoneUtils(unittest.TestCase):
             self.assertEqual(str(tz), "UTC")
 
     def test_morning_briefing_flow_uses_timezone_utils(self):
-        """Proves the refactored import chain (DRY P3.8) is intact."""
+        """Proves timezone handling is delegated to build_agent_context (TD-003 refactor)."""
         import inspect
         import app.agents.coach.flows.morning_briefing as mb
+        import app.agents.coach.utils as utils_mod
         src = inspect.getsource(mb)
-        self.assertIn("get_local_tz", src)
+        utils_src = inspect.getsource(utils_mod)
+        # After TD-003 refactor, get_local_tz lives inside build_agent_context in utils.py
+        self.assertIn("build_agent_context", src)
+        self.assertIn("get_local_tz", utils_src)
         self.assertNotIn("pytz.timezone(os.getenv", src)
 
     def test_weekly_reflection_flow_uses_timezone_utils(self):

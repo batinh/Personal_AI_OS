@@ -579,11 +579,11 @@ Minimal required fields in `data/config.json`:
 |---|---|---|---|
 | TD-001 | `os.getenv("TELEGRAM_CHAT_ID")` called directly in 3 flows instead of injected via `get_primary_user_id()` | MEDIUM | **Fixed** (agent.py:173,266,530) |
 | TD-002 | All 4 flows default to `"models/gemini-2.0-flash"` — stale default, should be `gemini-flash-latest` | LOW | **Fixed** (agent.py + all flows/) |
-| TD-003 | `build_agent_context()` not used in `run_analysis.py` and `morning_briefing.py` — they build context manually | MEDIUM | Open (v1.1 backlog) |
+| TD-003 | `build_agent_context()` not used in `run_analysis.py` and `morning_briefing.py` — they build context manually | MEDIUM | **Fixed** (flows/ refactored, tests updated) |
 | TD-004 | Gemini `genai.Client()` created without `HttpOptions(timeout=...)` in individual flows (only `agent.py` sets it) | MEDIUM | **Fixed** (all flows/ + memory_extraction.py) |
 | TD-005 | Memory extraction runs synchronously in `handle_telegram_chat` — adds latency | MEDIUM | **Fixed** (daemon thread, agent.py) |
 | TD-006 | `get_total_run_stats` reads from stale `data/athlete_stats.json` cache | LOW | Documented in docstring |
-| TD-007 | `/plan` Telegram command missing — no single-shot weekly plan view | LOW | v1.1 backlog |
+| TD-007 | `/plan` Telegram command missing — no single-shot weekly plan view | LOW | **Fixed** (`/plan` + `/schedule` aliases, agent.py) |
 | TD-008 | `calculate_training_phase` reads TZ via `os.getenv` instead of `get_local_tz()` | LOW | **Fixed** (utils.py) |
 
 ---

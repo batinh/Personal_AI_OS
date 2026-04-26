@@ -47,6 +47,22 @@ def _make_config():
     }
 
 
+def _make_agent_ctx():
+    from datetime import datetime, timezone
+    from app.agents.coach.utils import AgentContext
+    return AgentContext(
+        user_id="12345",
+        now=datetime(2026, 4, 26, 7, 0, tzinfo=timezone.utc),
+        phase_text="Base | Cycle: W1",
+        countdown_text="Còn 6 tuần đến ngày đua.",
+        acwr_text="0.85 (Optimal)",
+        actual_volume=30.0,
+        weekly_decision_context="Target: 50km",
+        system_inst="Be concise.",
+        shared_context="[Context block]",
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. send_message_with_retry
 # ══════════════════════════════════════════════════════════════════════════════
@@ -161,6 +177,30 @@ class TestHandleTelegramChat(unittest.TestCase):
             from app.agents.coach.agent import handle_telegram_chat
             handle_telegram_chat("u1", "/reset", _make_config())
             mocks["clear_h"].assert_called_once()
+        finally:
+            self._stop_patches(ps)
+
+    def test_plan_command_sends_upcoming_schedule(self):
+        ps = self._patches()
+        mocks = self._start_patches(ps)
+        mocks["g_plans"].return_value = "- Ngày 2026-04-27: Easy Run"
+        try:
+            from app.agents.coach.agent import handle_telegram_chat
+            handle_telegram_chat("u1", "/plan", _make_config())
+            mocks["send_tg"].assert_called_once()
+            sent = mocks["send_tg"].call_args[0][1]
+            self.assertIn("📅", sent)
+            self.assertIn("Easy Run", sent)
+        finally:
+            self._stop_patches(ps)
+
+    def test_schedule_alias_also_shows_plan(self):
+        ps = self._patches()
+        mocks = self._start_patches(ps)
+        try:
+            from app.agents.coach.agent import handle_telegram_chat
+            handle_telegram_chat("u1", "/schedule", _make_config())
+            mocks["g_plans"].assert_called_once_with("u1", limit_days=7)
         finally:
             self._stop_patches(ps)
 
@@ -336,21 +376,22 @@ class TestPastContextKeywordMatching(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 class TestGenerateMorningBriefing(unittest.TestCase):
 
-    # NOTE: After refactor, generate_morning_briefing lives in flows/morning_briefing.py
-    # Patch targets must reference that module's namespace, not agent.py
+    # NOTE: generate_morning_briefing lives in flows/morning_briefing.py
+    # After TD-003 refactor, context assembly is delegated to build_agent_context().
+    # Patch targets reference that module's namespace.
     @patch("app.agents.coach.flows.morning_briefing.send_telegram_msg")
     @patch("app.agents.coach.flows.morning_briefing.save_message")
     @patch("app.agents.coach.flows.morning_briefing.load_history_for_gemini", return_value=[])
     @patch("app.agents.coach.flows.morning_briefing.get_all_active_memories", return_value=[])
     @patch("app.agents.coach.flows.morning_briefing.get_runs_in_last_days", return_value="- 2026-03-20: 10km")
     @patch("app.agents.coach.flows.morning_briefing.get_plan_for_date", return_value=None)
-    @patch("app.agents.coach.flows.morning_briefing.get_weekly_volume", return_value=30.0)
-    @patch("app.agents.coach.flows.morning_briefing.get_training_loads",
-           return_value={"acute_load_7d": 80, "chronic_load_28d": 320})
-    @patch("app.agents.coach.flows.morning_briefing.get_formatted_weekly_context", return_value="Target: 50km")
+    @patch("app.agents.coach.flows.morning_briefing.build_agent_context")
     @patch("app.agents.coach.flows.morning_briefing.client", _FAKE_GEMINI_CLIENT)
     @patch("app.agents.coach.flows.morning_briefing.get_primary_user_id", return_value="12345")
-    def test_sends_briefing_to_telegram(self, *mocks):
+    def test_sends_briefing_to_telegram(self, mock_uid, mock_ctx, *mocks):
+        # Arg order (innermost→outermost, skipping new= patches):
+        #   mock_uid = get_primary_user_id, mock_ctx = build_agent_context
+        mock_ctx.return_value = _make_agent_ctx()
         fake_session = MagicMock()
         fake_session.send_message.return_value = _make_response("Good morning! ACWR is great.")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session
@@ -358,7 +399,6 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         from app.agents.coach.flows.morning_briefing import generate_morning_briefing
         generate_morning_briefing(_make_config(), weather_data="28°C, Sunny")
 
-        # The last mock in *mocks is send_telegram_msg (reversed order)
         send_tg = mocks[-1]
         send_tg.assert_called()
         sent = send_tg.call_args[0][1]
@@ -370,13 +410,11 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     @patch("app.agents.coach.flows.morning_briefing.get_all_active_memories", return_value=[])
     @patch("app.agents.coach.flows.morning_briefing.get_runs_in_last_days", return_value="")
     @patch("app.agents.coach.flows.morning_briefing.get_plan_for_date", return_value=None)
-    @patch("app.agents.coach.flows.morning_briefing.get_weekly_volume", return_value=0.0)
-    @patch("app.agents.coach.flows.morning_briefing.get_training_loads",
-           return_value={"acute_load_7d": 0, "chronic_load_28d": 0})
-    @patch("app.agents.coach.flows.morning_briefing.get_formatted_weekly_context", return_value="")
+    @patch("app.agents.coach.flows.morning_briefing.build_agent_context")
     @patch("app.agents.coach.flows.morning_briefing.client", _FAKE_GEMINI_CLIENT)
     @patch("app.agents.coach.flows.morning_briefing.get_primary_user_id", return_value="12345")
-    def test_api_error_does_not_crash(self, *mocks):
+    def test_api_error_does_not_crash(self, mock_uid, mock_ctx, *mocks):
+        mock_ctx.return_value = _make_agent_ctx()
         fake_session = MagicMock()
         fake_session.send_message.side_effect = Exception("API down")
         _FAKE_GEMINI_CLIENT.chats.create.return_value = fake_session

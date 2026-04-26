@@ -372,6 +372,13 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         generate_morning_briefing(load_config())
         return
 
+    # [2c] /plan → show upcoming 7-day training schedule
+    if text.strip().lower() in ["/plan", "/schedule"]:
+        logger.info(f"[WEBHOOK] /plan triggered by {chat_id}")
+        plan_text = get_upcoming_plans(chat_id, limit_days=7)
+        send_telegram_msg(chat_id, f"📅 Giáo án 7 ngày tới:\n\n{plan_text}")
+        return
+
     # [2b] Handle Manual Reflection Trigger (TESTING/ADMIN MODE)
     # Hỗ trợ cả 2 cách gõ lệnh để tránh user gõ nhầm
     if text in ["/reflect", "/reflection", "/refect"]:
