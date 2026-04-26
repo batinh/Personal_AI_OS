@@ -1,6 +1,7 @@
 """Tests for pure helper functions in app/agents/news/agent.py."""
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
+from google.genai import types
 from app.agents.news.agent import (
     _resolve_chat_id,
     _get_model,
@@ -8,6 +9,9 @@ from app.agents.news.agent import (
     _resolve_topics,
     _session_header,
     _extract_grounding_urls,
+    _build_sources_block,
+    _call_gemini_with_search,
+    _DOC_THEM_RE,
 )
 
 
@@ -142,3 +146,130 @@ class TestExtractGroundingUrls:
         cand = MagicMock(spec=[])  # no grounding_metadata attr
         result = _extract_grounding_urls([cand])
         assert result == []
+
+
+class TestBuildSourcesBlock:
+    """Tests for FR-4.7 and US-1.3 (real sources block)."""
+
+    def test_single_url_formatted_correctly(self):
+        urls = [("Reuters", "https://reuters.com/a")]
+        result = _build_sources_block(urls)
+        assert "📎" in result
+        assert "reuters.com/a" in result
+
+    def test_capped_at_max_sources(self):
+        urls = [(f"Title{i}", f"https://example.com/{i}") for i in range(5)]
+        result = _build_sources_block(urls, max_sources=3)
+        lines = [l for l in result.splitlines() if l.startswith("•")]
+        assert len(lines) == 3
+
+    def test_fourth_url_not_included(self):
+        urls = [(f"T{i}", f"https://ex.com/{i}") for i in range(4)]
+        result = _build_sources_block(urls, max_sources=3)
+        assert "ex.com/3" not in result
+
+    def test_empty_urls_returns_empty_string(self):
+        assert _build_sources_block([]) == ""
+
+    def test_long_title_truncated_at_60_chars(self):
+        long_title = "A" * 200
+        urls = [(long_title, "https://example.com")]
+        result = _build_sources_block(urls)
+        # The displayed label should be ≤60 chars
+        import re
+        match = re.search(r'>([^<]+)</a>', result)
+        assert match and len(match.group(1)) <= 60
+
+
+class TestDocThemRegex:
+    """Tests for DEF-003 — LLM-authored link stripping."""
+
+    def test_strips_doc_them_link(self):
+        text = 'Tin hay. <a href="https://hallucinated.com">Đọc thêm</a> next item.'
+        result = _DOC_THEM_RE.sub("", text)
+        assert "hallucinated.com" not in result
+        assert "<a href" not in result
+
+    def test_strips_case_insensitive(self):
+        text = '<a href="https://x.com">ĐỌC THÊM</a>'
+        result = _DOC_THEM_RE.sub("", text)
+        assert "<a href" not in result
+
+    def test_leaves_non_doc_them_links_intact(self):
+        text = '<a href="https://real.com">Real Source</a>'
+        result = _DOC_THEM_RE.sub("", text)
+        assert "real.com" in result
+
+    def test_multiple_occurrences_all_stripped(self):
+        text = (
+            '<a href="https://a.com">Đọc thêm</a> mid '
+            '<a href="https://b.com">đọc thêm</a>'
+        )
+        result = _DOC_THEM_RE.sub("", text)
+        assert "<a href" not in result
+
+
+class TestCallGeminiWithSearchGroundingGate:
+    """Tests for DEF-001 (thinking_budget=0) and DEF-005 (grounding gate)."""
+
+    def _make_response(self, grounded: bool, text: str = "news content"):
+        """Build a minimal mock Gemini response."""
+        part = MagicMock()
+        part.text = text
+        part.thought = False
+        content = MagicMock()
+        content.parts = [part]
+        cand = MagicMock()
+        cand.content = content
+        cand.finish_reason = "STOP"
+        if grounded:
+            web = MagicMock(uri="https://real.com", title="Real")
+            chunk = MagicMock(web=web)
+            meta = MagicMock(grounding_chunks=[chunk])
+            cand.grounding_metadata = meta
+        else:
+            cand.grounding_metadata = None
+        response = MagicMock()
+        response.candidates = [cand]
+        response.text = text
+        return response
+
+    def test_grounding_used_false_returns_none(self):
+        """DEF-005: non-grounded response must be rejected."""
+        with patch("app.agents.news.agent.client") as mock_client:
+            mock_client.models.generate_content.return_value = self._make_response(grounded=False)
+            text, urls = _call_gemini_with_search("model", "sys", "prompt")
+        assert text is None
+        assert urls == []
+
+    def test_grounding_used_true_returns_text(self):
+        with patch("app.agents.news.agent.client") as mock_client:
+            with patch("app.agents.news.agent._extract_text", return_value="news content"):
+                mock_client.models.generate_content.return_value = self._make_response(grounded=True)
+                text, urls = _call_gemini_with_search("model", "sys", "prompt")
+        assert text is not None
+
+    def test_thinking_budget_zero_passed(self):
+        """DEF-001: thinking_budget=0 must be configured to prevent thought leakage."""
+        with patch("app.agents.news.agent.client") as mock_client:
+            with patch("app.agents.news.agent.types") as mock_types:
+                mock_client.models.generate_content.return_value = self._make_response(grounded=True)
+                with patch("app.agents.news.agent._extract_text", return_value="content"):
+                    _call_gemini_with_search("model", "sys", "prompt")
+        mock_types.ThinkingConfig.assert_called_once_with(thinking_budget=0)
+
+    def test_api_exception_returns_none(self):
+        """DEF-005: any exception → (None, []), never propagates."""
+        with patch("app.agents.news.agent.client") as mock_client:
+            mock_client.models.generate_content.side_effect = Exception("API error")
+            text, urls = _call_gemini_with_search("model", "sys", "prompt")
+        assert text is None
+        assert urls == []
+
+    def test_grounding_used_false_logs_reject_message(self, caplog):
+        import logging
+        with patch("app.agents.news.agent.client") as mock_client:
+            mock_client.models.generate_content.return_value = self._make_response(grounded=False)
+            with caplog.at_level(logging.WARNING, logger="news"):
+                _call_gemini_with_search("model", "sys", "prompt")
+        assert any("REJECTING" in r.message for r in caplog.records)
