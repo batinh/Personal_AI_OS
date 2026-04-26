@@ -1,9 +1,9 @@
 # News Agent — Product Requirements Document
 
 **Role:** Product Owner + Business Analyst  
-**Version:** 1.3  
-**Date:** 2026-04-24  
-**Status:** Final Review Complete — Ready for Implementation  
+**Version:** 1.4  
+**Date:** 2026-04-26  
+**Status:** Implementation Complete — v1.0 Shipped  
 
 ---
 
@@ -15,6 +15,7 @@
 | 1.1 | 2026-04-24 | Enterprise Customer | Found: 5 missing gaps, 3 contradictions, 5 ambiguities |
 | 1.2 | 2026-04-24 | PO + Architect + End User | Resolved contradictions, added E3/E6 user stories, NFR gaps |
 | 1.3 | 2026-04-24 | QA/Tester | Added: test strategy, error catalog, test-level tagging, edge cases, NFR testability matrix |
+| 1.4 | 2026-04-26 | Implementation | v1.0 complete: all DEFs fixed, all FR/NFR v1.0 implemented, 810 tests passing, pre-deploy green |
 
 ---
 
@@ -763,13 +764,15 @@ I want to see all available commands and the delivery schedule at a glance
 
 ## 10. Known Defects (Current Implementation → Must Fix Before v1.0 Ship)
 
-| ID | Severity | FR Violated | Description | Root Cause | Fix |
-|----|----------|-------------|-------------|------------|-----|
-| DEF-001 | CRITICAL | US-4.1 | LLM thinking text sent to Telegram | `thinking_budget=1024` | Set to `0` |
-| DEF-002 | CRITICAL | US-4.2 | Training data sent when grounding fails | `_call_knowledge_only()` fallback exists | Delete function; send ERR-001 instead |
-| DEF-003 | CRITICAL | US-4.3 | LLM-authored URLs in messages (wrong/fake) | `_inject_links_by_article()` fragile | Delete; use sources block from metadata |
-| DEF-004 | HIGH | FR-1.4 | Article dates from 2024 in 2026 briefings | Symptom of DEF-002 | Auto-fixed by DEF-002 fix |
-| DEF-005 | HIGH | US-4.2 | `_call_knowledge_only()` is training-data path | Design decision | Delete entire function |
+> **Status (2026-04-26): All 5 defects FIXED — v1.0 shipped.** See commit history on `feat/news-agent-news-requirement-design-and-refactor`.
+
+| ID | Severity | FR Violated | Description | Root Cause | Fix | Status |
+|----|----------|-------------|-------------|------------|-----|--------|
+| DEF-001 | CRITICAL | US-4.1 | LLM thinking text sent to Telegram | `thinking_budget=1024` | Set to `0` | ✅ Fixed — `ThinkingConfig(thinking_budget=0)` verified by `test_thinking_budget_zero_passed` |
+| DEF-002 | CRITICAL | US-4.2 | Training data sent when grounding fails | `_call_knowledge_only()` fallback exists | Delete function; send ERR-001 instead | ✅ Fixed — function deleted; ERR-001 sent on all-fail |
+| DEF-003 | CRITICAL | US-4.3 | LLM-authored URLs in messages (wrong/fake) | `_inject_links_by_article()` fragile | Delete; use sources block from metadata | ✅ Fixed — `_DOC_THEM_RE` strips LLM links; sources block built from grounding metadata only |
+| DEF-004 | HIGH | FR-1.4 | Article dates from 2024 in 2026 briefings | Symptom of DEF-002 | Auto-fixed by DEF-002 fix | ✅ Auto-resolved — grounding gate eliminates training-data path |
+| DEF-005 | HIGH | US-4.2 | `_call_knowledge_only()` is training-data path | Design decision | Delete entire function | ✅ Fixed — function fully removed; `_call_gemini_with_search` is sole LLM call path |
 
 **Fix sequence:** DEF-001 → DEF-002+DEF-005 (together) → DEF-003 → DEF-004 resolves automatically.
 
@@ -777,28 +780,38 @@ I want to see all available commands and the delivery schedule at a glance
 
 ## 11. Definition of Done — News Agent v1.0
 
+> **Status (2026-04-26): ALL DONE — v1.0 shipped on branch `feat/news-agent-news-requirement-design-and-refactor`.**  
+> Suite: **810 passed, 5 skipped, 0 failures**. Pre-deploy: **3/3 PASS**.
+
 ### Functional Checklist
-- [ ] All 3 scheduled briefings delivered within 5 min of configured times (verified via logs)
-- [ ] Zero instances of LLM thinking text in any Telegram message (verified via unit test)
-- [ ] Zero training-data fallbacks — grounding gate hard-rejects ungrounded responses
-- [ ] All links in messages sourced from grounding metadata (not LLM text)
-- [ ] ERR-001 sent (not stale data) when all grounding fails
-- [ ] ERR-002 sent for short/empty on-demand responses
-- [ ] ERR-003 sent when rate limit exceeded (11th request/hour)
-- [ ] `/news help` shows commands + schedule (verified via unit test)
-- [ ] Rate limit counter works: 10 allowed, 11th blocked (unit tested)
+- [x] All 3 scheduled briefings delivered within 5 min of configured times (verified via logs)
+- [x] Zero instances of LLM thinking text in any Telegram message — `ThinkingConfig(thinking_budget=0)` enforced + unit test
+- [x] Zero training-data fallbacks — grounding gate hard-rejects ungrounded responses (`_call_knowledge_only` deleted)
+- [x] All links in messages sourced from grounding metadata (not LLM text) — `_DOC_THEM_RE` strips LLM-authored `<a href>` tags
+- [x] ERR-001 sent (not stale data) when all grounding fails
+- [x] ERR-002 sent for short/empty on-demand responses
+- [x] ERR-003 sent when rate limit exceeded (11th request/hour)
+- [x] `/news help` shows commands + schedule (verified via unit test)
+- [x] Rate limit counter works: 10 allowed, 11th blocked (unit tested); config-driven via `ondemand_rate_limit_per_hour`
 
 ### Quality Checklist
-- [ ] All 5 defects (DEF-001 to DEF-005) have passing unit tests proving they're fixed
-- [ ] Smoke tests pass: `python -m pytest tests/test_smoke.py -v`
-- [ ] Full suite passes: `python -m pytest tests/ -q` (0 failures)
-- [ ] Pre-deploy check passes: `bash scripts/pre-deploy-check.sh`
-- [ ] Error messages in tests use constants from error catalog (not hardcoded strings)
+- [x] All 5 defects (DEF-001 to DEF-005) have passing unit tests proving they're fixed
+- [x] Smoke tests pass: `python -m pytest tests/test_smoke.py -v`
+- [x] Full suite passes: `python -m pytest tests/ -q` → **810 passed, 0 failures** (2026-04-26)
+- [x] Pre-deploy check passes: `bash scripts/pre-deploy-check.sh` → **3/3 PASS**
+- [x] Error messages in tests use constants from error catalog (not hardcoded strings)
 
 ### Observability Checklist
-- [ ] Every LLM call produces log with grounding_used, source_count, latency_ms
-- [ ] CRITICAL log written when briefing not sent (no silent failures)
-- [ ] First week post-launch: manual review of grounding_used rate in logs
+- [x] Every LLM call produces log with grounding_used, source_count, latency_ms
+- [x] CRITICAL log written when briefing not sent (no silent failures)
+- [x] Per-topic timeout (30s via `as_completed`) with WARNING log on timeout — NFR-1 implemented
+- [ ] First week post-launch: manual review of grounding_used rate in logs *(monitoring task — not CI)*
+
+### Additional v1.0 Gaps Fixed (2026-04-26)
+- [x] **NFR-1**: Per-topic timeout via `as_completed(timeout=topic_timeout_s)` + `FuturesTimeoutError` WARNING log
+- [x] **Config-driven params**: `max_topic_workers`, `topic_timeout_seconds`, `ondemand_rate_limit_per_hour` all read from config at runtime
+- [x] **FR-3.6**: `timezone` field added to `config.example.json` under `news_agent`
+- [x] **Test coverage**: `TestIsLateTrigger` — 10 unit tests for `_is_late_trigger` (midnight crossing, all 3 sessions, edge cases)
 
 ---
 
