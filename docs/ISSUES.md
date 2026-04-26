@@ -48,7 +48,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 | [ISS-F08](#iss-f08--templateresponse-api-broke-after-starlette-upgrade) | bug | `TemplateResponse` API broke after Starlette upgrade | High | AI | 2026-03-xx | 2026-03-xx | `6ae9683` | `routers/*.py` |
 | [ISS-010](#iss-010--url-cross-contamination-in-news-briefing) | bug | URL cross-contamination — wrong links on news articles | High | U+AI | 2026-04-14 | 2026-04-14 | `2d31b53` | `app/agents/news/agent.py`, `prompts.py` |
 | [ISS-011](#iss-011--on-demand-news-query-via-news-query) | feature | On-demand news query via `@news <query>` | Medium | U | 2026-04-14 | 2026-04-14 | `2d31b53` | `app/agents/news/agent.py`, `telegram_handler.py` |
-| [ISS-012](#iss-012--gemini-thoughtful-preamble-leaks-into-telegram-news-briefing) | bug | Gemini "thoughtful\n..." preamble leaks into Telegram news briefing | High | U | 2026-04-21 | 2026-04-21 | (current) | `app/core/gemini_utils.py` |
+| [ISS-012](#iss-012--gemini-thoughtful-preamble-leaks-into-telegram-news-briefing) | bug | Gemini "thoughtful\n..." preamble leaks into Telegram news briefing | High | U | 2026-04-21 | 2026-04-21 | `1890a20` | `app/core/gemini_utils.py` |
 
 ---
 

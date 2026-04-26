@@ -5,6 +5,83 @@ Format: `[Date] type: description` — most recent first.
 
 ---
 
+## 2026-04-26
+
+### Added
+- **News Agent v1.0 — 4 PRD gaps closed** (`fd40751`):
+  - **NFR-1**: Per-topic timeout via `as_completed(timeout=topic_timeout_s)` — timed-out topics log WARNING and are skipped; other topics unaffected
+  - **FR-3.6**: `timezone` field added to `config.example.json` under `news_agent`
+  - `max_topic_workers`, `topic_timeout_seconds`, `ondemand_rate_limit_per_hour` now config-driven at runtime (module constants remain as fallback defaults)
+  - `TestIsLateTrigger` — 10 unit tests for `_is_late_trigger` covering midnight crossing, all 3 sessions, custom `skip_minutes`, and invalid time string edge cases
+- **PRD v1.4** (`703ca40`): requirements doc updated — all 5 DEFs marked fixed with proof, full DoD checklist ticked, suite count recorded (810 passed)
+
+### Changed
+- Test suite: **810 passed, 5 skipped, 0 failures** (up from 436)
+
+---
+
+## 2026-04-25
+
+### Added
+- **News Agent v1.0 — DEF proof tests** (`71ef59d`):
+  - `TestCallGeminiWithSearchGroundingGate` — 5 tests proving DEF-001 (`thinking_budget=0` enforced), DEF-005 (grounding gate rejects ungrounded responses), exception safety, and WARNING log on reject
+  - Root cause documented: `conftest.py` stubs `google.genai.types` as MagicMock; patch `app.agents.news.agent.types` to assert on `ThinkingConfig` constructor call
+
+### Fixed
+- DEF-001 proof test `test_thinking_budget_zero_passed` — patched `app.agents.news.agent.types` instead of `client`; asserts `mock_types.ThinkingConfig.assert_called_once_with(thinking_budget=0)`
+
+---
+
+## 2026-04-24
+
+### Added
+- **News Agent v1.0 — core implementation** (`6f7c9ce`, `8dd8cac`):
+  - **DEF-001**: `thinking_budget=0` in `GenerateContentConfig` — prevents LLM thought text from leaking to Telegram
+  - **DEF-002 + DEF-005**: `_call_knowledge_only()` deleted entirely — grounding gate is sole LLM call path; ERR-001 sent when all topics fail
+  - **DEF-003**: `_DOC_THEM_RE` regex strips LLM-authored `<a href>Đọc thêm</a>` links; sources block built exclusively from `grounding_chunks[].web.uri`
+  - **DEF-004**: Auto-resolved — grounding gate eliminates training-data path, so stale 2024 dates cannot appear
+  - Rate limiting: in-memory sliding window counter `_check_rate_limit(chat_id, limit)` — 10 req/hour default, config-driven
+  - Error message constants `ERR_001`–`ERR_007` in `telegram_handler.py` — tests import constants, never assert on literal strings
+  - Late-trigger skip: `_is_late_trigger(session, config)` in `scheduler.py` — skips briefing if cron fires >30 min late
+  - Structured logs: every LLM call logs `grounding_used`, `source_count`, `latency_ms`; briefing completion logs `topics_attempted`, `topics_succeeded`, `chars_sent`
+  - News Agent PRD v1.3 created: `docs/features/news-agent-requirements.md` (requirements, test strategy, error catalog, NFR testability matrix, architect notes)
+- **Test expansion**: `test_news_agent_helpers.py`, `test_news_agent_flows.py`, `test_news_telegram.py` — 150+ new tests covering all FRs, DEFs, user stories
+
+---
+
+## 2026-04-23
+
+### Added
+- **Metrics Coverage UI** (`4ea273e`): `GET /admin/metrics/coverage` endpoint + Console tab showing per-module test counts
+
+### Fixed
+- `switchTab` duplicate declaration breaking tab navigation in console (`4c7d817`)
+
+---
+
+## 2026-04-21
+
+### Fixed
+- **ISS-012**: Gemini "thoughtful\n..." preamble leaking into Telegram news briefing (`1890a20`)
+  - Root cause: `_strip_thought_preamble` regex did not match the `thoughtful\n` variant used by Gemini 2.5 Flash
+  - Fix: broadened regex to cover all known variants; `thinking_budget=0` added as defense-in-depth (DEF-001)
+- Admin credential lazy-load: admin username/password now read from env at request time, not module load — fixes startup crash when env vars not set during testing
+
+### Changed
+- **Gemini SDK `HttpOptions.timeout` unit** (`6e9c1a9`): corrected from seconds to milliseconds — `timeout=30000` (30s). Previous `timeout=30` was 30ms, causing `X-Server-Timeout:1 → 400` rejections
+  - `tests/test_sdk_contracts.py` added as a regression gate on this unit convention
+- Reliability: Gemini retry now covers SSL/timeout errors in `utils.py` (`f79ffd4`)
+
+---
+
+## 2026-04-22
+
+### Refactored
+- **Architecture plan** (`8a1397f`): extracted `get_local_tz()` to `app/core/timezone_utils.py` (P3.8); added config threading lock (P3.7); eliminated duplicate `send_message_with_retry` from `agent.py`
+- `REFACTOR_PLAN.md` checklist updated with completed items (`fea3184`)
+
+---
+
 ## 2026-04-09 (2)
 
 ### Added

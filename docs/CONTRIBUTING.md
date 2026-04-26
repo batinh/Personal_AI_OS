@@ -71,7 +71,7 @@ Tests must pass before every push:
 
 ```bash
 python -m pytest tests/ -q
-# Expected: 436 passed, 0 failed
+# Expected: 810 passed, 0 failed
 ```
 
 ### TDD — Required for new features
@@ -113,7 +113,7 @@ Run mentally against [pragmatic_review_checklist.md](./pragmatic_review_checklis
 - [ ] `try/except` around all external calls (Gemini, Telegram, Strava)
 - [ ] `WHERE user_id = ?` in every SQL query
 - [ ] `.replace()` not f-strings for injecting external content into prompts
-- [ ] `python -m pytest tests/ -q` → 436 passed, 0 failed
+- [ ] `python -m pytest tests/ -q` → 810 passed, 0 failed
 
 ---
 

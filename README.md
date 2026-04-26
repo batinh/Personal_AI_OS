@@ -2,10 +2,10 @@
 
 > An autonomous AI coaching agent that ingests your Strava data, applies sports science, and delivers personalized training guidance across Telegram, Strava, and Email — running 24/7 on a home lab.
 
-[![Tests](https://img.shields.io/badge/tests-273%20passed-brightgreen?style=flat-square)](./docs/testing/TEST_EXECUTION_REPORT.md)
+[![Tests](https://img.shields.io/badge/tests-810%20passed-brightgreen?style=flat-square)](./docs/testing/TEST_EXECUTION_REPORT.md)
 [![Python](https://img.shields.io/badge/python-3.11-blue?style=flat-square)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-latest-009688?style=flat-square)](https://fastapi.tiangolo.com/)
-[![Gemini](https://img.shields.io/badge/AI-Gemini%202.0%20Flash-4285F4?style=flat-square)](https://ai.google.dev/)
+[![Gemini](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-4285F4?style=flat-square)](https://ai.google.dev/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square)](./docker-compose.yml)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)](#license)
 
@@ -56,7 +56,7 @@ The system is designed as a **Modular Monolith** with a clear 5-layer architectu
 | **Sports Science Engine** | Pure Python TRIMP, ACWR, Efficiency Factor, Aerobic Decoupling, Training Phase calculator |
 | **Admin Dashboard** | Web UI to configure AI persona, sports parameters, scheduler times, and email settings |
 | **Manual Sync** | `/sync` command to backfill historical activities with RAG gap detection |
-| **News Briefings** | Daily news digest via RSS feeds (VnExpress, Tuổi Trẻ, BBC Vietnamese) — morning summary at 07:00, afternoon update at 17:00, delivered via Telegram |
+| **News Briefings** | 3 daily Gemini-grounded news briefings (06:30 morning / 17:30 afternoon / 20:00 evening) + on-demand `@news <query>` — real-time web search, real links, zero training-data fallback |
 
 ---
 
@@ -234,7 +234,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 The app auto-initializes the SQLite database and scheduler on startup. Check the logs for:
 ```
 [STARTUP] DB path     : /path/to/data/os_core.db (exists: True)
-[STARTUP] Config loaded. Model: models/gemini-2.0-flash
+[STARTUP] Config loaded. Model: models/gemini-flash-latest
 ✅ System Ready. Scheduler Active.
 ```
 
@@ -298,15 +298,22 @@ Key configuration fields:
 | `report_structure` | Output format template |
 | `max_hr` / `rest_hr` | HR parameters for TRIMP calculation |
 | `race_date` | Target race date (drives Training Phase logic) |
-| `model_name` | Gemini model (default: `models/gemini-2.0-flash`) |
+| `model_name` | Gemini model (default: `models/gemini-flash-latest`) |
 | `scheduler.briefing_time` | Daily briefing cron time (default: `06:00`) |
 | `scheduler.harvest_hours` | Hours to auto-harvest Strava (default: `0,6,12,18`) |
 | `email_config` | SMTP settings for email notifications |
 | `news_agent.enabled` | Enable/disable news briefings |
-| `news_agent.morning_time` | Morning news cron time (default: `07:00`) |
-| `news_agent.afternoon_time` | Afternoon news cron time (default: `17:00`) |
+| `news_agent.news_model` | Gemini model for news (default: `models/gemini-2.5-flash`) |
+| `news_agent.timezone` | Timezone for schedule times (default: `Asia/Ho_Chi_Minh`) |
+| `news_agent.morning_time` | Morning news cron time (default: `06:30`) |
+| `news_agent.afternoon_time` | Afternoon news cron time (default: `17:30`) |
+| `news_agent.evening_time` | Evening news cron time (default: `20:00`) |
+| `news_agent.late_trigger_skip_minutes` | Skip briefing if trigger fires this many minutes late (default: `30`) |
+| `news_agent.max_topic_workers` | Parallel topic worker threads (default: `4`) |
+| `news_agent.topic_timeout_seconds` | Per-session timeout across all topics in parallel (default: `30`) |
+| `news_agent.ondemand_rate_limit_per_hour` | Max on-demand queries per chat per hour (default: `10`) |
 | `news_agent.telegram_chat_id` | Telegram target for news (empty = same chat as coach) |
-| `news_agent.feeds` | List of RSS feed sources (`name` + `url`) |
+| `news_agent.topics` | List of topics with name + emoji |
 
 ---
 
@@ -376,8 +383,9 @@ All cron times are configured via the Admin UI (stored in `data/config.json`).
 | Job | Default Schedule | Description |
 |---|---|---|
 | **Morning Briefing** | Daily at `06:00` | Fetches weather, checks ACWR, delivers today's plan via Telegram |
-| **Morning News** | Daily at `07:00` | RSS news digest (VnExpress, Tuổi Trẻ, BBC Viet) — summarized by Gemini, sent via Telegram |
-| **Afternoon News** | Daily at `17:00` | Afternoon news update with deduplication against morning's articles |
+| **Morning News** | Daily at `06:30` | Gemini-grounded morning briefing across configured topics — real-time web search, real links, sent via Telegram |
+| **Afternoon News** | Daily at `17:30` | Afternoon Gemini-grounded briefing — analytical tone, same topic set |
+| **Evening News** | Daily at `20:00` | Evening Gemini-grounded briefing — reflective/deep-context tone |
 | **Auto Harvest** | `00:15`, `06:15`, `12:15`, `18:15` | Syncs last 10 Strava activities to SQLite |
 | **Weekly Reflection** | Sundays at `20:00` | Reviews the week, sets next week's target volume, saves to RAG |
 | **Daily Backup** | Daily at `02:00` | Archives `os_core.db` + `config.json` to `backups/` |
@@ -400,23 +408,29 @@ python -m pytest tests/test_webhooks.py -v
 python -m pytest tests/ -q
 ```
 
-**Current status: 267 passed / 0 failed**
+**Current status: 810 passed, 5 skipped / 0 failed** (2026-04-26)
 
-| Module | Tests | Coverage |
-|---|---|---|
-| `test_webhooks.py` | 18 | HTTP endpoints, Strava/Telegram routing, workflow orchestration |
-| `test_strava_client.py` | 20 | Token caching, API error handling, all methods |
-| `test_config.py` | 8 | Load/save, TTL cache, auto-init, corrupted file resilience |
-| `test_harvest.py` | 13 | Cron harvest, manual sync, RAG gap detection, rate limiting |
-| `test_agent.py` | 20 | Telegram chat, morning briefing, weekly reflection, memory extraction |
-| `test_database.py` | 38 | All CRUD operations, user isolation, ACWR calculations |
-| `test_utils.py` | 37 | TRIMP, ACWR, Efficiency Factor, Decoupling, Training Phase |
-| `test_notification.py` | 20 | Telegram HTML sanitization, SMTP, retry logic |
-| `test_stream_storage.py` | 12 | File I/O, path resolution, error handling |
-| `test_tools.py` | 24 | All AI tool functions |
-| `test_news_feeds.py` | 14 | RSS fetch, per-feed isolation, timeout, malformed XML |
-| `test_news_prompts.py` | 11 | Prompt builders, curly brace safety, Vietnamese zone compliance |
-| `test_news_agent.py` | 14 | Orchestrator, Telegram routing (Option B), dedup, truncation, error handling |
+| Module | Coverage area |
+|---|---|
+| `test_webhooks.py` | HTTP endpoints, Strava/Telegram routing, workflow orchestration |
+| `test_strava_client.py` | Token caching, API error handling, all methods |
+| `test_config.py` | Load/save, TTL cache, thread-safety, auto-init, corrupted file resilience |
+| `test_harvest.py` | Cron harvest, manual sync, RAG gap detection, rate limiting |
+| `test_agent.py` | Telegram chat, morning briefing, weekly reflection, memory extraction |
+| `test_database.py` | All CRUD operations, user isolation, ACWR calculations |
+| `test_utils.py` | TRIMP, ACWR, Efficiency Factor, Decoupling, Training Phase |
+| `test_notification.py` | Telegram HTML sanitization, chunking, SMTP, retry logic |
+| `test_stream_storage.py` | File I/O, path resolution, error handling |
+| `test_tools.py` | All AI tool functions |
+| `test_news_agent_helpers.py` | Pure helpers: `_resolve_chat_id`, `_get_model`, `_resolve_topics`, grounding gate, DEF proof tests |
+| `test_news_agent_flows.py` | Orchestration: `generate_news_briefing`, `generate_on_demand_briefing`, rate limiting |
+| `test_news_telegram.py` | `handle_news_command`, `handle_news_chat`, error constants |
+| `test_news_prompts.py` | Prompt builders, curly brace safety, Vietnamese zone compliance |
+| `test_news_alert_engine.py` | Alert scoring, cooldown, dedup |
+| `test_scheduler.py` | Job registration, late-trigger skip, exception recovery, `_is_late_trigger` |
+| `test_sdk_contracts.py` | Gemini `HttpOptions.timeout` unit contract (milliseconds) |
+| `test_smoke.py` | Import assertions for all public symbols — runs in < 2s |
+| `test_e2e_local.py` | 28 HTTP-level E2E tests without Docker |
 
 See [`docs/testing/`](./docs/testing/) for full test strategy, specs, and delivery checklist.
 
@@ -507,13 +521,13 @@ curl "https://your-domain.com/webhook?hub.verify_token=YOUR_TOKEN&hub.challenge=
 - [x] Modular agent refactor (flows/ architecture)
 - [x] 267-test production test suite
 - [x] Admin dashboard with dynamic scheduler configuration
-- [x] News Agent — RSS feed digest via Gemini, morning + afternoon Telegram delivery, 24h dedup
+- [x] News Agent v1.0 — Gemini-grounded 3-session briefings (morning/afternoon/evening), on-demand `@news` queries, grounding gate, real links only, rate limiting, per-topic parallel timeout
 
 ### 🚧 In Progress / Planned
 
 - [ ] **Race Day Forecast** — 5-day weather forecast injection during Taper week for race strategy planning
 - [ ] **HRV/Resting HR Integration** — event-driven training adjustment from Garmin/Apple Health overnight signals
-- [ ] **FastAPI Lifespan Migration** — replace deprecated `@app.on_event` with `lifespan` context manager
+- [x] **FastAPI Lifespan Migration** — replaced deprecated `@app.on_event` with `lifespan` context manager
 - [x] **Health Endpoint** — `/health` for Docker health check and uptime monitoring
 - [x] **Unified Console** — `/console` merges admin, dashboard, and memory view into a single tabbed UI
 - [x] **Automated Deploy Script** — `scripts/deploy-t440.sh` for RPi5→T440 SSH deploy with health check + e2e tests
