@@ -3,7 +3,6 @@ import json
 import re
 import unicodedata
 import pytz
-import uuid
 import time
 from datetime import datetime, timedelta
 
@@ -16,29 +15,29 @@ from app.core.gemini_utils import extract_text as _extract_gemini_text
 from app.core.database import (
     save_message, load_history_for_gemini, clear_history,
     get_training_loads, get_recent_runs_log, update_run_gcs_score,
-    update_daily_plan, get_upcoming_plans,
+    get_upcoming_plans,
     get_plan_for_date, update_plan_status, get_weekly_volume, get_runs_in_last_days,
-    insert_memory, get_all_active_memories, get_weekly_target, # [ARCHITECTURE UPDATE] Using global deduplication
+    insert_memory, get_all_active_memories,
     get_run_metrics_from_db,
     get_athlete_state, set_athlete_state, has_active_plan_this_week,
 )
 from app.agents.coach.setup_flow import is_setup_in_progress, advance_setup, start_setup
-from app.agents.coach.flows.weekly_plan_generation import accept_weekly_plan, reject_weekly_plan, generate_weekly_plan
+from app.agents.coach.flows.weekly_plan_generation import accept_weekly_plan, reject_weekly_plan
 from app.agents.coach.daily_suggestion import compute_daily_suggestion, format_daily_suggestion_for_briefing
-from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
+from app.agents.coach.utils import calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
 from app.services.rag_memory import rag_db
 
 # [REFACTOR] Import builder functions
 from app.agents.coach.prompts import (
     build_system_instruction, build_core_system_instruction, get_shared_context_block, build_universal_run_analysis_prompt,build_chat_prompt,
-    DEFAULT_ANALYSIS_TASK, DEFAULT_ANALYSIS_REQUIREMENTS, DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES,CHAT_FORMAT_RULES,
+    DEFAULT_ANALYSIS_TASK, DEFAULT_ANALYSIS_REQUIREMENTS, DEFAULT_REPORT_STRUCTURE, UNIVERSAL_FORMAT_RULES,
     build_weekly_reflection_prompt,
     build_standup_prompt,
     build_memory_extraction_prompt
 )
 from app.agents.coach.tools import (
     update_todays_plan, check_training_status, get_recent_workouts,
-    search_long_term_memory, get_total_run_stats, set_workout_plan, set_actual_weekly_target,
+    search_long_term_memory, set_workout_plan, set_actual_weekly_target,
     get_run_full_details,
     get_run_stream_csv, get_run_computed_metrics, get_metric_trend,
     get_volume_for_week, get_volume_summary,
@@ -292,7 +291,8 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dic
         
         if chat_id:
             save_message(user_id_str, "model", f"[ANALYSIS] {activity_name}: {analysis_text}")
-            if today_plan: update_plan_status(user_id_str, run_date_str, "Completed")
+            if today_plan:
+                update_plan_status(user_id_str, run_date_str, "Completed")
         
         return analysis_text
     except Exception as e:
@@ -516,7 +516,6 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
             state = get_athlete_state(chat_id) or {}
             recent = get_runs_in_last_days(chat_id, days=7)
-            days_since = 1
             suggestion = compute_daily_suggestion(
                 readiness_score=70,
                 acwr=float(acwr_data.get("acwr", 0)),

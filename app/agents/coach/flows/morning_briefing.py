@@ -1,4 +1,3 @@
-import os
 from app.core.user_context import get_primary_user_id
 import pytz
 from datetime import datetime
