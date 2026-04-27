@@ -2,12 +2,14 @@
 Stream file storage: save/load raw Strava activity streams under data/streams.
 Used for full-fidelity re-analysis and segment-level analysis without re-fetching from API.
 """
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.core.logging_conf import get_module_logger
+
 logger = get_module_logger("strava")
 
 # Absolute path anchored to this file's location.

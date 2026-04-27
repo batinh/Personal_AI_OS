@@ -33,23 +33,24 @@ class StravaClient:
         (e.g., get_activity_data() calls both activity detail AND streams endpoints).
         """
         import time
+
         # Return cached token if still valid (60-second buffer before actual expiry)
         if self._cached_token and time.time() < (self._token_expires_at - 60):
             return self._cached_token
 
         payload = {
-            'client_id': self.client_id,
-            'client_secret': self.client_secret,
-            'refresh_token': self.refresh_token,
-            'grant_type': 'refresh_token'
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "refresh_token": self.refresh_token,
+            "grant_type": "refresh_token",
         }
         try:
             response = requests.post(self.auth_url, data=payload, timeout=10)
             response.raise_for_status()
             data = response.json()
-            self._cached_token = data.get('access_token')
+            self._cached_token = data.get("access_token")
             # Strava returns expires_at (unix timestamp); fall back to 1 hour if missing
-            self._token_expires_at = data.get('expires_at', time.time() + 3600)
+            self._token_expires_at = data.get("expires_at", time.time() + 3600)
             return self._cached_token
         except Exception as e:
             logger.error(f"[STRAVA] Failed to refresh token: {e}")
@@ -68,7 +69,9 @@ class StravaClient:
         try:
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code != 200:
-                logger.warning(f"[STRAVA] Streams response {r.status_code} for {activity_id}")
+                logger.warning(
+                    f"[STRAVA] Streams response {r.status_code} for {activity_id}"
+                )
                 return None
             return r.json()
         except Exception as e:
@@ -99,14 +102,23 @@ class StravaClient:
             activity_name = act_data.get("name", "Unknown Run")
 
             # Check type (Run, VirtualRun, etc.)
-            if act_data.get("type") not in ["Run", "VirtualRun", "TrailRun", "Treadmill"]:
+            if act_data.get("type") not in [
+                "Run",
+                "VirtualRun",
+                "TrailRun",
+                "Treadmill",
+            ]:
                 logger.info(f"[STRAVA] Activity {activity_id} is not a run. Skipping.")
                 return None, None, None, None
 
             # 2. Extract Splits & Laps & Metadata
             splits = act_data.get("splits_metric", [])
             splits_summary = [
-                {"km": s.get("split"), "pace": s.get("average_speed"), "hr": s.get("average_heartrate", 0)}
+                {
+                    "km": s.get("split"),
+                    "pace": s.get("average_speed"),
+                    "hr": s.get("average_heartrate", 0),
+                }
                 for s in splits
             ]
             extended_meta = {
@@ -124,7 +136,9 @@ class StravaClient:
             # 3. Fetch full raw streams (all keys) for file storage + build CSV from same response
             streams_res = self.get_activity_streams_raw(activity_id)
             if not streams_res:
-                logger.warning(f"[STRAVA] No streams for {activity_id}; returning meta only.")
+                logger.warning(
+                    f"[STRAVA] No streams for {activity_id}; returning meta only."
+                )
                 return activity_name, None, extended_meta, None
 
             # 4. Build DataFrame from streams for downsampled CSV (Gemini)
@@ -144,7 +158,11 @@ class StravaClient:
 
             df.dropna(subset=["HR_bpm", "Velocity_m_s"], inplace=True)
             df["Stride_m"] = df.apply(
-                lambda row: (row["Velocity_m_s"] * 60 / row["Cadence_spm"]) if row["Cadence_spm"] > 0 else 0,
+                lambda row: (
+                    (row["Velocity_m_s"] * 60 / row["Cadence_spm"])
+                    if row["Cadence_spm"] > 0
+                    else 0
+                ),
                 axis=1,
             )
             if "Power_watts" in df.columns:
@@ -167,8 +185,8 @@ class StravaClient:
             return False
 
         url = f"{self.base_url}/activities/{activity_id}"
-        headers = {'Authorization': f'Bearer {token}'}
-        payload = {'description': description}
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {"description": description}
 
         try:
             response = requests.put(url, headers=headers, json=payload, timeout=10)
@@ -184,10 +202,10 @@ class StravaClient:
 
     def get_athlete_stats(self, athlete_id):
         """Fetch total running mileage (Week/Month/Year/All-time)"""
-        token = self.get_access_token() 
+        token = self.get_access_token()
         url = f"https://www.strava.com/api/v3/athletes/{athlete_id}/stats"
         headers = {"Authorization": f"Bearer {token}"}
-        
+
         try:
             response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
@@ -195,7 +213,7 @@ class StravaClient:
                 return {
                     "recent_run_totals": data["recent_run_totals"]["distance"] / 1000,
                     "ytd_run_totals": data["ytd_run_totals"]["distance"] / 1000,
-                    "all_run_totals": data["all_run_totals"]["distance"] / 1000
+                    "all_run_totals": data["all_run_totals"]["distance"] / 1000,
                 }
             logger.error(f"Error fetching stats: {response.status_code}")
         except Exception as e:
@@ -229,18 +247,29 @@ class StravaClient:
         page = 1
         while True:
             try:
-                resp = requests.get(url, headers=headers, params={"per_page": per_page, "page": page}, timeout=10)
+                resp = requests.get(
+                    url,
+                    headers=headers,
+                    params={"per_page": per_page, "page": page},
+                    timeout=10,
+                )
                 if resp.status_code == 429:
-                    logger.warning("[STRAVA] Rate limited during paginated fetch; stopping.")
+                    logger.warning(
+                        "[STRAVA] Rate limited during paginated fetch; stopping."
+                    )
                     break
                 if resp.status_code != 200:
-                    logger.error(f"[STRAVA] Paginated fetch page {page} failed: {resp.status_code}")
+                    logger.error(
+                        f"[STRAVA] Paginated fetch page {page} failed: {resp.status_code}"
+                    )
                     break
                 batch = resp.json()
                 if not batch:
                     break
                 all_activities.extend(batch)
-                logger.info(f"[STRAVA] Fetched page {page}: {len(batch)} activities (total so far: {len(all_activities)})")
+                logger.info(
+                    f"[STRAVA] Fetched page {page}: {len(batch)} activities (total so far: {len(all_activities)})"
+                )
                 page += 1
             except Exception as e:
                 logger.error(f"[STRAVA] Paginated fetch exception on page {page}: {e}")
@@ -274,5 +303,7 @@ class StravaClient:
                 return {"status": "error", "code": code}
             return {"status": "error", "code": code}
         except requests.exceptions.RequestException as e:
-            logger.error(f"[STRAVA] Network error verifying activity {activity_id}: {e}")
+            logger.error(
+                f"[STRAVA] Network error verifying activity {activity_id}: {e}"
+            )
             return {"status": "error", "code": None}

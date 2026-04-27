@@ -5,9 +5,12 @@ from app.core.logging_conf import get_module_logger
 from app.core.user_context import get_primary_user_id
 from app.core.notification import send_telegram_msg
 from app.core.database import (
-    get_athlete_state, get_garmin_daily_metrics,
-    upsert_weekly_plan, get_pending_weekly_plan,
-    update_weekly_plan_status, has_active_plan_this_week,
+    get_athlete_state,
+    get_garmin_daily_metrics,
+    upsert_weekly_plan,
+    get_pending_weekly_plan,
+    update_weekly_plan_status,
+    has_active_plan_this_week,
     get_db,
 )
 from app.agents.coach.schemas import WeeklyPlanResult
@@ -125,7 +128,9 @@ def _readiness_gate_instruction(readiness) -> str:
     if score >= 50:
         return "- Readiness MODERATE (50-59): Tối đa 1 bài chất lượng, đổi Interval → Tempo nếu cần"
     if score >= 40:
-        return "- Readiness LOW (40-49): Tất cả bài Hard → Easy. Không có bài chất lượng"
+        return (
+            "- Readiness LOW (40-49): Tất cả bài Hard → Easy. Không có bài chất lượng"
+        )
     return "- Readiness POOR (<40): CHỈ Rest hoặc Recovery Run. Cấm Interval/Tempo"
 
 
@@ -135,7 +140,9 @@ def _taper_instruction(countdown_days: int) -> str:
     if countdown_days <= 14:
         return "- TAPER WEEK -2: 50% khối lượng đỉnh, tối đa 1 bài chất lượng (bài hard cuối cùng)"
     if countdown_days <= 21:
-        return "- TAPER WEEK -3: 75% khối lượng đỉnh, 2 bài chất lượng, cường độ vẫn cao"
+        return (
+            "- TAPER WEEK -3: 75% khối lượng đỉnh, 2 bài chất lượng, cường độ vẫn cao"
+        )
     return ""
 
 
@@ -149,7 +156,9 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
 
     existing = get_pending_weekly_plan(user_id, week_start)
     if existing or has_active_plan_this_week(user_id, week_start):
-        logger.info(f"[WEEKLY_PLAN] Plan already exists for {user_id}/{week_start}, skipping")
+        logger.info(
+            f"[WEEKLY_PLAN] Plan already exists for {user_id}/{week_start}, skipping"
+        )
         return None
 
     athlete_state = get_athlete_state(user_id)
@@ -158,9 +167,11 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
         send_telegram_msg(
             chat_id,
             f"⚠️ Không tạo giáo án tuần này — trạng thái VĐV: <b>{athlete_state}</b>.\n"
-            "Dùng /recover khi anh đã khỏe lại."
+            "Dùng /recover khi anh đã khỏe lại.",
         )
-        logger.info(f"[WEEKLY_PLAN] Skipping plan gen for {user_id}: state={athlete_state}")
+        logger.info(
+            f"[WEEKLY_PLAN] Skipping plan gen for {user_id}: state={athlete_state}"
+        )
         return None
 
     acwr = _calculate_acwr(user_id)
@@ -172,6 +183,7 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
     if config.get("race_date"):
         try:
             from datetime import datetime as dt
+
             race_date = dt.strptime(config["race_date"], "%Y-%m-%d").date()
             countdown_days = (race_date - date.today()).days
         except ValueError:
@@ -190,7 +202,8 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
         "hrv_status": garmin.get("hrv_status", "BALANCED"),
         "sleep_last_night_hours": round(
             (garmin.get("sleep_duration_sec") or 0) / 3600, 1
-        ) or "unknown",
+        )
+        or "unknown",
         "phase": phase,
         "athlete_state": athlete_state,
         "current_weekly_km": weekly_km,
@@ -202,7 +215,9 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
     }
 
     prompt = _build_weekly_plan_prompt(config, context_data)
-    logger.info(f"[WEEKLY_PLAN] Generating plan for {user_id}, week {week_start}, ACWR={acwr}")
+    logger.info(
+        f"[WEEKLY_PLAN] Generating plan for {user_id}, week {week_start}, ACWR={acwr}"
+    )
 
     result = _call_gemini_for_plan(config, prompt)
     if not result:
@@ -224,7 +239,9 @@ def _call_gemini_for_plan(config: dict, prompt: str) -> Optional[WeeklyPlanResul
         from google import genai
         from google.genai import types
 
-        client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
+        client = genai.Client(
+            http_options=types.HttpOptions(timeout=120000)
+        )  # 120s in ms
         model = config.get("model_name", "models/gemini-flash-latest")
 
         response = client.models.generate_content(
@@ -248,20 +265,28 @@ def _validate_plan_constraints(plan: WeeklyPlanResult) -> None:
     """Log warnings if the AI violated hard constraints — doesn't raise."""
     quality_count = sum(1 for d in plan.days if d.workout_type in _QUALITY_TYPES)
     if quality_count > _MAX_QUALITY_PER_WEEK:
-        logger.warning(f"[WEEKLY_PLAN] Constraint violation: {quality_count} quality sessions > max {_MAX_QUALITY_PER_WEEK}")
+        logger.warning(
+            f"[WEEKLY_PLAN] Constraint violation: {quality_count} quality sessions > max {_MAX_QUALITY_PER_WEEK}"
+        )
 
     rest_count = sum(1 for d in plan.days if d.workout_type == "Rest")
     if rest_count < 1:
         logger.warning("[WEEKLY_PLAN] Constraint violation: no rest day in the week")
 
     for i in range(len(plan.days) - 1):
-        if plan.days[i].workout_type in _QUALITY_TYPES and plan.days[i + 1].workout_type in _QUALITY_TYPES:
-            logger.warning(f"[WEEKLY_PLAN] Constraint violation: back-to-back quality sessions on days {i+1} and {i+2}")
+        if (
+            plan.days[i].workout_type in _QUALITY_TYPES
+            and plan.days[i + 1].workout_type in _QUALITY_TYPES
+        ):
+            logger.warning(
+                f"[WEEKLY_PLAN] Constraint violation: back-to-back quality sessions on days {i+1} and {i+2}"
+            )
 
 
 def _format_plan_preview(plan: WeeklyPlanResult) -> str:
     """Format compact plan preview for Telegram (< 3500 chars)."""
     from datetime import datetime as dt
+
     week_start = dt.strptime(plan.week_start_date, "%Y-%m-%d")
     week_end = week_start + timedelta(days=6)
     header = (
@@ -269,7 +294,15 @@ def _format_plan_preview(plan: WeeklyPlanResult) -> str:
         f"📊 Tổng: {plan.week_total_km}km | ACWR dự kiến: {plan.acwr_projection}\n\n"
     )
 
-    day_names_vi = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
+    day_names_vi = [
+        "Thứ Hai",
+        "Thứ Ba",
+        "Thứ Tư",
+        "Thứ Năm",
+        "Thứ Sáu",
+        "Thứ Bảy",
+        "Chủ Nhật",
+    ]
     lines = [header]
     for i, day in enumerate(plan.days):
         day_label = day_names_vi[i] if i < len(day_names_vi) else f"Ngày {i+1}"
@@ -327,7 +360,9 @@ def accept_weekly_plan(user_id: str, week_start: Optional[str] = None) -> str:
     )
 
 
-def reject_weekly_plan(user_id: str, reason: str = "", week_start: Optional[str] = None) -> str:
+def reject_weekly_plan(
+    user_id: str, reason: str = "", week_start: Optional[str] = None
+) -> str:
     """
     Reject the pending plan. Stores reason and triggers regeneration.
     """
@@ -357,7 +392,9 @@ def reject_weekly_plan(user_id: str, reason: str = "", week_start: Optional[str]
     )
 
 
-def _write_plan_to_training_plans(user_id: str, result: WeeklyPlanResult, weekly_plan_id: int) -> None:
+def _write_plan_to_training_plans(
+    user_id: str, result: WeeklyPlanResult, weekly_plan_id: int
+) -> None:
     """Write accepted WeeklyPlanResult to training_plans table (7 rows)."""
     try:
         with get_db() as conn:
@@ -385,10 +422,20 @@ def _write_plan_to_training_plans(user_id: str, result: WeeklyPlanResult, weekly
                         updated_at=CURRENT_TIMESTAMP
                     """,
                     (
-                        user_id, day.date, day.title, day.description, "planned",
-                        day.workout_type, day.target_distance_km, day.target_duration_min,
-                        day.target_pace_range, day.target_hr_zone, day.target_hr_range,
-                        day.rpe_target, day.nutrition_alert, weekly_plan_id,
+                        user_id,
+                        day.date,
+                        day.title,
+                        day.description,
+                        "planned",
+                        day.workout_type,
+                        day.target_distance_km,
+                        day.target_duration_min,
+                        day.target_pace_range,
+                        day.target_hr_zone,
+                        day.target_hr_range,
+                        day.rpe_target,
+                        day.nutrition_alert,
+                        weekly_plan_id,
                     ),
                 )
     except Exception as e:

@@ -1,6 +1,7 @@
 """
 Tests for run_activity_raw: stream_file_path storage and retrieval.
 """
+
 import os
 import tempfile
 import unittest
@@ -36,17 +37,20 @@ class TestRunActivityRawStreamFilePath(unittest.TestCase):
         stream_file_path = "streams/user1/act1.json"
 
         with self._patch_db():
-            database.save_run_activity(user_id, {
-                "activity_id": activity_id,
-                "name": activity_name,
-                "start_date": full_meta["start_date_local"],
-                "distance_km": 10.0,
-                "moving_time_min": 60.0,
-                "avg_hr": 150,
-                "max_hr": 165,
-                "suffer_score": 100,
-                "trimp_score": 50.0,
-            })
+            database.save_run_activity(
+                user_id,
+                {
+                    "activity_id": activity_id,
+                    "name": activity_name,
+                    "start_date": full_meta["start_date_local"],
+                    "distance_km": 10.0,
+                    "moving_time_min": 60.0,
+                    "avg_hr": 150,
+                    "max_hr": 165,
+                    "suffer_score": 100,
+                    "trimp_score": 50.0,
+                },
+            )
             database.save_run_activity_raw(
                 user_id,
                 activity_id,
@@ -59,7 +63,9 @@ class TestRunActivityRawStreamFilePath(unittest.TestCase):
 
         self.assertIsNotNone(raw)
         self.assertEqual(raw["activity_name"], activity_name)
-        self.assertEqual(raw["full_meta"]["start_date_local"], full_meta["start_date_local"])
+        self.assertEqual(
+            raw["full_meta"]["start_date_local"], full_meta["start_date_local"]
+        )
         self.assertEqual(raw["full_meta"]["splits"], full_meta["splits"])
         self.assertEqual(raw["stream_file_path"], stream_file_path)
         self.assertEqual(raw["stream_csv"], "")
@@ -73,23 +79,34 @@ class TestRunActivityRawStreamFilePath(unittest.TestCase):
         user_id = "u2"
         activity_id = "a2"
         with self._patch_db():
-            database.save_run_activity(user_id, {
-                "activity_id": activity_id,
-                "name": "Run",
-                "start_date": "2026-03-14T07:00:00",
-                "distance_km": 5.0,
-                "moving_time_min": 30.0,
-                "avg_hr": 140,
-                "max_hr": 155,
-                "suffer_score": 50,
-                "trimp_score": 25.0,
-            })
+            database.save_run_activity(
+                user_id,
+                {
+                    "activity_id": activity_id,
+                    "name": "Run",
+                    "start_date": "2026-03-14T07:00:00",
+                    "distance_km": 5.0,
+                    "moving_time_min": 30.0,
+                    "avg_hr": 140,
+                    "max_hr": 155,
+                    "suffer_score": 50,
+                    "trimp_score": 25.0,
+                },
+            )
             database.save_run_activity_raw(
-                user_id, activity_id, "Run", {"distance": 5000}, stream_file_path="streams/u2/a2_v1.json"
+                user_id,
+                activity_id,
+                "Run",
+                {"distance": 5000},
+                stream_file_path="streams/u2/a2_v1.json",
             )
             raw1 = database.get_run_activity_raw(activity_id)
             database.save_run_activity_raw(
-                user_id, activity_id, "Run Updated", {"distance": 5000}, stream_file_path="streams/u2/a2_v2.json"
+                user_id,
+                activity_id,
+                "Run Updated",
+                {"distance": 5000},
+                stream_file_path="streams/u2/a2_v2.json",
             )
             raw2 = database.get_run_activity_raw(activity_id)
         self.assertEqual(raw1["stream_file_path"], "streams/u2/a2_v1.json")

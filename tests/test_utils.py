@@ -5,12 +5,12 @@ All tests here are pure math/logic – no DB, no network, no mocks needed.
 Covers: TRIMP, ACWR, Training Phase, Grade Adjusted Pace, Decoupling,
         Efficiency Factor, Weekly Context formatting.
 """
+
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pandas as pd
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # helpers imported under test
@@ -328,7 +328,6 @@ class TestCalculateTrImpGender(unittest.TestCase):
         self.assertEqual(result["taper_factor"], 0.0)
 
 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # 10. LTHR ZONES (Joe Friel)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -337,6 +336,7 @@ class TestCalculateLthrZones(unittest.TestCase):
 
     def _zones(self):
         from app.agents.coach.utils import calculate_lthr_zones
+
         return calculate_lthr_zones(160)
 
     def test_returns_seven_zones(self):
@@ -365,7 +365,11 @@ class TestCalculateLthrZones(unittest.TestCase):
 class TestFormatZoneStrings(unittest.TestCase):
 
     def test_format_hr_zones_for_prompt_has_zone_lines(self):
-        from app.agents.coach.utils import calculate_hr_zones, format_hr_zones_for_prompt
+        from app.agents.coach.utils import (
+            calculate_hr_zones,
+            format_hr_zones_for_prompt,
+        )
+
         zones = calculate_hr_zones(185, 55)
         result = format_hr_zones_for_prompt(zones)
         self.assertIn("ZONE1", result)
@@ -373,7 +377,11 @@ class TestFormatZoneStrings(unittest.TestCase):
         self.assertEqual(result.count("\n"), 4)  # 5 zones → 4 newlines
 
     def test_format_lthr_zones_for_prompt_has_seven_lines(self):
-        from app.agents.coach.utils import calculate_lthr_zones, format_lthr_zones_for_prompt
+        from app.agents.coach.utils import (
+            calculate_lthr_zones,
+            format_lthr_zones_for_prompt,
+        )
+
         zones = calculate_lthr_zones(160)
         result = format_lthr_zones_for_prompt(zones)
         lines = result.strip().splitlines()
@@ -381,12 +389,20 @@ class TestFormatZoneStrings(unittest.TestCase):
         self.assertIn("LTHR", result)
 
     def test_format_lthr_zone5c_shows_greater_than(self):
-        from app.agents.coach.utils import calculate_lthr_zones, format_lthr_zones_for_prompt
+        from app.agents.coach.utils import (
+            calculate_lthr_zones,
+            format_lthr_zones_for_prompt,
+        )
+
         result = format_lthr_zones_for_prompt(calculate_lthr_zones(160))
         self.assertIn(">", result)
 
     def test_format_power_zones_for_prompt_has_six_lines(self):
-        from app.agents.coach.utils import calculate_power_zones, format_power_zones_for_prompt
+        from app.agents.coach.utils import (
+            calculate_power_zones,
+            format_power_zones_for_prompt,
+        )
+
         zones = calculate_power_zones(250)
         result = format_power_zones_for_prompt(zones)
         lines = result.strip().splitlines()
@@ -394,12 +410,20 @@ class TestFormatZoneStrings(unittest.TestCase):
         self.assertIn("W", result)
 
     def test_format_power_zones_zone6_shows_greater_than(self):
-        from app.agents.coach.utils import calculate_power_zones, format_power_zones_for_prompt
+        from app.agents.coach.utils import (
+            calculate_power_zones,
+            format_power_zones_for_prompt,
+        )
+
         result = format_power_zones_for_prompt(calculate_power_zones(250))
         self.assertIn(">", result)
 
     def test_format_pace_zones_for_prompt_has_six_lines(self):
-        from app.agents.coach.utils import calculate_pace_zones, format_pace_zones_for_prompt
+        from app.agents.coach.utils import (
+            calculate_pace_zones,
+            format_pace_zones_for_prompt,
+        )
+
         zones = calculate_pace_zones(310)
         result = format_pace_zones_for_prompt(zones)
         lines = result.strip().splitlines()
@@ -414,6 +438,7 @@ class TestCalculatePowerZones(unittest.TestCase):
 
     def test_returns_six_zones(self):
         from app.agents.coach.utils import calculate_power_zones
+
         zones = calculate_power_zones(250)
         self.assertEqual(len(zones), 6)
         for key in ["zone1", "zone2", "zone3", "zone4", "zone5", "zone6"]:
@@ -421,11 +446,13 @@ class TestCalculatePowerZones(unittest.TestCase):
 
     def test_zone1_max_is_60pct_rftp(self):
         from app.agents.coach.utils import calculate_power_zones
+
         zones = calculate_power_zones(250)
         self.assertEqual(zones["zone1"]["max"], round(250 * 0.60))
 
     def test_zone6_max_is_sentinel(self):
         from app.agents.coach.utils import calculate_power_zones
+
         zones = calculate_power_zones(250)
         self.assertGreaterEqual(zones["zone6"]["max"], 9999)
 
@@ -472,6 +499,7 @@ class TestSendMessageWithRetry(unittest.TestCase):
     def _mock_session(self, responses):
         """Build a mock chat session that returns responses in sequence."""
         from unittest.mock import MagicMock
+
         session = MagicMock()
         session.send_message.side_effect = responses
         return session
@@ -479,6 +507,7 @@ class TestSendMessageWithRetry(unittest.TestCase):
     def test_success_on_first_attempt(self):
         from app.agents.coach.utils import send_message_with_retry
         from unittest.mock import MagicMock
+
         resp = MagicMock()
         resp.candidates = []
         session = self._mock_session([resp])
@@ -488,24 +517,29 @@ class TestSendMessageWithRetry(unittest.TestCase):
     def test_retries_on_transient_503(self):
         from app.agents.coach.utils import send_message_with_retry
         from unittest.mock import MagicMock
+
         good_resp = MagicMock()
         good_resp.candidates = []
-        session = self._mock_session([
-            Exception("503 Service Unavailable"),
-            good_resp,
-        ])
+        session = self._mock_session(
+            [
+                Exception("503 Service Unavailable"),
+                good_resp,
+            ]
+        )
         result = send_message_with_retry(session, "msg", max_retries=3)
         self.assertEqual(result, good_resp)
         self.assertEqual(session.send_message.call_count, 2)
 
     def test_raises_after_max_retries_exceeded(self):
         from app.agents.coach.utils import send_message_with_retry
+
         session = self._mock_session([Exception("503 Service Unavailable")] * 3)
         with self.assertRaises(Exception):
             send_message_with_retry(session, "msg", max_retries=3)
 
     def test_non_retryable_error_raises_immediately(self):
         from app.agents.coach.utils import send_message_with_retry
+
         session = self._mock_session([Exception("PERMISSION_DENIED: invalid key")])
         with self.assertRaises(Exception):
             send_message_with_retry(session, "msg", max_retries=3)
@@ -514,6 +548,7 @@ class TestSendMessageWithRetry(unittest.TestCase):
     def test_malformed_response_retries(self):
         from app.agents.coach.utils import send_message_with_retry
         from unittest.mock import MagicMock
+
         malformed = MagicMock()
         malformed.candidates = [MagicMock(finish_reason="MALFORMED_RESPONSE")]
         good = MagicMock()
@@ -532,6 +567,7 @@ class TestBuildAgentContext(unittest.TestCase):
         from app.agents.coach.utils import build_agent_context
         from datetime import datetime
         import pytz
+
         cfg = config or {
             "race_date": "",
             "race_distance_km": 21.1,
@@ -547,19 +583,39 @@ class TestBuildAgentContext(unittest.TestCase):
         now = datetime(2026, 4, 15, 8, 0, tzinfo=pytz.UTC)
         return build_agent_context("u1", cfg, now=now)
 
-    @patch("app.core.database.get_training_loads", return_value={"acute_load_7d": 100, "chronic_load_28d": 400, "avg_weekly_mileage": 50})
+    @patch(
+        "app.core.database.get_training_loads",
+        return_value={
+            "acute_load_7d": 100,
+            "chronic_load_28d": 400,
+            "avg_weekly_mileage": 50,
+        },
+    )
     @patch("app.core.database.get_weekly_volume", return_value=30.0)
     @patch("app.core.database.get_weekly_target", return_value=None)
-    @patch("app.agents.coach.utils.get_formatted_weekly_context", return_value="mock weekly ctx")
+    @patch(
+        "app.agents.coach.utils.get_formatted_weekly_context",
+        return_value="mock weekly ctx",
+    )
     @patch("app.agents.coach.prompts.build_system_instruction", return_value="mock sys")
-    @patch("app.agents.coach.prompts.get_shared_context_block", return_value="mock shared")
+    @patch(
+        "app.agents.coach.prompts.get_shared_context_block", return_value="mock shared"
+    )
     def test_returns_agent_context(self, *_):
         from app.agents.coach.utils import AgentContext
+
         ctx = self._build()
         self.assertIsInstance(ctx, AgentContext)
         self.assertEqual(ctx.user_id, "u1")
 
-    @patch("app.core.database.get_training_loads", return_value={"acute_load_7d": 0, "chronic_load_28d": 0, "avg_weekly_mileage": 0})
+    @patch(
+        "app.core.database.get_training_loads",
+        return_value={
+            "acute_load_7d": 0,
+            "chronic_load_28d": 0,
+            "avg_weekly_mileage": 0,
+        },
+    )
     @patch("app.core.database.get_weekly_volume", return_value=0.0)
     @patch("app.core.database.get_weekly_target", return_value=None)
     @patch("app.agents.coach.utils.get_formatted_weekly_context", return_value="")
@@ -569,7 +625,14 @@ class TestBuildAgentContext(unittest.TestCase):
         ctx = self._build()
         self.assertIn("No Chronic", ctx.acwr_text)
 
-    @patch("app.core.database.get_training_loads", return_value={"acute_load_7d": 100, "chronic_load_28d": 400, "avg_weekly_mileage": 50})
+    @patch(
+        "app.core.database.get_training_loads",
+        return_value={
+            "acute_load_7d": 100,
+            "chronic_load_28d": 400,
+            "avg_weekly_mileage": 50,
+        },
+    )
     @patch("app.core.database.get_weekly_volume", return_value=25.0)
     @patch("app.core.database.get_weekly_target", return_value=None)
     @patch("app.agents.coach.utils.get_formatted_weekly_context", return_value="")
@@ -577,11 +640,16 @@ class TestBuildAgentContext(unittest.TestCase):
     @patch("app.agents.coach.prompts.get_shared_context_block", return_value="ctx")
     def test_lthr_zones_used_when_configured(self, *_):
         cfg = {
-            "race_date": "", "race_distance_km": 21.1,
-            "max_hr": 185, "rest_hr": 55,
+            "race_date": "",
+            "race_distance_km": 21.1,
+            "max_hr": 185,
+            "rest_hr": 55,
             "lthr_bpm": 165,  # triggers Joe Friel zones
-            "rftp_watts": 0, "threshold_pace_per_km": 0,
-            "gender": "male", "system_instruction": "", "user_profile": "",
+            "rftp_watts": 0,
+            "threshold_pace_per_km": 0,
+            "gender": "male",
+            "system_instruction": "",
+            "user_profile": "",
         }
         ctx = self._build(config=cfg)
         self.assertIn("ZONE1", ctx.hr_zones_text)

@@ -12,7 +12,14 @@ from app.core.timezone_utils import get_local_tz
 
 logger = get_module_logger("coach")
 
-def calculate_trimp(duration_minutes: float, avg_hr: float, max_hr: int = 185, rest_hr: int = 55, gender: str = "male") -> dict:
+
+def calculate_trimp(
+    duration_minutes: float,
+    avg_hr: float,
+    max_hr: int = 185,
+    rest_hr: int = 55,
+    gender: str = "male",
+) -> dict:
     """
     Calculate Training Impulse (TRIMP) using Bannister's method.
     Male:   TRIMP = duration × HRR × 0.64 × e^(1.92 × HRR)
@@ -40,6 +47,7 @@ def calculate_trimp(duration_minutes: float, avg_hr: float, max_hr: int = 185, r
         logger.error(f"[UTILS] TRIMP calculation error: {e}")
         return {"trimp": 0, "intensity_level": "Error"}
 
+
 def calculate_acwr(acute_load_7d: float, chronic_load_28d: float) -> dict:
     """
     Calculate Acute-to-Chronic Workload Ratio (ACWR).
@@ -48,13 +56,13 @@ def calculate_acwr(acute_load_7d: float, chronic_load_28d: float) -> dict:
     """
     if chronic_load_28d == 0:
         return {"acwr": 0.0, "status": "No Chronic Data"}
-        
+
     avg_weekly_chronic = chronic_load_28d / 4
     if avg_weekly_chronic == 0:
         return {"acwr": 0.0, "status": "No Chronic Data"}
-        
+
     acwr = round(acute_load_7d / avg_weekly_chronic, 2)
-    
+
     # Evaluate injury risk based on ACWR Sweet Spot (0.8 - 1.3)
     status = "Sweet Spot (Optimal)"
     if acwr < 0.8:
@@ -63,8 +71,9 @@ def calculate_acwr(acute_load_7d: float, chronic_load_28d: float) -> dict:
         status = "Danger Zone (High Injury Risk - Need Recovery)"
     elif acwr > 1.3:
         status = "Overreaching (Caution needed)"
-        
+
     return {"acwr": acwr, "status": status}
+
 
 def calculate_efficiency_factor(avg_speed_mpm: float, avg_hr: float) -> float:
     """
@@ -76,40 +85,47 @@ def calculate_efficiency_factor(avg_speed_mpm: float, avg_hr: float) -> float:
         return 0.0
     return round(avg_speed_mpm / avg_hr, 2)
 
+
 def calculate_grade_adjusted_pace(velocity_ms: float, grade_pct: float) -> float:
     """
     Calculate Grade Adjusted Pace (GAP) using Minetti's simplified formula.
     Running cost is heavily dependent on the incline (grade percentage).
     """
-    # AI Coach estimation logic: 
+    # AI Coach estimation logic:
     # Every 1% incline roughly equals a 2-3 seconds/km pace penalty (Rule of thumb)
-    cost = 1 + (grade_pct * 0.045) 
+    cost = 1 + (grade_pct * 0.045)
     gap_velocity = velocity_ms * cost
     return gap_velocity
+
 
 def analyze_decoupling(df: pd.DataFrame) -> float:
     """
     Analyze Aerobic Decoupling (Pa:HR) by splitting the run into two halves.
-    If the Efficiency Factor (EF) of the second half drops by more than 5% 
+    If the Efficiency Factor (EF) of the second half drops by more than 5%
     compared to the first half, it indicates Cardiovascular Drift (poor aerobic endurance).
     """
     if df is None or df.empty or len(df) < 10:
         return 0.0
-        
+
     half_point = len(df) // 2
     first_half = df.iloc[:half_point]
     second_half = df.iloc[half_point:]
-    
+
     # Calculate EF for each half (Speed converted to meters/minute)
-    ef1 = calculate_efficiency_factor(first_half['Velocity_m_s'].mean() * 60, first_half['HR_bpm'].mean())
-    ef2 = calculate_efficiency_factor(second_half['Velocity_m_s'].mean() * 60, second_half['HR_bpm'].mean())
-    
+    ef1 = calculate_efficiency_factor(
+        first_half["Velocity_m_s"].mean() * 60, first_half["HR_bpm"].mean()
+    )
+    ef2 = calculate_efficiency_factor(
+        second_half["Velocity_m_s"].mean() * 60, second_half["HR_bpm"].mean()
+    )
+
     decoupling = 0.0
     if ef1 > 0:
         # Calculate percentage drop in efficiency
         decoupling = ((ef1 - ef2) / ef1) * 100
-        
+
     return round(decoupling, 2)
+
 
 def calculate_hr_zones(max_hr: int, rest_hr: int) -> dict:
     """
@@ -118,11 +134,31 @@ def calculate_hr_zones(max_hr: int, rest_hr: int) -> dict:
     """
     hrr = max_hr - rest_hr
     return {
-        "zone1": {"name": "Active Recovery",  "min": round(rest_hr + 0.50 * hrr), "max": round(rest_hr + 0.60 * hrr)},
-        "zone2": {"name": "Aerobic Base",      "min": round(rest_hr + 0.60 * hrr), "max": round(rest_hr + 0.70 * hrr)},
-        "zone3": {"name": "Aerobic Tempo",     "min": round(rest_hr + 0.70 * hrr), "max": round(rest_hr + 0.80 * hrr)},
-        "zone4": {"name": "Threshold/Lactate", "min": round(rest_hr + 0.80 * hrr), "max": round(rest_hr + 0.90 * hrr)},
-        "zone5": {"name": "VO2max / Speed",    "min": round(rest_hr + 0.90 * hrr), "max": max_hr},
+        "zone1": {
+            "name": "Active Recovery",
+            "min": round(rest_hr + 0.50 * hrr),
+            "max": round(rest_hr + 0.60 * hrr),
+        },
+        "zone2": {
+            "name": "Aerobic Base",
+            "min": round(rest_hr + 0.60 * hrr),
+            "max": round(rest_hr + 0.70 * hrr),
+        },
+        "zone3": {
+            "name": "Aerobic Tempo",
+            "min": round(rest_hr + 0.70 * hrr),
+            "max": round(rest_hr + 0.80 * hrr),
+        },
+        "zone4": {
+            "name": "Threshold/Lactate",
+            "min": round(rest_hr + 0.80 * hrr),
+            "max": round(rest_hr + 0.90 * hrr),
+        },
+        "zone5": {
+            "name": "VO2max / Speed",
+            "min": round(rest_hr + 0.90 * hrr),
+            "max": max_hr,
+        },
     }
 
 
@@ -133,13 +169,48 @@ def calculate_lthr_zones(lthr_bpm: int) -> dict:
     """
     lthr = lthr_bpm
     return {
-        "zone1":  {"name": "Recovery",       "min": 0,               "max": round(lthr *0.70), "pct": "<70% LTHR"},
-        "zone2":  {"name": "Aerobic",         "min": round(lthr *0.70), "max": round(lthr *0.85), "pct": "70-85% LTHR"},
-        "zone3":  {"name": "Tempo",           "min": round(lthr *0.85), "max": round(lthr *0.90), "pct": "85-90% LTHR"},
-        "zone4":  {"name": "Sub-Threshold",   "min": round(lthr *0.90), "max": round(lthr *0.95), "pct": "90-95% LTHR"},
-        "zone5a": {"name": "VO2max (5a)",     "min": round(lthr *0.95), "max": round(lthr *0.98), "pct": "95-98% LTHR"},
-        "zone5b": {"name": "Anaerobic (5b)",  "min": round(lthr *0.98), "max": round(lthr *1.02), "pct": "98-102% LTHR"},
-        "zone5c": {"name": "Max Speed (5c)",  "min": round(lthr *1.02), "max": 9999,              "pct": ">102% LTHR"},
+        "zone1": {
+            "name": "Recovery",
+            "min": 0,
+            "max": round(lthr * 0.70),
+            "pct": "<70% LTHR",
+        },
+        "zone2": {
+            "name": "Aerobic",
+            "min": round(lthr * 0.70),
+            "max": round(lthr * 0.85),
+            "pct": "70-85% LTHR",
+        },
+        "zone3": {
+            "name": "Tempo",
+            "min": round(lthr * 0.85),
+            "max": round(lthr * 0.90),
+            "pct": "85-90% LTHR",
+        },
+        "zone4": {
+            "name": "Sub-Threshold",
+            "min": round(lthr * 0.90),
+            "max": round(lthr * 0.95),
+            "pct": "90-95% LTHR",
+        },
+        "zone5a": {
+            "name": "VO2max (5a)",
+            "min": round(lthr * 0.95),
+            "max": round(lthr * 0.98),
+            "pct": "95-98% LTHR",
+        },
+        "zone5b": {
+            "name": "Anaerobic (5b)",
+            "min": round(lthr * 0.98),
+            "max": round(lthr * 1.02),
+            "pct": "98-102% LTHR",
+        },
+        "zone5c": {
+            "name": "Max Speed (5c)",
+            "min": round(lthr * 1.02),
+            "max": 9999,
+            "pct": ">102% LTHR",
+        },
     }
 
 
@@ -167,12 +238,42 @@ def calculate_power_zones(rftp_watts: int) -> dict:
     """
     r = rftp_watts
     return {
-        "zone1": {"name": "Recovery",        "min": 0,               "max": round(r * 0.60), "pct": "<60% rFTP"},
-        "zone2": {"name": "Easy / Aerobic",  "min": round(r * 0.60), "max": round(r * 0.75), "pct": "60-75% rFTP"},
-        "zone3": {"name": "Tempo / LT",      "min": round(r * 0.75), "max": round(r * 0.88), "pct": "75-88% rFTP"},
-        "zone4": {"name": "Sub-Threshold",   "min": round(r * 0.88), "max": round(r * 0.93), "pct": "88-93% rFTP"},
-        "zone5": {"name": "VO2max",          "min": round(r * 0.93), "max": round(r * 1.10), "pct": "93-110% rFTP"},
-        "zone6": {"name": "Anaerobic / Max", "min": round(r * 1.10), "max": 9999,              "pct": ">110% rFTP"},
+        "zone1": {
+            "name": "Recovery",
+            "min": 0,
+            "max": round(r * 0.60),
+            "pct": "<60% rFTP",
+        },
+        "zone2": {
+            "name": "Easy / Aerobic",
+            "min": round(r * 0.60),
+            "max": round(r * 0.75),
+            "pct": "60-75% rFTP",
+        },
+        "zone3": {
+            "name": "Tempo / LT",
+            "min": round(r * 0.75),
+            "max": round(r * 0.88),
+            "pct": "75-88% rFTP",
+        },
+        "zone4": {
+            "name": "Sub-Threshold",
+            "min": round(r * 0.88),
+            "max": round(r * 0.93),
+            "pct": "88-93% rFTP",
+        },
+        "zone5": {
+            "name": "VO2max",
+            "min": round(r * 0.93),
+            "max": round(r * 1.10),
+            "pct": "93-110% rFTP",
+        },
+        "zone6": {
+            "name": "Anaerobic / Max",
+            "min": round(r * 1.10),
+            "max": 9999,
+            "pct": ">110% rFTP",
+        },
     }
 
 
@@ -198,12 +299,27 @@ def calculate_pace_zones(threshold_pace_sec_per_km: int) -> dict:
         return f"{s // 60}:{s % 60:02d}/km"
 
     return {
-        "recovery":  {"name": "Recovery (Zone 1)",     "range": f"{fmt(t * 1.35)}–{fmt(t * 1.25)}"},
-        "easy":      {"name": "Easy / Zone 2",          "range": f"{fmt(t * 1.25)}–{fmt(t * 1.15)}"},
-        "marathon":  {"name": "Marathon Pace (MP)",     "range": f"{fmt(t * 1.10)}–{fmt(t * 1.05)}"},
-        "threshold": {"name": "Lactate Threshold (LT)", "range": f"{fmt(t * 1.05)}–{fmt(t * 0.97)}"},
-        "interval":  {"name": "VO2max Interval (I)",    "range": f"{fmt(t * 0.97)}–{fmt(t * 0.90)}"},
-        "race":      {"name": "Race / Speed (R)",        "range": f"{fmt(t * 0.90)}–{fmt(t * 0.85)}"},
+        "recovery": {
+            "name": "Recovery (Zone 1)",
+            "range": f"{fmt(t * 1.35)}–{fmt(t * 1.25)}",
+        },
+        "easy": {"name": "Easy / Zone 2", "range": f"{fmt(t * 1.25)}–{fmt(t * 1.15)}"},
+        "marathon": {
+            "name": "Marathon Pace (MP)",
+            "range": f"{fmt(t * 1.10)}–{fmt(t * 1.05)}",
+        },
+        "threshold": {
+            "name": "Lactate Threshold (LT)",
+            "range": f"{fmt(t * 1.05)}–{fmt(t * 0.97)}",
+        },
+        "interval": {
+            "name": "VO2max Interval (I)",
+            "range": f"{fmt(t * 0.97)}–{fmt(t * 0.90)}",
+        },
+        "race": {
+            "name": "Race / Speed (R)",
+            "range": f"{fmt(t * 0.90)}–{fmt(t * 0.85)}",
+        },
     }
 
 
@@ -215,7 +331,11 @@ def format_pace_zones_for_prompt(zones: dict) -> str:
     return "\n".join(lines)
 
 
-def calculate_training_phase(race_date_str: str, race_distance_km: float = 21.1, timezone_str: str = os.getenv("TZ", "Asia/Ho_Chi_Minh")) -> dict:
+def calculate_training_phase(
+    race_date_str: str,
+    race_distance_km: float = 21.1,
+    timezone_str: str = os.getenv("TZ", "Asia/Ho_Chi_Minh"),
+) -> dict:
     """
     Calculate current Training Phase, Microcycle, and Taper Factor
     based on the upcoming race date AND race distance.
@@ -229,7 +349,12 @@ def calculate_training_phase(race_date_str: str, race_distance_km: float = 21.1,
     Returns taper_volume_factor: 1.0 = full load, 0.25 = race week.
     """
     if not race_date_str:
-        return {"phase": "Base Phase", "weeks_left": 99, "microcycle": "Load", "taper_factor": 1.0}
+        return {
+            "phase": "Base Phase",
+            "weeks_left": 99,
+            "microcycle": "Load",
+            "taper_factor": 1.0,
+        }
 
     try:
         tz = pytz.timezone(timezone_str)
@@ -238,7 +363,12 @@ def calculate_training_phase(race_date_str: str, race_distance_km: float = 21.1,
 
         days_left = (race_date - today).days
         if days_left <= 0:
-            return {"phase": "Race Week", "weeks_left": 0, "microcycle": "Race", "taper_factor": 0.0}
+            return {
+                "phase": "Race Week",
+                "weeks_left": 0,
+                "microcycle": "Race",
+                "taper_factor": 0.0,
+            }
 
         weeks_left = math.ceil(days_left / 7.0)
 
@@ -264,17 +394,19 @@ def calculate_training_phase(race_date_str: str, race_distance_km: float = 21.1,
 
         # Structured taper volume factor
         if weeks_left == 1:
-            taper_factor = 0.25   # Race week
+            taper_factor = 0.25  # Race week
         elif weeks_left == 2 and taper_w >= 2:
-            taper_factor = 0.50   # Week -2
+            taper_factor = 0.50  # Week -2
         elif weeks_left == 3 and taper_w >= 3:
-            taper_factor = 0.75   # Week -3
+            taper_factor = 0.75  # Week -3
         else:
             taper_factor = 1.0
 
         # Microcycle: 3 load : 1 cutback, always cutback in taper
         is_cutback = (weeks_left % 4 == 1) or (weeks_left <= taper_w)
-        microcycle_type = "Cutback / Recovery Week" if is_cutback else "Load / Progression Week"
+        microcycle_type = (
+            "Cutback / Recovery Week" if is_cutback else "Load / Progression Week"
+        )
 
         return {
             "phase": f"{phase_name} (Còn {weeks_left} tuần)",
@@ -284,7 +416,13 @@ def calculate_training_phase(race_date_str: str, race_distance_km: float = 21.1,
         }
     except Exception as e:
         logger.error(f"[UTILS] Phase calculation error: {e}")
-        return {"phase": "Error Phase", "weeks_left": 99, "microcycle": "Load", "taper_factor": 1.0}
+        return {
+            "phase": "Error Phase",
+            "weeks_left": 99,
+            "microcycle": "Load",
+            "taper_factor": 1.0,
+        }
+
 
 def debug_log_prompt(title: str, content: str):
     """
@@ -293,11 +431,15 @@ def debug_log_prompt(title: str, content: str):
     Keeps the Agent and Scheduler modules clean from excessive logging logic.
     """
     if os.getenv("DEBUG_PROMPTS", "false").lower() == "true":
-        logger.info(f"\n========== [{title}] ==========\n{content}\n==============================================")
+        logger.info(
+            f"\n========== [{title}] ==========\n{content}\n=============================================="
+        )
+
 
 # =====================================================================
 # SPRINT A: WEEKLY VOLUME INTELLIGENCE (Decision Support Data)
 # =====================================================================
+
 
 def gather_weekly_decision_inputs(user_id: str, week_start_date: str) -> dict:
     """
@@ -305,13 +447,15 @@ def gather_weekly_decision_inputs(user_id: str, week_start_date: str) -> dict:
     Fetches both TRIMP loads and Mileage from the database.
     """
     from app.core.database import get_training_loads, get_weekly_target
-    
+
     # Fetch TRIMP and Mileage simultaneously
     loads = get_training_loads(user_id)
-    
+
     historical_avg_volume = loads.get("avg_weekly_mileage", 0)
     # The 15% Rule: Do not increase weekly volume by more than 15% to prevent injury
-    safe_volume_limit = round(historical_avg_volume * 1.15, 1) if historical_avg_volume > 0 else 30.0 
+    safe_volume_limit = (
+        round(historical_avg_volume * 1.15, 1) if historical_avg_volume > 0 else 30.0
+    )
 
     chronic_load = loads.get("chronic_load_28d", 0)
     current_acute = loads.get("acute_load_7d", 0)
@@ -327,8 +471,9 @@ def gather_weekly_decision_inputs(user_id: str, week_start_date: str) -> dict:
         "2_safe_volume_limit": safe_volume_limit,
         "3_safe_trimp_remaining": safe_trimp_remaining,
         "4_standard_plan_goal": db_target["standard_target_km"] if db_target else None,
-        "5_actual_target_km": db_target["actual_target_km"] if db_target else None
+        "5_actual_target_km": db_target["actual_target_km"] if db_target else None,
     }
+
 
 def get_formatted_weekly_context(user_id: str) -> str:
     """
@@ -337,14 +482,14 @@ def get_formatted_weekly_context(user_id: str) -> str:
     """
     tz = get_local_tz()
     now = datetime.now(tz)
-    
+
     # Calculate the Monday of the current week
     monday = now - timedelta(days=now.weekday())
-    week_start_str = monday.strftime('%Y-%m-%d')
-    
+    week_start_str = monday.strftime("%Y-%m-%d")
+
     # Gather quantitative data
     decision_inputs = gather_weekly_decision_inputs(user_id, week_start_str)
-    
+
     # Return formatted block (Zone 3: String template remains in Vietnamese for the LLM Persona)
     return f"""
     - Lịch sử Volume (TB 4 tuần): {decision_inputs.get('1_historical_avg_volume', 0)} km
@@ -354,14 +499,20 @@ def get_formatted_weekly_context(user_id: str) -> str:
     - Target thực tế đang chốt: {decision_inputs.get('5_actual_target_km') or 'Chưa chốt'} km
     """
 
+
 # =====================================================================
 # RESILIENCE: EXPONENTIAL BACKOFF FOR GEMINI API
 # =====================================================================
 
 _RETRYABLE_ERRORS = (
-    "503", "429", "Unavailable",       # Google server overload
-    "timed out", "timeout",             # Network/SSL timeout
-    "ssl", "SSL", "handshake",          # TLS handshake failure
+    "503",
+    "429",
+    "Unavailable",  # Google server overload
+    "timed out",
+    "timeout",  # Network/SSL timeout
+    "ssl",
+    "SSL",
+    "handshake",  # TLS handshake failure
 )
 
 
@@ -378,25 +529,40 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             # Detect MALFORMED_RESPONSE — model stopped mid-generation, retry
             finish = None
             try:
-                finish = response.candidates[0].finish_reason if response.candidates else None
+                finish = (
+                    response.candidates[0].finish_reason
+                    if response.candidates
+                    else None
+                )
             except Exception:
                 pass
             if finish is not None and "MALFORMED" in str(finish):
                 if attempt < max_retries - 1:
-                    logger.warning(f"[API RESILIENCE] MALFORMED_RESPONSE — response truncated. Retrying... (Attempt {attempt + 1}/{max_retries})")
+                    logger.warning(
+                        f"[API RESILIENCE] MALFORMED_RESPONSE — response truncated. Retrying... (Attempt {attempt + 1}/{max_retries})"
+                    )
                     continue
-                logger.error("[API RESILIENCE] MALFORMED_RESPONSE persists after all retries.")
+                logger.error(
+                    "[API RESILIENCE] MALFORMED_RESPONSE persists after all retries."
+                )
 
             # DEBUG: when enabled, log request+response previews for prompt review
             try:
                 val = os.getenv("DEBUG_PROMPTS")
-                debug_enabled = val is not None and (val.strip() == "" or val.strip().lower() in ("1", "true", "yes", "on"))
+                debug_enabled = val is not None and (
+                    val.strip() == ""
+                    or val.strip().lower() in ("1", "true", "yes", "on")
+                )
                 if debug_enabled:
                     req_preview = (message or "")[:2000]
                     resp_text = getattr(response, "text", None)
                     resp_preview = (resp_text or "")[:2000]
                     try:
-                        cand_preview = str(response.candidates[0])[:1000] if getattr(response, "candidates", None) else None
+                        cand_preview = (
+                            str(response.candidates[0])[:1000]
+                            if getattr(response, "candidates", None)
+                            else None
+                        )
                     except Exception:
                         cand_preview = None
                     logger.debug(f"[API DEBUG] Request preview={req_preview!r}")
@@ -413,26 +579,41 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             exc_type = type(e).__name__
             if any(token in error_msg for token in _RETRYABLE_ERRORS):
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(
                         "[API RESILIENCE] Transient error %s: %s. Retrying in %ds... (Attempt %d/%d)",
-                        exc_type, error_msg[:120], wait_time, attempt + 1, max_retries,
+                        exc_type,
+                        error_msg[:120],
+                        wait_time,
+                        attempt + 1,
+                        max_retries,
                     )
                     time.sleep(wait_time)
                 else:
-                    logger.error("[API RESILIENCE] Max retries exhausted. %s: %s", exc_type, error_msg[:120])
+                    logger.error(
+                        "[API RESILIENCE] Max retries exhausted. %s: %s",
+                        exc_type,
+                        error_msg[:120],
+                    )
                     raise e
             else:
-                logger.debug("[API RESILIENCE] Non-retryable error %s: %s", exc_type, error_msg[:120])
+                logger.debug(
+                    "[API RESILIENCE] Non-retryable error %s: %s",
+                    exc_type,
+                    error_msg[:120],
+                )
                 raise e
+
 
 # =====================================================================
 # AGENT CONTEXT: SINGLE SOURCE OF TRUTH FOR ALL FLOWS
 # =====================================================================
 
+
 @dataclass
 class AgentContext:
     """Encapsulates all computed context needed by every agent flow."""
+
     user_id: str
     now: datetime
     phase_text: str
@@ -447,10 +628,15 @@ class AgentContext:
     taper_factor: float = 1.0
 
 
-def build_agent_context(user_id: str, config: dict, now: datetime = None) -> AgentContext:
+def build_agent_context(
+    user_id: str, config: dict, now: datetime = None
+) -> AgentContext:
     """Single Source of Truth for gathering and formatting agent context for all flows."""
     from app.core.database import get_training_loads, get_weekly_volume
-    from app.agents.coach.prompts import build_system_instruction, get_shared_context_block
+    from app.agents.coach.prompts import (
+        build_system_instruction,
+        get_shared_context_block,
+    )
 
     tz = get_local_tz()
     if now is None:
@@ -461,10 +647,16 @@ def build_agent_context(user_id: str, config: dict, now: datetime = None) -> Age
     phase_info = calculate_training_phase(race_date_str, race_distance_km)
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
     taper_factor = phase_info.get("taper_factor", 1.0)
-    countdown_text = f"Còn {phase_info['weeks_left']} tuần đến ngày đua." if race_date_str else "Duy trì thể lực."
+    countdown_text = (
+        f"Còn {phase_info['weeks_left']} tuần đến ngày đua."
+        if race_date_str
+        else "Duy trì thể lực."
+    )
 
     loads = get_training_loads(user_id)
-    acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
+    acwr_data = calculate_acwr(
+        loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0)
+    )
     acwr_text = f"{acwr_data['acwr']} ({acwr_data['status']})"
     actual_volume = get_weekly_volume(user_id, now)
     weekly_decision_context = get_formatted_weekly_context(user_id)
@@ -483,7 +675,9 @@ def build_agent_context(user_id: str, config: dict, now: datetime = None) -> Age
     # Compute Power zones (Stryd) — only when rftp_watts is configured
     rftp_watts = int(config.get("rftp_watts", 0))
     if rftp_watts > 0:
-        power_zones_text = format_power_zones_for_prompt(calculate_power_zones(rftp_watts))
+        power_zones_text = format_power_zones_for_prompt(
+            calculate_power_zones(rftp_watts)
+        )
     else:
         power_zones_text = ""
 
@@ -498,14 +692,29 @@ def build_agent_context(user_id: str, config: dict, now: datetime = None) -> Age
     gender = config.get("gender", "male")
 
     system_inst = build_system_instruction(
-        config.get("system_instruction", ""), config.get("user_profile", ""),
-        max_hr, rest_hr, gender, hr_zones_text, pace_zones_text, taper_factor,
-        rftp_watts=rftp_watts, lthr_bpm=lthr_bpm, hr_zones_label=hr_zones_label,
+        config.get("system_instruction", ""),
+        config.get("user_profile", ""),
+        max_hr,
+        rest_hr,
+        gender,
+        hr_zones_text,
+        pace_zones_text,
+        taper_factor,
+        rftp_watts=rftp_watts,
+        lthr_bpm=lthr_bpm,
+        hr_zones_label=hr_zones_label,
         power_zones_text=power_zones_text,
     )
     shared_context = get_shared_context_block(
-        now.strftime('%A, %d/%m/%Y'), user_id, phase_text, countdown_text,
-        acwr_text, actual_volume, weekly_decision_context, hr_zones_text, pace_zones_text,
+        now.strftime("%A, %d/%m/%Y"),
+        user_id,
+        phase_text,
+        countdown_text,
+        acwr_text,
+        actual_volume,
+        weekly_decision_context,
+        hr_zones_text,
+        pace_zones_text,
     )
 
     return AgentContext(

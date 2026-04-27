@@ -7,24 +7,37 @@ from google.genai import types
 
 from app.core.notification import send_telegram_msg
 from app.core.database import (
-    save_message, load_history_for_gemini,
-    get_plan_for_date, get_runs_in_last_days, get_all_active_memories,
+    save_message,
+    load_history_for_gemini,
+    get_plan_for_date,
+    get_runs_in_last_days,
+    get_all_active_memories,
 )
 from app.agents.coach.utils import (
-    calculate_acwr, calculate_training_phase, debug_log_prompt,
-    get_formatted_weekly_context, send_message_with_retry,
+    calculate_acwr,
+    calculate_training_phase,
+    debug_log_prompt,
+    get_formatted_weekly_context,
+    send_message_with_retry,
 )
 from app.agents.coach.prompts import (
-    build_system_instruction, get_shared_context_block, build_standup_prompt,
+    build_system_instruction,
+    get_shared_context_block,
+    build_standup_prompt,
 )
 from app.agents.coach.tools import (
-    update_todays_plan, set_actual_weekly_target,
-    search_long_term_memory, set_workout_plan,
-    get_volume_for_week, get_volume_summary, get_metric_trend,
+    update_todays_plan,
+    set_actual_weekly_target,
+    search_long_term_memory,
+    set_workout_plan,
+    get_volume_for_week,
+    get_volume_summary,
+    get_metric_trend,
 )
 from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
+
 logger = get_module_logger("coach")
 client = genai.Client()
 
@@ -43,17 +56,27 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
 
     # 1. Gather Data (Data Injection Pattern)
     loads = get_training_loads(user_id_str)
-    acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
+    acwr_data = calculate_acwr(
+        loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0)
+    )
     actual_volume = get_weekly_volume(user_id_str, now)
 
     race_date_str = config.get("race_date", "")
     race_distance_km = float(config.get("race_distance_km", 21.1))
     phase_info = calculate_training_phase(race_date_str, race_distance_km)
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
-    countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race." if race_date_str else "Duy trì thể lực."
+    countdown_text = (
+        f"Còn {phase_info['weeks_left']} tuần đến Race."
+        if race_date_str
+        else "Duy trì thể lực."
+    )
 
-    today_plan = get_plan_for_date(user_id_str, now.strftime('%Y-%m-%d'))
-    plan_context = f"{today_plan['workout_title']}: {today_plan['description']}" if today_plan else "Chạy tự do."
+    today_plan = get_plan_for_date(user_id_str, now.strftime("%Y-%m-%d"))
+    plan_context = (
+        f"{today_plan['workout_title']}: {today_plan['description']}"
+        if today_plan
+        else "Chạy tự do."
+    )
     weekly_decision_context = get_formatted_weekly_context(user_id_str)
 
     # Fetch short-term memory (last 5 interactions) to maintain conversation context
@@ -63,7 +86,11 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         chat_context_lines = []
         for msg in reversed(raw_history):
             sender = "User" if msg["role"] == "user" else "Coach Dyno"
-            text = msg["parts"][0][:150] + "..." if len(msg["parts"][0]) > 150 else msg["parts"][0]
+            text = (
+                msg["parts"][0][:150] + "..."
+                if len(msg["parts"][0]) > 150
+                else msg["parts"][0]
+            )
             chat_context_lines.append(f"{sender}: {text}")
         chat_context = "\n".join(chat_context_lines)
 
@@ -73,14 +100,24 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     gender = config.get("gender", "male")
     taper_factor = phase_info.get("taper_factor", 1.0)
     system_inst = build_system_instruction(
-        config.get("system_instruction", ""), config.get("user_profile", ""),
-        max_hr, rest_hr, gender, "", "", taper_factor,
+        config.get("system_instruction", ""),
+        config.get("user_profile", ""),
+        max_hr,
+        rest_hr,
+        gender,
+        "",
+        "",
+        taper_factor,
     )
 
     shared_context = get_shared_context_block(
-        now.strftime('%A, %d/%m/%Y'), user_id_str, phase_text, countdown_text,
+        now.strftime("%A, %d/%m/%Y"),
+        user_id_str,
+        phase_text,
+        countdown_text,
         f"{acwr_data['acwr']} ({acwr_data['status']})",
-        actual_volume, weekly_decision_context
+        actual_volume,
+        weekly_decision_context,
     )
 
     # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
@@ -103,10 +140,12 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         recent_logs=get_runs_in_last_days(user_id_str, days=7),
         today_plan=plan_context,
         chat_context=chat_context,
-        active_memories=active_memories_text
+        active_memories=active_memories_text,
     )
 
-    debug_log_prompt("DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}")
+    debug_log_prompt(
+        "DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"
+    )
 
     # 3. Execution (Resilience Pattern)
     try:
@@ -123,8 +162,8 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
                     get_volume_for_week,
                     get_volume_summary,
                     get_metric_trend,
-                ]
-            )
+                ],
+            ),
         )
         response = send_message_with_retry(chat_session, prompt)
         reply = response.text or "⚠️ Coach Dyno không thể Briefing lúc này."

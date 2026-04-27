@@ -9,13 +9,19 @@ Covers scheduled task functions:
   - setup_jobs: news jobs added only when news_agent.enabled=True; non-news jobs always added;
                 cron time fallback on invalid format
 """
+
 import unittest
 from unittest.mock import patch, MagicMock
 
 
-def _make_config(news_enabled=False, briefing_time="06:00", backup_time="02:00",
-                 morning_news_time="07:00", afternoon_news_time="17:00",
-                 watch_interval=30):
+def _make_config(
+    news_enabled=False,
+    briefing_time="06:00",
+    backup_time="02:00",
+    morning_news_time="07:00",
+    afternoon_news_time="17:00",
+    watch_interval=30,
+):
     return {
         "model_name": "models/gemini-2.0-flash",
         "race_date": "2026-06-01",
@@ -41,31 +47,42 @@ def _make_config(news_enabled=False, briefing_time="06:00", backup_time="02:00",
 class TestTaskMorningBriefing(unittest.TestCase):
 
     def test_no_chat_id_skips_briefing(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value=None), \
-             patch("app.services.scheduler.load_config") as mock_cfg, \
-             patch("app.services.scheduler.generate_morning_briefing") as mock_gen:
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value=None
+        ), patch("app.services.scheduler.load_config") as mock_cfg, patch(
+            "app.services.scheduler.generate_morning_briefing"
+        ) as mock_gen:
             from app.services.scheduler import task_morning_briefing
+
             task_morning_briefing()
             mock_gen.assert_not_called()
             mock_cfg.assert_not_called()
 
     def test_with_chat_id_calls_generate_morning_briefing(self):
         cfg = _make_config()
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.load_config", return_value=cfg), \
-             patch("app.services.scheduler.get_today_weather", return_value="Sunny 30°C"), \
-             patch("app.services.scheduler.generate_morning_briefing") as mock_gen:
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch("app.services.scheduler.load_config", return_value=cfg), patch(
+            "app.services.scheduler.get_today_weather", return_value="Sunny 30°C"
+        ), patch(
+            "app.services.scheduler.generate_morning_briefing"
+        ) as mock_gen:
             from app.services.scheduler import task_morning_briefing
+
             task_morning_briefing()
             mock_gen.assert_called_once_with(cfg, "Sunny 30°C")
 
     def test_with_chat_id_calls_get_today_weather(self):
         cfg = _make_config()
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.load_config", return_value=cfg), \
-             patch("app.services.scheduler.get_today_weather") as mock_weather, \
-             patch("app.services.scheduler.generate_morning_briefing"):
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch("app.services.scheduler.load_config", return_value=cfg), patch(
+            "app.services.scheduler.get_today_weather"
+        ) as mock_weather, patch(
+            "app.services.scheduler.generate_morning_briefing"
+        ):
             from app.services.scheduler import task_morning_briefing
+
             task_morning_briefing()
             mock_weather.assert_called_once()
 
@@ -77,31 +94,41 @@ class TestTaskWeeklyReflection(unittest.TestCase):
 
     def test_with_chat_id_calls_extract_implicit_memory(self):
         cfg = _make_config()
-        with patch("app.services.scheduler.load_config", return_value=cfg), \
-             patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.extract_implicit_memory") as mock_extract, \
-             patch("app.services.scheduler.generate_weekly_reflection"):
+        with patch("app.services.scheduler.load_config", return_value=cfg), patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch(
+            "app.services.scheduler.extract_implicit_memory"
+        ) as mock_extract, patch(
+            "app.services.scheduler.generate_weekly_reflection"
+        ):
             from app.services.scheduler import task_weekly_reflection
+
             task_weekly_reflection()
             mock_extract.assert_called_once_with("123456")
 
     def test_always_calls_generate_weekly_reflection(self):
         cfg = _make_config()
-        with patch("app.services.scheduler.load_config", return_value=cfg), \
-             patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.extract_implicit_memory"), \
-             patch("app.services.scheduler.generate_weekly_reflection") as mock_gen:
+        with patch("app.services.scheduler.load_config", return_value=cfg), patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch("app.services.scheduler.extract_implicit_memory"), patch(
+            "app.services.scheduler.generate_weekly_reflection"
+        ) as mock_gen:
             from app.services.scheduler import task_weekly_reflection
+
             task_weekly_reflection()
             mock_gen.assert_called_once_with(cfg)
 
     def test_no_chat_id_skips_extract_but_still_reflects(self):
         cfg = _make_config()
-        with patch("app.services.scheduler.load_config", return_value=cfg), \
-             patch("app.services.scheduler.get_primary_user_id", return_value=None), \
-             patch("app.services.scheduler.extract_implicit_memory") as mock_extract, \
-             patch("app.services.scheduler.generate_weekly_reflection") as mock_gen:
+        with patch("app.services.scheduler.load_config", return_value=cfg), patch(
+            "app.services.scheduler.get_primary_user_id", return_value=None
+        ), patch(
+            "app.services.scheduler.extract_implicit_memory"
+        ) as mock_extract, patch(
+            "app.services.scheduler.generate_weekly_reflection"
+        ) as mock_gen:
             from app.services.scheduler import task_weekly_reflection
+
             task_weekly_reflection()
             mock_extract.assert_not_called()
             mock_gen.assert_called_once_with(cfg)
@@ -116,12 +143,17 @@ class TestTaskProactiveCoachCheck(unittest.TestCase):
         cfg = _make_config()
         loads = {"acwr": acwr}
         phase_info = {"weeks_left": weeks_left, "phase": "Build"}
-        with patch("app.services.scheduler.get_primary_user_id", return_value=chat_id), \
-             patch("app.services.scheduler.load_config", return_value=cfg), \
-             patch("app.services.scheduler.get_training_loads", return_value=loads), \
-             patch("app.services.scheduler.calculate_training_phase", return_value=phase_info), \
-             patch("app.services.scheduler.send_telegram_msg") as mock_send:
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value=chat_id
+        ), patch("app.services.scheduler.load_config", return_value=cfg), patch(
+            "app.services.scheduler.get_training_loads", return_value=loads
+        ), patch(
+            "app.services.scheduler.calculate_training_phase", return_value=phase_info
+        ), patch(
+            "app.services.scheduler.send_telegram_msg"
+        ) as mock_send:
             from app.services.scheduler import task_proactive_coach_check
+
             task_proactive_coach_check()
             return mock_send
 
@@ -189,38 +221,48 @@ class TestTaskProactiveCoachCheck(unittest.TestCase):
 class TestTaskLogAudit(unittest.TestCase):
 
     def test_none_user_id_skips_audit(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value=None), \
-             patch("app.services.scheduler.run_audit") as mock_audit:
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value=None
+        ), patch("app.services.scheduler.run_audit") as mock_audit:
             from app.services.scheduler import task_log_audit
+
             task_log_audit()
             mock_audit.assert_not_called()
 
     def test_string_none_user_id_skips_audit(self):
         # get_primary_user_id() returns None → str(None) == "None" → skip
-        with patch("app.services.scheduler.get_primary_user_id", return_value=None), \
-             patch("app.services.scheduler.run_audit") as mock_audit:
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value=None
+        ), patch("app.services.scheduler.run_audit") as mock_audit:
             from app.services.scheduler import task_log_audit
+
             task_log_audit()
             mock_audit.assert_not_called()
 
     def test_valid_user_id_calls_run_audit(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.run_audit", return_value=3) as mock_audit:
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch("app.services.scheduler.run_audit", return_value=3) as mock_audit:
             from app.services.scheduler import task_log_audit
+
             task_log_audit()
             mock_audit.assert_called_once_with("123456")
 
     def test_run_audit_returns_count(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.run_audit", return_value=5) as mock_audit:
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch("app.services.scheduler.run_audit", return_value=5) as mock_audit:
             from app.services.scheduler import task_log_audit
+
             task_log_audit()  # should not raise; count is logged, not returned
             mock_audit.assert_called_once()
 
     def test_zero_audit_entries_does_not_crash(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.run_audit", return_value=0):
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch("app.services.scheduler.run_audit", return_value=0):
             from app.services.scheduler import task_log_audit
+
             task_log_audit()  # should not raise
 
 
@@ -232,17 +274,22 @@ class TestSetupJobs(unittest.TestCase):
     def _run_setup(self, config, mock_scheduler=None):
         if mock_scheduler is None:
             mock_scheduler = MagicMock()
-        with patch("app.services.scheduler.load_config", return_value=config), \
-             patch("app.services.scheduler.scheduler", mock_scheduler):
+        with patch("app.services.scheduler.load_config", return_value=config), patch(
+            "app.services.scheduler.scheduler", mock_scheduler
+        ):
             from app.services.scheduler import setup_jobs
+
             setup_jobs()
         return mock_scheduler
 
     def test_news_disabled_does_not_add_news_jobs(self):
         cfg = _make_config(news_enabled=False)
         mock_sched = self._run_setup(cfg)
-        job_ids = [call[1]["id"] for call in mock_sched.add_job.call_args_list
-                   if "id" in call[1]]
+        job_ids = [
+            call[1]["id"]
+            for call in mock_sched.add_job.call_args_list
+            if "id" in call[1]
+        ]
         self.assertNotIn("news_morning", job_ids)
         self.assertNotIn("news_afternoon", job_ids)
         self.assertNotIn("news_watch", job_ids)
@@ -250,8 +297,11 @@ class TestSetupJobs(unittest.TestCase):
     def test_news_enabled_adds_news_jobs(self):
         cfg = _make_config(news_enabled=True)
         mock_sched = self._run_setup(cfg)
-        job_ids = [call[1]["id"] for call in mock_sched.add_job.call_args_list
-                   if "id" in call[1]]
+        job_ids = [
+            call[1]["id"]
+            for call in mock_sched.add_job.call_args_list
+            if "id" in call[1]
+        ]
         self.assertIn("news_morning", job_ids)
         self.assertIn("news_afternoon", job_ids)
         self.assertIn("news_evening", job_ids)
@@ -259,10 +309,19 @@ class TestSetupJobs(unittest.TestCase):
     def test_core_jobs_always_added(self):
         cfg = _make_config(news_enabled=False)
         mock_sched = self._run_setup(cfg)
-        job_ids = [call[1]["id"] for call in mock_sched.add_job.call_args_list
-                   if "id" in call[1]]
-        for expected_id in ("briefing", "backup", "harvest", "weekly_reflection",
-                            "proactive_check", "log_audit"):
+        job_ids = [
+            call[1]["id"]
+            for call in mock_sched.add_job.call_args_list
+            if "id" in call[1]
+        ]
+        for expected_id in (
+            "briefing",
+            "backup",
+            "harvest",
+            "weekly_reflection",
+            "proactive_check",
+            "log_audit",
+        ):
             self.assertIn(expected_id, job_ids)
 
     def test_invalid_briefing_time_falls_back_to_default(self):
@@ -294,6 +353,7 @@ class TestSetupJobs(unittest.TestCase):
 # _is_late_trigger
 # ==========================================
 
+
 class TestIsLateTrigger(unittest.TestCase):
     """Unit tests for FR-1.13 / NFR-11 — late trigger skip logic."""
 
@@ -310,12 +370,14 @@ class TestIsLateTrigger(unittest.TestCase):
     def _mock_now(self, hour, minute):
         from app.services.scheduler import TZ_VN
         from datetime import datetime
+
         dt = datetime(2026, 4, 26, hour, minute, 0, tzinfo=TZ_VN)
         return dt
 
     def test_on_time_not_late(self):
         """Trigger exactly at scheduled time is allowed."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(6, 30)
             assert _is_late_trigger("morning", self._cfg()) is False
@@ -323,6 +385,7 @@ class TestIsLateTrigger(unittest.TestCase):
     def test_within_skip_window_not_late(self):
         """Trigger 29 min after schedule (< 30 min skip) → allowed."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(6, 59)
             assert _is_late_trigger("morning", self._cfg()) is False
@@ -330,6 +393,7 @@ class TestIsLateTrigger(unittest.TestCase):
     def test_exactly_at_skip_boundary_not_late(self):
         """Trigger exactly at skip_minutes → not late (> not >=)."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(7, 0)
             assert _is_late_trigger("morning", self._cfg()) is False
@@ -337,6 +401,7 @@ class TestIsLateTrigger(unittest.TestCase):
     def test_one_minute_past_boundary_is_late(self):
         """Trigger 31 min after schedule (> 30 min skip) → late."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(7, 1)
             assert _is_late_trigger("morning", self._cfg()) is True
@@ -344,6 +409,7 @@ class TestIsLateTrigger(unittest.TestCase):
     def test_custom_skip_minutes(self):
         """Respects non-default late_trigger_skip_minutes."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(7, 16)  # 46 min late
             assert _is_late_trigger("morning", self._cfg(skip=60)) is False
@@ -353,7 +419,10 @@ class TestIsLateTrigger(unittest.TestCase):
     def test_invalid_time_string_returns_false(self):
         """Malformed schedule time → returns False (fail open, don't skip)."""
         from app.services.scheduler import _is_late_trigger
-        cfg = {"news_agent": {"morning_time": "bad-time", "late_trigger_skip_minutes": 30}}
+
+        cfg = {
+            "news_agent": {"morning_time": "bad-time", "late_trigger_skip_minutes": 30}
+        }
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(10, 0)
             assert _is_late_trigger("morning", cfg) is False
@@ -361,13 +430,17 @@ class TestIsLateTrigger(unittest.TestCase):
     def test_no_config_uses_defaults(self):
         """Empty config uses default schedule times and skip_minutes=30."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
-            mock_dt.now.return_value = self._mock_now(7, 1)  # 31 min after 06:30 default
+            mock_dt.now.return_value = self._mock_now(
+                7, 1
+            )  # 31 min after 06:30 default
             assert _is_late_trigger("morning", {}) is True
 
     def test_midnight_crossing_evening_to_morning(self):
         """Current time 00:30 for morning session at 06:30 → diff is negative → not late."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(0, 30)
             assert _is_late_trigger("morning", self._cfg()) is False
@@ -375,6 +448,7 @@ class TestIsLateTrigger(unittest.TestCase):
     def test_afternoon_session(self):
         """Works correctly for afternoon session."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(18, 1)  # 31 min after 17:30
             assert _is_late_trigger("afternoon", self._cfg()) is True
@@ -382,6 +456,7 @@ class TestIsLateTrigger(unittest.TestCase):
     def test_evening_session(self):
         """Works correctly for evening session."""
         from app.services.scheduler import _is_late_trigger
+
         with patch("app.services.scheduler.datetime") as mock_dt:
             mock_dt.now.return_value = self._mock_now(20, 29)  # 29 min after 20:00
             assert _is_late_trigger("evening", self._cfg()) is False
@@ -394,75 +469,114 @@ class TestSchedulerTaskExceptionRecovery(unittest.TestCase):
     """Scheduler tasks must swallow all exceptions — BackgroundScheduler cannot handle propagated errors."""
 
     def test_morning_briefing_exception_does_not_propagate(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.load_config", return_value=_make_config()), \
-             patch("app.services.scheduler.get_today_weather", return_value="OK"), \
-             patch("app.services.scheduler.generate_morning_briefing", side_effect=Exception("AI timeout")):
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch(
+            "app.services.scheduler.load_config", return_value=_make_config()
+        ), patch(
+            "app.services.scheduler.get_today_weather", return_value="OK"
+        ), patch(
+            "app.services.scheduler.generate_morning_briefing",
+            side_effect=Exception("AI timeout"),
+        ):
             from app.services.scheduler import task_morning_briefing
+
             try:
                 task_morning_briefing()
             except Exception:
                 self.fail("task_morning_briefing should not propagate exceptions")
 
     def test_auto_harvest_exception_does_not_propagate(self):
-        with patch("app.services.scheduler.harvest_data", side_effect=Exception("Strava 503")):
+        with patch(
+            "app.services.scheduler.harvest_data", side_effect=Exception("Strava 503")
+        ):
             from app.services.scheduler import task_auto_harvest
+
             try:
                 task_auto_harvest()
             except Exception:
                 self.fail("task_auto_harvest should not propagate exceptions")
 
     def test_weekly_reflection_exception_does_not_propagate(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.load_config", return_value=_make_config()), \
-             patch("app.services.scheduler.extract_implicit_memory", side_effect=Exception("DB error")):
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch(
+            "app.services.scheduler.load_config", return_value=_make_config()
+        ), patch(
+            "app.services.scheduler.extract_implicit_memory",
+            side_effect=Exception("DB error"),
+        ):
             from app.services.scheduler import task_weekly_reflection
+
             try:
                 task_weekly_reflection()
             except Exception:
                 self.fail("task_weekly_reflection should not propagate exceptions")
 
     def test_morning_news_exception_does_not_propagate(self):
-        with patch("app.services.scheduler.load_config", return_value=_make_config()), \
-             patch("app.services.scheduler.generate_news_briefing", side_effect=Exception("Gemini 429")):
+        with patch(
+            "app.services.scheduler.load_config", return_value=_make_config()
+        ), patch(
+            "app.services.scheduler.generate_news_briefing",
+            side_effect=Exception("Gemini 429"),
+        ):
             from app.services.scheduler import task_morning_news
+
             try:
                 task_morning_news()
             except Exception:
                 self.fail("task_morning_news should not propagate exceptions")
 
     def test_afternoon_news_exception_does_not_propagate(self):
-        with patch("app.services.scheduler.load_config", return_value=_make_config()), \
-             patch("app.services.scheduler.generate_news_briefing", side_effect=Exception("timeout")):
+        with patch(
+            "app.services.scheduler.load_config", return_value=_make_config()
+        ), patch(
+            "app.services.scheduler.generate_news_briefing",
+            side_effect=Exception("timeout"),
+        ):
             from app.services.scheduler import task_afternoon_news
+
             try:
                 task_afternoon_news()
             except Exception:
                 self.fail("task_afternoon_news should not propagate exceptions")
 
     def test_evening_news_exception_does_not_propagate(self):
-        with patch("app.services.scheduler.load_config", return_value=_make_config()), \
-             patch("app.services.scheduler.generate_news_briefing", side_effect=Exception("SSL error")):
+        with patch(
+            "app.services.scheduler.load_config", return_value=_make_config()
+        ), patch(
+            "app.services.scheduler.generate_news_briefing",
+            side_effect=Exception("SSL error"),
+        ):
             from app.services.scheduler import task_evening_news
+
             try:
                 task_evening_news()
             except Exception:
                 self.fail("task_evening_news should not propagate exceptions")
 
     def test_proactive_coach_check_exception_does_not_propagate(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.load_config", return_value=_make_config()), \
-             patch("app.services.scheduler.get_training_loads", side_effect=Exception("DB locked")):
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch(
+            "app.services.scheduler.load_config", return_value=_make_config()
+        ), patch(
+            "app.services.scheduler.get_training_loads",
+            side_effect=Exception("DB locked"),
+        ):
             from app.services.scheduler import task_proactive_coach_check
+
             try:
                 task_proactive_coach_check()
             except Exception:
                 self.fail("task_proactive_coach_check should not propagate exceptions")
 
     def test_log_audit_exception_does_not_propagate(self):
-        with patch("app.services.scheduler.get_primary_user_id", return_value="123456"), \
-             patch("app.services.scheduler.run_audit", side_effect=Exception("IO error")):
+        with patch(
+            "app.services.scheduler.get_primary_user_id", return_value="123456"
+        ), patch("app.services.scheduler.run_audit", side_effect=Exception("IO error")):
             from app.services.scheduler import task_log_audit
+
             try:
                 task_log_audit()
             except Exception:

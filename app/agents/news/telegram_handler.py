@@ -6,6 +6,7 @@ Also handles free-text messages routed here via @news / @tin prefix.
 
 Zone 3: function names/logic = English, user-facing messages = Vietnamese.
 """
+
 import time
 from app.core.notification import send_telegram_msg
 from app.core.user_context import get_primary_user_id
@@ -88,6 +89,7 @@ def _check_rate_limit(chat_id: str, limit: int = RATE_LIMIT) -> bool:
 # COMMAND HANDLER
 # ==========================================
 
+
 def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
     """
     Parse /news [morning|afternoon|evening|help] and dispatch to the correct flow.
@@ -113,10 +115,7 @@ def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
         return
 
     if sub not in _VALID_FLOWS:
-        send_telegram_msg(
-            chat_id,
-            ERR_005.format(arg=sub) + f"\n\n{_HELP_MSG}"
-        )
+        send_telegram_msg(chat_id, ERR_005.format(arg=sub) + f"\n\n{_HELP_MSG}")
         return
 
     label = _FLOW_LABELS[sub]
@@ -132,6 +131,7 @@ def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
 # ==========================================
 # CHAT HANDLER
 # ==========================================
+
 
 def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
     """

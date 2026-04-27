@@ -10,6 +10,7 @@ Covers generate_morning_briefing():
   - Chat history context built
   - Gemini exception: error logged, no crash
 """
+
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -43,7 +44,13 @@ _PATCHES = [
 
 class TestGenerateMorningBriefing(unittest.TestCase):
 
-    def _start_patches(self, reply_text="Chào buổi sáng!", chat_id="123456", memories=None, history=None):
+    def _start_patches(
+        self,
+        reply_text="Chào buổi sáng!",
+        chat_id="123456",
+        memories=None,
+        history=None,
+    ):
         mocks = {}
         patchers = []
         for target in _PATCHES:
@@ -54,7 +61,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
             mocks[key] = m
 
         mocks["get_primary_user_id"].return_value = chat_id
-        mocks["get_plan_for_date"].return_value = {"workout_title": "Easy Run", "description": "45min easy"}
+        mocks["get_plan_for_date"].return_value = {
+            "workout_title": "Easy Run",
+            "description": "45min easy",
+        }
         mocks["load_history_for_gemini"].return_value = history or []
         mocks["get_all_active_memories"].return_value = memories or []
         mocks["get_runs_in_last_days"].return_value = []
@@ -76,16 +86,24 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     def test_sends_telegram_message(self):
         mocks, patchers = self._start_patches(reply_text="Chào buổi sáng!")
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config(), weather_data="Sunny 28°C")
-            mocks["send_telegram_msg"].assert_called_once_with("123456", "Chào buổi sáng!")
+            mocks["send_telegram_msg"].assert_called_once_with(
+                "123456", "Chào buổi sáng!"
+            )
         finally:
             self._stop(patchers)
 
     def test_saves_message_to_db(self):
         mocks, patchers = self._start_patches(reply_text="Good morning!")
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             mocks["save_message"].assert_called_once()
             args = mocks["save_message"].call_args[0]
@@ -98,7 +116,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     def test_no_chat_id_skips_telegram(self):
         mocks, patchers = self._start_patches(chat_id=None)
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             mocks["send_telegram_msg"].assert_not_called()
             mocks["save_message"].assert_not_called()
@@ -108,7 +129,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     def test_empty_gemini_response_sends_fallback(self):
         mocks, patchers = self._start_patches(reply_text="")
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             call_args = mocks["send_telegram_msg"].call_args[0]
             self.assertIn("không thể Briefing", call_args[1])
@@ -119,7 +143,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         mocks, patchers = self._start_patches()
         mocks["send_message_with_retry"].return_value.text = None
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             call_args = mocks["send_telegram_msg"].call_args[0]
             self.assertIn("không thể Briefing", call_args[1])
@@ -133,7 +160,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         ]
         mocks, patchers = self._start_patches(memories=memories)
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             mocks["get_all_active_memories"].assert_called_once_with("123456")
         finally:
@@ -142,7 +172,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     def test_build_standup_prompt_called(self):
         mocks, patchers = self._start_patches()
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config(), weather_data="Rainy 22°C")
             mocks["build_standup_prompt"].assert_called_once()
             kwargs = mocks["build_standup_prompt"].call_args[1]
@@ -157,7 +190,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         ]
         mocks, patchers = self._start_patches(history=history)
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             mocks["build_standup_prompt"].assert_called_once()
             kwargs = mocks["build_standup_prompt"].call_args[1]
@@ -169,10 +205,15 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     def test_empty_history_uses_default_context(self):
         mocks, patchers = self._start_patches(history=[])
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             kwargs = mocks["build_standup_prompt"].call_args[1]
-            self.assertEqual(kwargs.get("chat_context"), "Không có tương tác trò chuyện nào gần đây.")
+            self.assertEqual(
+                kwargs.get("chat_context"), "Không có tương tác trò chuyện nào gần đây."
+            )
         finally:
             self._stop(patchers)
 
@@ -180,7 +221,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         mocks, patchers = self._start_patches()
         mocks["send_message_with_retry"].side_effect = Exception("Network error")
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             mocks["send_telegram_msg"].assert_not_called()
         finally:
@@ -189,7 +233,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     def test_gemini_client_created_with_model_name(self):
         mocks, patchers = self._start_patches()
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             create_call = mocks["client"].chats.create.call_args
             self.assertEqual(create_call[1]["model"], "models/gemini-2.0-flash")
@@ -200,7 +247,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         mocks, patchers = self._start_patches()
         mocks["get_plan_for_date"].return_value = None
         try:
-            from app.agents.coach.flows.morning_briefing import generate_morning_briefing
+            from app.agents.coach.flows.morning_briefing import (
+                generate_morning_briefing,
+            )
+
             generate_morning_briefing(_make_config())
             kwargs = mocks["build_standup_prompt"].call_args[1]
             self.assertEqual(kwargs.get("today_plan"), "Chạy tự do.")

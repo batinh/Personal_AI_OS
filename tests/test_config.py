@@ -9,6 +9,7 @@ Covers:
   - Cache invalidation after save_config()
   - Missing example config fallback
 """
+
 import json
 import os
 import shutil
@@ -29,6 +30,7 @@ class TestConfigLoadSave(unittest.TestCase):
 
         # Reset module-level cache before each test
         import app.core.config as cfg_mod
+
         cfg_mod._config_cache = {}
         cfg_mod._config_cache_time = 0.0
 
@@ -45,6 +47,7 @@ class TestConfigLoadSave(unittest.TestCase):
         mock_path.__str__ = lambda s: self._config_path
         # Patch as simple string (CONFIG_PATH is str, not Path)
         import app.core.config as cfg_mod
+
         original_path = cfg_mod.CONFIG_PATH
         original_example = cfg_mod._EXAMPLE_CONFIG_PATH
         cfg_mod.CONFIG_PATH = self._config_path
@@ -63,6 +66,7 @@ class TestConfigLoadSave(unittest.TestCase):
     @patch("app.core.config._EXAMPLE_CONFIG_PATH")
     def test_save_then_load_roundtrip(self, mock_example, mock_path):
         import app.core.config as cfg_mod
+
         original_path = cfg_mod.CONFIG_PATH
         original_example = cfg_mod._EXAMPLE_CONFIG_PATH
         cfg_mod.CONFIG_PATH = self._config_path
@@ -92,6 +96,7 @@ class TestConfigCaching(unittest.TestCase):
         self._example_path = os.path.join(self._tmpdir, "config.example.json")
 
         import app.core.config as cfg_mod
+
         cfg_mod._config_cache = {}
         cfg_mod._config_cache_time = 0.0
 
@@ -100,6 +105,7 @@ class TestConfigCaching(unittest.TestCase):
 
     def test_second_load_uses_cache(self):
         import app.core.config as cfg_mod
+
         original_path = cfg_mod.CONFIG_PATH
         original_example = cfg_mod._EXAMPLE_CONFIG_PATH
         cfg_mod.CONFIG_PATH = self._config_path
@@ -123,6 +129,7 @@ class TestConfigCaching(unittest.TestCase):
 
     def test_save_invalidates_cache(self):
         import app.core.config as cfg_mod
+
         original_path = cfg_mod.CONFIG_PATH
         original_example = cfg_mod._EXAMPLE_CONFIG_PATH
         cfg_mod.CONFIG_PATH = self._config_path
@@ -135,7 +142,9 @@ class TestConfigCaching(unittest.TestCase):
             cfg_mod.save_config({"version": 3})
 
             result = cfg_mod.load_config()
-            self.assertEqual(result["version"], 3, "Cache should be invalidated after save")
+            self.assertEqual(
+                result["version"], 3, "Cache should be invalidated after save"
+            )
         finally:
             cfg_mod.CONFIG_PATH = original_path
             cfg_mod._EXAMPLE_CONFIG_PATH = original_example
@@ -152,6 +161,7 @@ class TestConfigAutoInit(unittest.TestCase):
         self._example_path = os.path.join(self._tmpdir, "config.example.json")
 
         import app.core.config as cfg_mod
+
         cfg_mod._config_cache = {}
         cfg_mod._config_cache_time = 0.0
 
@@ -160,6 +170,7 @@ class TestConfigAutoInit(unittest.TestCase):
 
     def test_auto_init_from_example(self):
         import app.core.config as cfg_mod
+
         original_path = cfg_mod.CONFIG_PATH
         original_example = cfg_mod._EXAMPLE_CONFIG_PATH
         cfg_mod.CONFIG_PATH = self._config_path
@@ -184,6 +195,7 @@ class TestConfigAutoInit(unittest.TestCase):
     def test_no_example_returns_empty(self):
         """If both config.json AND config.example.json are missing."""
         import app.core.config as cfg_mod
+
         original_path = cfg_mod.CONFIG_PATH
         original_example = cfg_mod._EXAMPLE_CONFIG_PATH
         cfg_mod.CONFIG_PATH = self._config_path
@@ -211,6 +223,7 @@ class TestCorruptedConfig(unittest.TestCase):
         self._example_path = os.path.join(self._tmpdir, "config.example.json")
 
         import app.core.config as cfg_mod
+
         cfg_mod._config_cache = {}
         cfg_mod._config_cache_time = 0.0
 
@@ -219,6 +232,7 @@ class TestCorruptedConfig(unittest.TestCase):
 
     def test_invalid_json_returns_empty_dict(self):
         import app.core.config as cfg_mod
+
         original_path = cfg_mod.CONFIG_PATH
         original_example = cfg_mod._EXAMPLE_CONFIG_PATH
         cfg_mod.CONFIG_PATH = self._config_path
@@ -235,6 +249,7 @@ class TestCorruptedConfig(unittest.TestCase):
 
     def test_empty_file_returns_empty_dict(self):
         import app.core.config as cfg_mod
+
         original_path = cfg_mod.CONFIG_PATH
         original_example = cfg_mod._EXAMPLE_CONFIG_PATH
         cfg_mod.CONFIG_PATH = self._config_path
@@ -259,6 +274,7 @@ class TestConfigThreadSafety(unittest.TestCase):
         os.makedirs(os.path.dirname(self._config_path))
 
         import app.core.config as cfg_mod
+
         cfg_mod._config_cache = {}
         cfg_mod._config_cache_time = 0.0
         self._original_path = cfg_mod.CONFIG_PATH
@@ -270,6 +286,7 @@ class TestConfigThreadSafety(unittest.TestCase):
 
     def tearDown(self):
         import app.core.config as cfg_mod
+
         cfg_mod.CONFIG_PATH = self._original_path
         cfg_mod._EXAMPLE_CONFIG_PATH = self._original_example
         cfg_mod._config_cache = {}

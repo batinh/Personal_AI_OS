@@ -1,5 +1,6 @@
 # app/agents/coach/prompts.py
 
+
 # ==========================================
 # 🏛️ LAYER 1: SYSTEM INSTRUCTION (IMMUTABLE)
 # ==========================================
@@ -45,7 +46,11 @@ TUYỆT ĐỐI KHÔNG tăng tải trong Taper. Mọi đề xuất tăng km đề
 """
 
     _lthr_ref = f"LTHR {lthr_bpm} bpm" if lthr_bpm > 0 else f"Max HR {max_hr} bpm"
-    _mp_power_range = f"{_mp_lo}–{_mp_hi}W (IF 0.82-0.87 rFTP {rftp_watts}W)" if rftp_watts > 0 else "IF 0.82-0.87 rFTP"
+    _mp_power_range = (
+        f"{_mp_lo}–{_mp_hi}W (IF 0.82-0.87 rFTP {rftp_watts}W)"
+        if rftp_watts > 0
+        else "IF 0.82-0.87 rFTP"
+    )
     _mp_sim_range = f"{_mp_lo}–{_mp_hi}W" if rftp_watts > 0 else "IF 0.82-0.87 rFTP"
     _hr_ceiling_mp = f"HR <{lthr_bpm - 8} bpm" if lthr_bpm > 0 else "HR ổn định"
 
@@ -140,6 +145,7 @@ Luôn đánh giá tâm lý VĐV từ tone chat:
 - TUYỆT ĐỐI KHÔNG để lỗi tool làm gián đoạn toàn bộ câu trả lời.
 """
 
+
 def build_core_system_instruction(custom_instruction: str) -> str:
     """Lightweight system prompt for the fast-chat path (~300 tokens).
 
@@ -165,7 +171,17 @@ Nếu tool trả về lỗi hoặc dữ liệu rỗng: KHÔNG báo lỗi kỹ th
 # ==========================================
 # 🧩 LAYER 2: SHARED CONTEXT & CORE TASKS
 # ==========================================
-def get_shared_context_block(now_str: str, chat_id: str, phase_text: str, countdown_text: str, acwr_text: str, actual_volume: float, weekly_decision_context: str, hr_zones_text: str = "", pace_zones_text: str = "") -> str:
+def get_shared_context_block(
+    now_str: str,
+    chat_id: str,
+    phase_text: str,
+    countdown_text: str,
+    acwr_text: str,
+    actual_volume: float,
+    weekly_decision_context: str,
+    hr_zones_text: str = "",
+    pace_zones_text: str = "",
+) -> str:
     """Dynamic data block providing sensory context to the AI."""
     zones_block = ""
     if hr_zones_text:
@@ -185,6 +201,7 @@ def get_shared_context_block(now_str: str, chat_id: str, phase_text: str, countd
 - Thực chạy tuần này: {actual_volume} km
 {weekly_decision_context}
 """
+
 
 DEFAULT_ANALYSIS_TASK = """
 [NHIỆM VỤ PHÂN TÍCH CHUYÊN SÂU]
@@ -287,10 +304,13 @@ UNIVERSAL_FORMAT_RULES = """
 4. Mỗi ý chỉ dài 1-2 dòng, xuống dòng liên tục để dễ đọc trên thiết bị di động.
 """
 
+
 # ==========================================
 # 🏗️ LAYER 5: TASK BUILDERS (FINAL PROMPT ASSEMBLY)
 # ==========================================
-def build_chat_prompt(shared_context: str, current_plans: str, active_memories: str = "") -> str:
+def build_chat_prompt(
+    shared_context: str, current_plans: str, active_memories: str = ""
+) -> str:
     """Flow 1: Handle Telegram Chat.
     Fast path passes empty shared_context/current_plans to keep the prompt minimal.
     """
@@ -305,15 +325,28 @@ def build_chat_prompt(shared_context: str, current_plans: str, active_memories: 
             f"{active_memories}\n"
             f"Lưu ý: Nếu VĐV đang có chấn thương hoặc tình trạng đặc biệt, hãy chủ động đề cập và điều chỉnh tư vấn cho phù hợp."
         )
-    parts.append("[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu.")
+    parts.append(
+        "[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu."
+    )
     parts.append(CHAT_FORMAT_RULES)
     return "\n\n".join(parts)
 
-def build_standup_prompt(shared_context: str, weather_data: str, recent_logs: str, today_plan: str, chat_context: str, active_memories: str = "Không có ghi chú đặc biệt.") -> str:
+
+def build_standup_prompt(
+    shared_context: str,
+    weather_data: str,
+    recent_logs: str,
+    today_plan: str,
+    chat_context: str,
+    active_memories: str = "Không có ghi chú đặc biệt.",
+) -> str:
     """Flow 2: Morning Briefing (Standup) on Telegram
     [REUSE] Integrates Weather Awareness into the existing Standup structure.
     """
-    _weather_data = weather_data or "Không có dữ liệu thời tiết. Chạy theo kế hoạch và theo dõi cảm giác cơ thể."
+    _weather_data = (
+        weather_data
+        or "Không có dữ liệu thời tiết. Chạy theo kế hoạch và theo dõi cảm giác cơ thể."
+    )
     weather_block = WEATHER_INSTRUCTION.format(weather_data=_weather_data)
     return f"""
 {shared_context}
@@ -352,6 +385,7 @@ Lưu ý: Nếu VĐV đang có chấn thương, BẮT BUỘC phải nhắc nhở 
 {CHAT_FORMAT_RULES}
 """
 
+
 def build_universal_run_analysis_prompt(
     shared_context: str,
     run_name: str,
@@ -364,7 +398,9 @@ def build_universal_run_analysis_prompt(
     metrics_block: str = "",
 ) -> str:
     """Flow 3: Omni-channel Run Analysis"""
-    metrics_section = f"\n[RUNNING SCIENCE METRICS]\n{metrics_block}" if metrics_block else ""
+    metrics_section = (
+        f"\n[RUNNING SCIENCE METRICS]\n{metrics_block}" if metrics_block else ""
+    )
     return f"""
 {shared_context}
 
@@ -384,6 +420,7 @@ def build_universal_run_analysis_prompt(
 
 {format_rules}
 """
+
 
 # ==========================================
 # 🧠 LAYER 6: WEEKLY SELF-REFLECTION (CRONJOB)
@@ -445,14 +482,22 @@ Hãy xuất báo cáo gửi cho VĐV theo đúng format dưới đây (BẮT BU�
 ► Trọng tâm: [Giải thích logic chốt Target dựa trên GCS, ACWR và Phase].
 """
 
-def build_weekly_reflection_prompt(shared_context: str, recent_logs: str, next_monday_str: str, active_memories: str = "Không có ghi chú đặc biệt.") -> str:
+
+def build_weekly_reflection_prompt(
+    shared_context: str,
+    recent_logs: str,
+    next_monday_str: str,
+    active_memories: str = "Không có ghi chú đặc biệt.",
+) -> str:
     """
     Builds the modular prompt for the Sunday Weekly Reflection Cronjob.
     [ZONE 1] English docstring. [ZONE 3] Injects data into Vietnamese prompt.
     """
     task_injected = DEFAULT_REFLECTION_TASK.format(next_monday_str=next_monday_str)
-    structure_injected = DEFAULT_REFLECTION_STRUCTURE.format(next_monday_str=next_monday_str)
-    
+    structure_injected = DEFAULT_REFLECTION_STRUCTURE.format(
+        next_monday_str=next_monday_str
+    )
+
     return f"""
 {shared_context}
 
@@ -472,6 +517,7 @@ Lưu ý: BẮT BUỘC xem xét kỹ các chấn thương (nếu có) hoặc sự
 
 {CHAT_FORMAT_RULES}
 """
+
 
 # ==========================================
 # 🌤️ LAYER 7: WEATHER AWARENESS (NEW)
@@ -541,6 +587,7 @@ Example 5 — Small talk, no memory to extract:
 [CHAT HISTORY]
 {chat_history}
 """
+
 
 def build_memory_extraction_prompt(chat_history: str, existing_memories: str) -> str:
     """

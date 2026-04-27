@@ -5,17 +5,20 @@ Computes all metrics from Strava stream arrays + activity metadata.
 No DB, no Gemini imports — this module is side-effect-free.
 All helpers return None (not raise) when data is absent or insufficient.
 """
+
 import json
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
 from app.core.logging_conf import get_module_logger
+
 logger = get_module_logger("coach")
 
 # --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
+
 
 def compute_stream_metrics(
     streams: Dict[str, Any],
@@ -59,7 +62,9 @@ def compute_stream_metrics(
         # ---- Group A: Aerobic Base ----
         hr_zones_result = _hr_zones(hr, max_hr, rest_hr, time_arr) if hr else None
         if hr_zones_result:
-            metrics["hr_zone_distribution"] = json.dumps(hr_zones_result["distribution"])
+            metrics["hr_zone_distribution"] = json.dumps(
+                hr_zones_result["distribution"]
+            )
             metrics["time_in_hr_zones_sec"] = json.dumps(hr_zones_result["seconds"])
         else:
             metrics["hr_zone_distribution"] = None
@@ -113,13 +118,16 @@ def compute_stream_metrics(
         return metrics
 
     except Exception as exc:
-        logger.error(f"[METRICS_ENGINE] compute_stream_metrics failed: {exc}", exc_info=True)
+        logger.error(
+            f"[METRICS_ENGINE] compute_stream_metrics failed: {exc}", exc_info=True
+        )
         return {}
 
 
 # --------------------------------------------------------------------------- #
 # Private helpers
 # --------------------------------------------------------------------------- #
+
 
 def _extract_arrays(streams: Dict[str, Any]) -> Dict[str, List]:
     """
@@ -200,9 +208,15 @@ def _aerobic_decoupling(hr: List[float], vel: List[float]) -> Dict:
     Positive value = cardiac drift / poor aerobic base.
     Cardiac drift = (avg_hr_second - avg_hr_first) / avg_hr_first * 100
     """
-    result = {"aerobic_decoupling_pct": None, "cardiac_drift_pct": None, "avg_efficiency_factor": None}
+    result = {
+        "aerobic_decoupling_pct": None,
+        "cardiac_drift_pct": None,
+        "avg_efficiency_factor": None,
+    }
     try:
-        valid = [(v, h) for v, h in zip(vel, hr) if v is not None and h and h > 0 and v > 0]
+        valid = [
+            (v, h) for v, h in zip(vel, hr) if v is not None and h and h > 0 and v > 0
+        ]
         if len(valid) < 10:
             return result
 
@@ -216,8 +230,12 @@ def _aerobic_decoupling(hr: List[float], vel: List[float]) -> Dict:
         if avg_hr_all > 0:
             result["avg_efficiency_factor"] = round(avg_vel_all / avg_hr_all * 1000, 4)
 
-        ef1 = (sum(v for v, _ in first) / len(first)) / (sum(h for _, h in first) / len(first))
-        ef2 = (sum(v for v, _ in second) / len(second)) / (sum(h for _, h in second) / len(second))
+        ef1 = (sum(v for v, _ in first) / len(first)) / (
+            sum(h for _, h in first) / len(first)
+        )
+        ef2 = (sum(v for v, _ in second) / len(second)) / (
+            sum(h for _, h in second) / len(second)
+        )
         if ef1 > 0:
             result["aerobic_decoupling_pct"] = round((ef1 - ef2) / ef1 * 100, 2)
 
@@ -349,7 +367,9 @@ def _elevation_stats(
             if gap_velocities:
                 avg_gap_vel = sum(gap_velocities) / len(gap_velocities)
                 if avg_gap_vel > 0:
-                    result["grade_adjusted_pace_min_km"] = round(1000 / (60 * avg_gap_vel), 3)
+                    result["grade_adjusted_pace_min_km"] = round(
+                        1000 / (60 * avg_gap_vel), 3
+                    )
 
     except Exception as exc:
         logger.warning(f"[METRICS_ENGINE] _elevation_stats error: {exc}")
@@ -385,7 +405,7 @@ def _power_stats(
         if len(arr) >= window:
             kernel = np.ones(window) / window
             rolling_mean = np.convolve(arr, kernel, mode="valid")
-            rolling_pow4 = rolling_mean ** 4
+            rolling_pow4 = rolling_mean**4
             np_val = float(np.mean(rolling_pow4) ** 0.25)
             result["normalized_power_watts"] = round(np_val, 1)
 
@@ -394,7 +414,7 @@ def _power_stats(
                 result["intensity_factor"] = round(if_val, 4)
                 # TSS = (time_min × IF² / 36) × 100  [from design doc formula]
                 if moving_time_min > 0:
-                    tss = (moving_time_min * if_val ** 2 / 36) * 100
+                    tss = (moving_time_min * if_val**2 / 36) * 100
                     result["training_stress_score"] = round(tss, 1)
 
     except Exception as exc:
@@ -470,7 +490,9 @@ def _detect_intervals(
                 pass
 
         # Detect hard effort blocks
-        blocks = _find_hard_blocks(smoothed, hard_threshold, secs_per, min_duration_sec=30)
+        blocks = _find_hard_blocks(
+            smoothed, hard_threshold, secs_per, min_duration_sec=30
+        )
 
         name_lower = activity_name.lower()
 
@@ -479,7 +501,9 @@ def _detect_intervals(
             # No hard effort blocks detected
             if z45_pct >= 10:
                 workout_type = "tempo"
-            elif avg_vel > 0 and 1000 / (60 * avg_vel) < 5.5:  # faster than 5:30/km = tempo-ish
+            elif (
+                avg_vel > 0 and 1000 / (60 * avg_vel) < 5.5
+            ):  # faster than 5:30/km = tempo-ish
                 workout_type = "tempo"
             else:
                 workout_type = _classify_easy_or_long(vel, active, time_arr, secs_per)
@@ -520,7 +544,11 @@ def _detect_intervals(
                 avg_rep_pace = sum(rep_paces) / len(rep_paces)
                 result["interval_avg_pace_min_km"] = round(avg_rep_pace, 3)
                 if len(rep_paces) > 1:
-                    cv = float(np.std(rep_paces)) / avg_rep_pace if avg_rep_pace > 0 else 0
+                    cv = (
+                        float(np.std(rep_paces)) / avg_rep_pace
+                        if avg_rep_pace > 0
+                        else 0
+                    )
                     result["interval_pace_consistency_pct"] = round((1 - cv) * 100, 1)
 
             if rep_hrs:
@@ -559,20 +587,24 @@ def _find_hard_blocks(
             start = i
         elif in_block and v <= threshold:
             if i - start >= min_samples:
-                blocks.append({
-                    "start_idx": start,
-                    "end_idx": i,
-                    "duration_sec": (i - start) * secs_per,
-                })
+                blocks.append(
+                    {
+                        "start_idx": start,
+                        "end_idx": i,
+                        "duration_sec": (i - start) * secs_per,
+                    }
+                )
             in_block = False
 
     # Close final block if still open
     if in_block and len(smoothed) - start >= min_samples:
-        blocks.append({
-            "start_idx": start,
-            "end_idx": len(smoothed),
-            "duration_sec": (len(smoothed) - start) * secs_per,
-        })
+        blocks.append(
+            {
+                "start_idx": start,
+                "end_idx": len(smoothed),
+                "duration_sec": (len(smoothed) - start) * secs_per,
+            }
+        )
     return blocks
 
 
@@ -591,14 +623,14 @@ def _recovery_hr_quality(
     for block in blocks:
         end = block["end_idx"]
         # HR at end of block
-        block_hr_end_slice = hr[max(0, end - 3): end]
+        block_hr_end_slice = hr[max(0, end - 3) : end]
         valid_end = [h for h in block_hr_end_slice if h and h > 0]
         if not valid_end:
             continue
         hr_peak = max(valid_end)
 
         # HR 60s after block
-        recovery_slice = hr[end: end + look_ahead_samples]
+        recovery_slice = hr[end : end + look_ahead_samples]
         valid_rec = [h for h in recovery_slice if h and h > 0]
         if not valid_rec:
             continue
@@ -633,6 +665,7 @@ def _classify_easy_or_long(
 # --------------------------------------------------------------------------- #
 # Prompt-side helper (used by run_analysis.py)
 # --------------------------------------------------------------------------- #
+
 
 def build_run_metrics_block(metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
     """
@@ -686,9 +719,16 @@ def build_run_metrics_block(metrics: Dict[str, Any], config: Dict[str, Any]) -> 
     if reps is not None and wt in ("interval", "sprint", "tempo"):
         lines.append(f"Reps: {reps}")
         _add("Rep avg pace", metrics.get("interval_avg_pace_min_km"), " min/km", ".2f")
-        _add("Rep consistency", metrics.get("interval_pace_consistency_pct"), "%", ".1f")
+        _add(
+            "Rep consistency", metrics.get("interval_pace_consistency_pct"), "%", ".1f"
+        )
         _add("Rep avg HR", metrics.get("interval_avg_hr_bpm"), " bpm", ".0f")
-        _add("Recovery HR quality", metrics.get("recovery_hr_quality_bpm"), " bpm drop/min", ".0f")
+        _add(
+            "Recovery HR quality",
+            metrics.get("recovery_hr_quality_bpm"),
+            " bpm drop/min",
+            ".0f",
+        )
 
     # Power section (only if data present)
     avg_p = metrics.get("avg_power_watts")

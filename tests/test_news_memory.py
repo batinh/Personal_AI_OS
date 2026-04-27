@@ -1,6 +1,7 @@
 """
 Tests for app.agents.news.memory — load/save news agent state and signal extraction.
 """
+
 import json
 import unittest
 from unittest.mock import patch, MagicMock
@@ -40,7 +41,7 @@ class TestParseExtraction(unittest.TestCase):
         self.assertEqual(result["disliked"], ["politics"])
 
     def test_json_with_markdown_fences(self):
-        raw = "```json\n{\"liked\": [\"chip\"]}\n```"
+        raw = '```json\n{"liked": ["chip"]}\n```'
         result = _parse_extraction(raw)
         self.assertIsNotNone(result)
         self.assertEqual(result["liked"], ["chip"])
@@ -69,6 +70,7 @@ class TestLoadNewsMemory(unittest.TestCase):
             if key == "liked_topics":
                 return json.dumps(["AI", "chip"])
             return None
+
         mock_get.side_effect = side_effect
 
         mem = load_news_memory("user1")
@@ -103,7 +105,9 @@ class TestExtractAndSaveSignals(unittest.TestCase):
         mock_response.text = '{"liked": ["AI", "EV"], "disliked": [], "notes": ""}'
         mock_client.models.generate_content.return_value = mock_response
 
-        extract_and_save_signals("user1", "user: tell me about AI\nassistant: ...", "model")
+        extract_and_save_signals(
+            "user1", "user: tell me about AI\nassistant: ...", "model"
+        )
 
         calls = {call[0][1]: call[0][2] for call in mock_save.call_args_list}
         self.assertIn("liked_topics", calls)
@@ -131,7 +135,11 @@ class TestExtractAndSaveSignals(unittest.TestCase):
     @patch("app.agents.news.memory.load_news_memory")
     @patch("app.agents.news.memory.save_news_memory")
     def test_graceful_on_api_error(self, mock_save, mock_load, mock_client):
-        mock_load.return_value = {"liked_topics": [], "disliked_topics": [], "extra_notes": ""}
+        mock_load.return_value = {
+            "liked_topics": [],
+            "disliked_topics": [],
+            "extra_notes": "",
+        }
         mock_client.models.generate_content.side_effect = RuntimeError("API error")
 
         # Should not raise
@@ -144,6 +152,7 @@ class TestRunExtractInBackground(unittest.TestCase):
     def test_spawns_thread(self, mock_extract):
         run_extract_in_background("user1", "chat", "model")
         import time
+
         time.sleep(0.05)  # let daemon thread start
         mock_extract.assert_called_once()
 

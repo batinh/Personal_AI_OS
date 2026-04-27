@@ -5,6 +5,7 @@ Toàn bộ I/O bên ngoài (DB, RAG, filesystem) được mock.
 Test tập trung vào: output format đúng, error handling graceful,
 tool routing logic, và guard clauses.
 """
+
 import unittest
 from unittest.mock import patch
 
@@ -203,8 +204,11 @@ class TestSearchLongTermMemory(unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 class TestGetTotalRunStats(unittest.TestCase):
 
-    @patch("builtins.open", new_callable=unittest.mock.mock_open,
-           read_data='{"recent_run_totals": 180.5, "ytd_run_totals": 950.2}')
+    @patch(
+        "builtins.open",
+        new_callable=unittest.mock.mock_open,
+        read_data='{"recent_run_totals": 180.5, "ytd_run_totals": 950.2}',
+    )
     def test_returns_formatted_stats(self, mock_file):
         result = get_total_run_stats("u1")
         self.assertIn("180.5km", result)
@@ -225,7 +229,12 @@ class TestToolRouting(unittest.TestCase):
     """Verify the read-only vs write tool routing logic."""
 
     def setUp(self):
-        from app.agents.coach.agent import _select_tools_for_message, _TOOLS_READ_ONLY, _TOOLS_WRITE
+        from app.agents.coach.agent import (
+            _select_tools_for_message,
+            _TOOLS_READ_ONLY,
+            _TOOLS_WRITE,
+        )
+
         self._select = _select_tools_for_message
         self._read_count = len(_TOOLS_READ_ONLY)
         self._write_count = len(_TOOLS_WRITE)
@@ -235,11 +244,18 @@ class TestToolRouting(unittest.TestCase):
         self.assertEqual(len(tools), self._read_count)
 
     def test_write_keyword_triggers_write_tools(self):
-        for keyword in ["đổi lịch", "hủy buổi chạy", "tăng target", "set target", "chốt tuần này"]:
+        for keyword in [
+            "đổi lịch",
+            "hủy buổi chạy",
+            "tăng target",
+            "set target",
+            "chốt tuần này",
+        ]:
             tools = self._select(keyword)
             self.assertEqual(
-                len(tools), self._read_count + self._write_count,
-                f"Expected write tools for keyword: '{keyword}'"
+                len(tools),
+                self._read_count + self._write_count,
+                f"Expected write tools for keyword: '{keyword}'",
             )
 
     def test_mixed_message_with_write_keyword_gets_all_tools(self):
@@ -259,6 +275,7 @@ class TestGetRunStreamCsv(unittest.TestCase):
     @patch("app.agents.coach.tools.get_run_activity_raw")
     def test_no_raw_activity_returns_not_found(self, mock_raw):
         from app.agents.coach.tools import get_run_stream_csv
+
         mock_raw.return_value = None
         result = get_run_stream_csv("act1")
         self.assertIn("Không tìm thấy", result)
@@ -266,6 +283,7 @@ class TestGetRunStreamCsv(unittest.TestCase):
     @patch("app.agents.coach.tools.get_run_activity_raw")
     def test_no_stream_file_path_returns_not_found(self, mock_raw):
         from app.agents.coach.tools import get_run_stream_csv
+
         mock_raw.return_value = {"stream_file_path": ""}
         result = get_run_stream_csv("act1")
         self.assertIn("Không tìm thấy", result)
@@ -274,6 +292,7 @@ class TestGetRunStreamCsv(unittest.TestCase):
     @patch("app.agents.coach.tools.get_run_activity_raw")
     def test_unloadable_payload_returns_error(self, mock_raw, mock_load):
         from app.agents.coach.tools import get_run_stream_csv
+
         mock_raw.return_value = {"stream_file_path": "/data/act1.json"}
         mock_load.return_value = None
         result = get_run_stream_csv("act1")
@@ -284,6 +303,7 @@ class TestGetRunStreamCsv(unittest.TestCase):
     @patch("app.agents.coach.tools.get_run_activity_raw")
     def test_empty_arrays_returns_empty_message(self, mock_raw, mock_load, mock_arrays):
         from app.agents.coach.tools import get_run_stream_csv
+
         mock_raw.return_value = {"stream_file_path": "/data/act1.json"}
         mock_load.return_value = {"time": [], "heartrate": []}
         mock_arrays.return_value = {}
@@ -295,6 +315,7 @@ class TestGetRunStreamCsv(unittest.TestCase):
     @patch("app.agents.coach.tools.get_run_activity_raw")
     def test_happy_path_returns_csv_header(self, mock_raw, mock_load, mock_arrays):
         from app.agents.coach.tools import get_run_stream_csv
+
         mock_raw.return_value = {"stream_file_path": "/data/act1.json"}
         mock_load.return_value = {"time": [0, 1, 2]}
         mock_arrays.return_value = {
@@ -316,6 +337,7 @@ class TestGetRunComputedMetrics(unittest.TestCase):
     @patch("app.agents.coach.tools.get_run_metrics_from_db")
     def test_not_found_returns_not_found_message(self, mock_db):
         from app.agents.coach.tools import get_run_computed_metrics
+
         mock_db.return_value = {}
         result = get_run_computed_metrics("act1", "u1")
         self.assertIn("Chưa có metrics", result)
@@ -324,6 +346,7 @@ class TestGetRunComputedMetrics(unittest.TestCase):
     @patch("app.agents.coach.tools.get_run_metrics_from_db")
     def test_block_is_returned_when_found(self, mock_db, mock_block):
         from app.agents.coach.tools import get_run_computed_metrics
+
         mock_db.return_value = {"avg_cadence_spm": 172.0}
         mock_block.return_value = "Cadence: 172 spm | TSS: 55"
         result = get_run_computed_metrics("act1", "u1")
@@ -333,6 +356,7 @@ class TestGetRunComputedMetrics(unittest.TestCase):
     @patch("app.agents.coach.tools.get_run_metrics_from_db")
     def test_none_block_returns_fallback(self, mock_db, mock_block):
         from app.agents.coach.tools import get_run_computed_metrics
+
         mock_db.return_value = {"avg_cadence_spm": 172.0}
         mock_block.return_value = None
         result = get_run_computed_metrics("act1", "u1")
@@ -347,6 +371,7 @@ class TestGetMetricTrend(unittest.TestCase):
     @patch("app.agents.coach.tools.get_metric_trend_data")
     def test_empty_data_returns_no_data_message(self, mock_data):
         from app.agents.coach.tools import get_metric_trend
+
         mock_data.return_value = []
         result = get_metric_trend("u1", "avg_cadence_spm")
         self.assertIn("Không có dữ liệu", result)
@@ -354,6 +379,7 @@ class TestGetMetricTrend(unittest.TestCase):
     @patch("app.agents.coach.tools.get_metric_trend_data")
     def test_with_data_formats_output(self, mock_data):
         from app.agents.coach.tools import get_metric_trend
+
         mock_data.return_value = [
             {"date": "2026-04-15", "value": 172.0},
             {"date": "2026-04-10", "value": 170.5},
@@ -365,6 +391,7 @@ class TestGetMetricTrend(unittest.TestCase):
     @patch("app.agents.coach.tools.get_metric_trend_data")
     def test_custom_days_parameter_passed_through(self, mock_data):
         from app.agents.coach.tools import get_metric_trend
+
         mock_data.return_value = []
         get_metric_trend("u1", "avg_cadence_spm", days=14)
         mock_data.assert_called_once_with("u1", "avg_cadence_spm", 14)
@@ -378,6 +405,7 @@ class TestGetVolumeForWeek(unittest.TestCase):
     @patch("app.agents.coach.tools.get_monthly_volume")
     def test_no_week_runs_returns_fallback_monthly(self, mock_monthly):
         from app.agents.coach.tools import get_volume_for_week
+
         mock_monthly.return_value = {
             "total_distance_km": 45.0,
             "total_runs": 5,
@@ -389,7 +417,12 @@ class TestGetVolumeForWeek(unittest.TestCase):
     @patch("app.agents.coach.tools.get_monthly_volume")
     def test_output_contains_week_number(self, mock_monthly):
         from app.agents.coach.tools import get_volume_for_week
-        mock_monthly.return_value = {"total_distance_km": 30.0, "total_runs": 3, "runs": []}
+
+        mock_monthly.return_value = {
+            "total_distance_km": 30.0,
+            "total_runs": 3,
+            "runs": [],
+        }
         result = get_volume_for_week("u1", 2026, 10)
         self.assertIn("10", result)
         self.assertIn("2026", result)
@@ -403,6 +436,7 @@ class TestGetVolumeSummary(unittest.TestCase):
     @patch("app.agents.coach.tools.get_monthly_volume")
     def test_period_month_returns_monthly_summary(self, mock_monthly):
         from app.agents.coach.tools import get_volume_summary
+
         mock_monthly.return_value = {
             "total_distance_km": 120.5,
             "total_runs": 14,
@@ -415,6 +449,7 @@ class TestGetVolumeSummary(unittest.TestCase):
     @patch("app.agents.coach.tools.get_yearly_volume")
     def test_period_year_returns_yearly_summary(self, mock_yearly):
         from app.agents.coach.tools import get_volume_summary
+
         mock_yearly.return_value = {
             "total_distance_km": 800.0,
             "total_runs": 90,
@@ -428,6 +463,7 @@ class TestGetVolumeSummary(unittest.TestCase):
     @patch("app.agents.coach.tools.get_yearly_volume")
     def test_period_year_no_breakdown_still_works(self, mock_yearly):
         from app.agents.coach.tools import get_volume_summary
+
         mock_yearly.return_value = {
             "total_distance_km": 500.0,
             "total_runs": 60,

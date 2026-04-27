@@ -1,6 +1,7 @@
 """
 Tests for stream file storage: save/load raw Strava streams under data/streams.
 """
+
 import json
 import os
 import tempfile
@@ -77,9 +78,7 @@ class TestSaveAndLoadActivityStream(unittest.TestCase):
 
     def test_load_returns_payload(self):
         with patch("app.services.stream_storage.DATA_DIR", Path(self.tmp)):
-            save_activity_stream_to_file(
-                "u2", "a2", {"time": {"data": [0, 1, 2]}}
-            )
+            save_activity_stream_to_file("u2", "a2", {"time": {"data": [0, 1, 2]}})
             payload = load_activity_stream_from_file("streams/u2/a2.json")
         self.assertIsNotNone(payload)
         self.assertEqual(payload["activity_id"], "a2")
@@ -121,6 +120,7 @@ class TestGetStreamArrays(unittest.TestCase):
 
 def _rmtree(path):
     import shutil
+
     if os.path.exists(path):
         shutil.rmtree(path, ignore_errors=True)
 

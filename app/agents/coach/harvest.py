@@ -9,8 +9,13 @@ from app.agents.coach.strava_client import StravaClient
 from app.agents.coach.utils import calculate_trimp
 from app.core.config import load_config
 from app.core.database import (
-    init_db, upsert_user, save_run_activity, save_run_activity_raw,
-    delete_run_activity, list_run_activity_ids_in_date_range, upsert_run_computed_metrics,
+    init_db,
+    upsert_user,
+    save_run_activity,
+    save_run_activity_raw,
+    delete_run_activity,
+    list_run_activity_ids_in_date_range,
+    upsert_run_computed_metrics,
 )
 from app.agents.coach.metrics_engine import compute_stream_metrics
 from app.services.stream_storage import save_activity_stream_to_file
@@ -18,6 +23,7 @@ from app.core.notification import send_telegram_msg
 from app.services.rag_memory import rag_db
 
 from app.core.logging_conf import get_module_logger
+
 logger = get_module_logger("coach")
 
 RUN_TYPES = {"Run", "TrailRun", "VirtualRun"}
@@ -26,28 +32,30 @@ RUN_TYPES = {"Run", "TrailRun", "VirtualRun"}
 # ==========================================
 # SHARED HELPER: Build activity record from Strava API response
 # ==========================================
-def build_activity_record(activity: dict, max_hr: int = 185, rest_hr: int = 55, gender: str = "male") -> dict:
+def build_activity_record(
+    activity: dict, max_hr: int = 185, rest_hr: int = 55, gender: str = "male"
+) -> dict:
     """
     Build a normalized activity_data dict from a raw Strava activity response.
     Single Source of Truth for distance/time/TRIMP calculation across all pipelines
     (Webhook ingest, Cron harvest, Manual sync).
     """
-    dist_km = activity.get('distance', 0) / 1000
-    moving_min = activity.get('moving_time', 0) / 60
-    avg_hr = activity.get('average_heartrate', 0)
+    dist_km = activity.get("distance", 0) / 1000
+    moving_min = activity.get("moving_time", 0) / 60
+    avg_hr = activity.get("average_heartrate", 0)
     trimp_data = calculate_trimp(moving_min, avg_hr, max_hr, rest_hr, gender)
 
     return {
-        'activity_id': str(activity.get('id', activity.get('activity_id', ''))),
-        'name': activity.get('name', 'Unknown Run'),
-        'start_date': activity.get('start_date_local', activity.get('start_date', '')),
-        'distance_km': round(dist_km, 2),
-        'moving_time_min': round(moving_min, 2),
-        'avg_hr': int(avg_hr),
-        'max_hr': int(activity.get('max_heartrate', 0)),
-        'suffer_score': int(activity.get('suffer_score', 0) or 0),
-        'trimp_score': trimp_data.get('trimp', 0.0),
-        '_trimp_data': trimp_data,
+        "activity_id": str(activity.get("id", activity.get("activity_id", ""))),
+        "name": activity.get("name", "Unknown Run"),
+        "start_date": activity.get("start_date_local", activity.get("start_date", "")),
+        "distance_km": round(dist_km, 2),
+        "moving_time_min": round(moving_min, 2),
+        "avg_hr": int(avg_hr),
+        "max_hr": int(activity.get("max_heartrate", 0)),
+        "suffer_score": int(activity.get("suffer_score", 0) or 0),
+        "trimp_score": trimp_data.get("trimp", 0.0),
+        "_trimp_data": trimp_data,
     }
 
 
@@ -77,7 +85,12 @@ def _ingest_one_activity(
     rest_hr = int(config.get("rest_hr", 55))
     gender = config.get("gender", "male")
     act_id = str(act_summary.get("id"))
-    result = {"loaded": False, "memorized": False, "metrics": False, "skipped_rag": False}
+    result = {
+        "loaded": False,
+        "memorized": False,
+        "metrics": False,
+        "skipped_rag": False,
+    }
 
     # Step 1: Save/overwrite basic record (distance, TRIMP, HR)
     activity_data = build_activity_record(act_summary, max_hr, rest_hr, gender)
@@ -100,11 +113,24 @@ def _ingest_one_activity(
     logger.info(f"[INGEST] Fetching detail for {act_id} from Strava...")
     act_name, _csv_data, meta_data, stream_raw = strava_client.get_activity_data(act_id)
     if not act_name or not meta_data:
-        logger.warning(f"[INGEST] No detail returned for {act_id}; skipping RAG/metrics.")
+        logger.warning(
+            f"[INGEST] No detail returned for {act_id}; skipping RAG/metrics."
+        )
         return result
 
-    stream_file_path = save_activity_stream_to_file(chat_id, act_id, stream_raw) if stream_raw else None
-    save_run_activity_raw(chat_id, act_id, act_name, meta_data, stream_csv="", stream_file_path=stream_file_path)
+    stream_file_path = (
+        save_activity_stream_to_file(chat_id, act_id, stream_raw)
+        if stream_raw
+        else None
+    )
+    save_run_activity_raw(
+        chat_id,
+        act_id,
+        act_name,
+        meta_data,
+        stream_csv="",
+        stream_file_path=stream_file_path,
+    )
 
     # Step 4: Compute running science metrics and persist
     if stream_raw:
@@ -120,7 +146,11 @@ def _ingest_one_activity(
     dist_km = activity_data["distance_km"]
     moving_min = activity_data["moving_time_min"]
     avg_hr = activity_data["avg_hr"]
-    pace_str = f"{int(moving_min/dist_km)}:{int(((moving_min/dist_km)%1)*60):02d}" if dist_km > 0 else "0:00"
+    pace_str = (
+        f"{int(moving_min/dist_km)}:{int(((moving_min/dist_km)%1)*60):02d}"
+        if dist_km > 0
+        else "0:00"
+    )
 
     memory_content = (
         f"[PHÂN TÍCH BÀI CHẠY LỊCH SỬ]\n"
@@ -133,7 +163,11 @@ def _ingest_one_activity(
             doc_id=act_id,
             content=memory_content,
             domain="coach",
-            extra_meta={"user_id": str(chat_id), "type": "run_analysis", "source": source},
+            extra_meta={
+                "user_id": str(chat_id),
+                "type": "run_analysis",
+                "source": source,
+            },
         )
         result["memorized"] = True
     except Exception as exc:
@@ -186,7 +220,10 @@ def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
     NOTE: regular def (not async) — runs in BackgroundTasks threadpool.
     """
     logger.info(f"[SYNC] Starting manual sync. Limit: {limit}, Days back: {days_back}")
-    send_telegram_msg(chat_id, f"⏳ Đang thu hoạch dữ liệu Strava ({'30 ngày qua' if days_back else f'{limit} bài gần nhất'})...")
+    send_telegram_msg(
+        chat_id,
+        f"⏳ Đang thu hoạch dữ liệu Strava ({'30 ngày qua' if days_back else f'{limit} bài gần nhất'})...",
+    )
 
     init_db()
     strava_client = StravaClient()
@@ -203,7 +240,9 @@ def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
     for activity in reversed(target_activities):
         if activity.get("type") not in RUN_TYPES:
             continue
-        r = _ingest_one_activity(activity, chat_id, config, strava_client, source="sync")
+        r = _ingest_one_activity(
+            activity, chat_id, config, strava_client, source="sync"
+        )
         if r["loaded"]:
             loaded += 1
         if r["memorized"]:
@@ -230,7 +269,10 @@ def execute_sync_all(chat_id: str):
     NOTE: regular def (not async) — runs in BackgroundTasks threadpool.
     """
     logger.info(f"[SYNC-ALL] Starting full-history sync for {chat_id}")
-    send_telegram_msg(chat_id, "⏳ <b>Sync All</b> đang bắt đầu — đang tải toàn bộ lịch sử Strava theo trang...")
+    send_telegram_msg(
+        chat_id,
+        "⏳ <b>Sync All</b> đang bắt đầu — đang tải toàn bộ lịch sử Strava theo trang...",
+    )
 
     init_db()
     strava_client = StravaClient()
@@ -243,11 +285,15 @@ def execute_sync_all(chat_id: str):
         send_telegram_msg(chat_id, "⚠️ Không tìm thấy bài chạy nào trên Strava.")
         return
 
-    send_telegram_msg(chat_id, f"📋 Tìm thấy <b>{len(runs)}</b> bài chạy. Đang xử lý...")
+    send_telegram_msg(
+        chat_id, f"📋 Tìm thấy <b>{len(runs)}</b> bài chạy. Đang xử lý..."
+    )
 
     loaded, memorized, metrics = 0, 0, 0
     for idx, activity in enumerate(reversed(runs), start=1):
-        r = _ingest_one_activity(activity, chat_id, config, strava_client, source="sync_all")
+        r = _ingest_one_activity(
+            activity, chat_id, config, strava_client, source="sync_all"
+        )
         if r["loaded"]:
             loaded += 1
         if r["memorized"]:
@@ -255,7 +301,10 @@ def execute_sync_all(chat_id: str):
         if r["metrics"]:
             metrics += 1
         if idx % 25 == 0:
-            send_telegram_msg(chat_id, f"⏳ Đã xử lý {idx}/{len(runs)} bài — đã cấy {memorized} ký ức...")
+            send_telegram_msg(
+                chat_id,
+                f"⏳ Đã xử lý {idx}/{len(runs)} bài — đã cấy {memorized} ký ức...",
+            )
         time.sleep(1)
 
     send_telegram_msg(
@@ -287,13 +336,22 @@ def _filter_by_days(activities: list, days_back: int | None) -> list:
     return result
 
 
-def _reconcile(chat_id: str, strava_client: StravaClient, target_activities: list, days_back: int | None):
+def _reconcile(
+    chat_id: str,
+    strava_client: StravaClient,
+    target_activities: list,
+    days_back: int | None,
+):
     """Detect activities deleted on Strava and remove local copies (safe mode)."""
     try:
-        strava_ids = {str(a.get("id")) for a in target_activities if a.get("type") in RUN_TYPES}
+        strava_ids = {
+            str(a.get("id")) for a in target_activities if a.get("type") in RUN_TYPES
+        }
 
         if days_back:
-            window_start = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            window_start = (datetime.now() - timedelta(days=days_back)).strftime(
+                "%Y-%m-%d"
+            )
             window_end = datetime.now().strftime("%Y-%m-%d")
         else:
             dates = []
@@ -311,7 +369,9 @@ def _reconcile(chat_id: str, strava_client: StravaClient, target_activities: lis
         max_verify = int(os.getenv("SYNC_RECONCILE_CAP", "10"))
         removed = 0
 
-        logger.info(f"[SYNC-RECONCILE] Window {window_start} -> {window_end}. Candidates: {len(candidates)}")
+        logger.info(
+            f"[SYNC-RECONCILE] Window {window_start} -> {window_end}. Candidates: {len(candidates)}"
+        )
         for cand in candidates[:max_verify]:
             aid = str(cand["activity_id"])
             res = strava_client.fetch_activity_detail_status(aid)
@@ -330,7 +390,10 @@ def _reconcile(chat_id: str, strava_client: StravaClient, target_activities: lis
             time.sleep(0.5)
 
         if removed > 0:
-            send_telegram_msg(chat_id, f"🗑️ <b>Reconcile:</b> Đã gỡ {removed} bài không còn trên Strava.")
+            send_telegram_msg(
+                chat_id,
+                f"🗑️ <b>Reconcile:</b> Đã gỡ {removed} bài không còn trên Strava.",
+            )
         else:
             logger.info("[SYNC-RECONCILE] No stale activities removed.")
     except Exception as exc:
@@ -339,6 +402,9 @@ def _reconcile(chat_id: str, strava_client: StravaClient, target_activities: lis
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
+
     load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+    )
     harvest_data()

@@ -12,7 +12,10 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 # Default output: ../../ from script (project root), filename includes date
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = (SCRIPT_DIR / ".." / "..").resolve()
-OUTPUT_FILE = OUTPUT_DIR / f"available_models_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
+OUTPUT_FILE = (
+    OUTPUT_DIR
+    / f"available_models_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
+)
 
 print("=== DANH SÁCH MODEL KHẢ DỤNG ===")
 try:

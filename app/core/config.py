@@ -18,6 +18,7 @@ _config_cache: dict = {}
 _config_cache_time: float = 0.0
 _CONFIG_CACHE_TTL: int = 60  # seconds
 
+
 def load_config() -> dict:
     """
     Load configuration from the central JSON file.
@@ -40,9 +41,14 @@ def load_config() -> dict:
                 _config_cache_time = now
                 return _config_cache
         except Exception as e:
-            _logger.error("[CONFIG] Failed to parse %s: %s — running with empty config", CONFIG_PATH, e)
+            _logger.error(
+                "[CONFIG] Failed to parse %s: %s — running with empty config",
+                CONFIG_PATH,
+                e,
+            )
             return {}
     return {}
+
 
 def save_config(data: dict):
     """

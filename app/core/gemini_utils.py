@@ -1,8 +1,8 @@
 """
 Shared Gemini response utilities.
 """
-import re as _re
 
+import re as _re
 
 # Matches "thought", "thoughtful", "thoughtfully", "thoughts", etc. — any word
 # starting with "thought" followed by whitespace.  Incident 2026-04-21: Gemini
@@ -24,7 +24,8 @@ def extract_text(response) -> str | None:
             return response.text or None
         parts = getattr(candidates[0].content, "parts", None) or []
         texts = [
-            p.text for p in parts
+            p.text
+            for p in parts
             if getattr(p, "text", None) and not getattr(p, "thought", False)
         ]
         return "".join(texts).strip() or None
@@ -41,7 +42,7 @@ def strip_thought_preamble(text: str) -> str | None:
     if not _THOUGHT_PREFIX_RE.match(text):
         return text
 
-    anchor = _re.search(r'(<[bBiIaA][\s>]|📊|📰|🔍|📈|✅)', text)
+    anchor = _re.search(r"(<[bBiIaA][\s>]|📊|📰|🔍|📈|✅)", text)
     if not anchor:
         return None
-    return text[anchor.start():].strip() or None
+    return text[anchor.start() :].strip() or None

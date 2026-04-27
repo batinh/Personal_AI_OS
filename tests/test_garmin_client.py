@@ -1,4 +1,5 @@
 """Tests for garmin_client.py — mock garminconnect, circuit breaker."""
+
 from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock
 
@@ -9,6 +10,7 @@ import pytest
 def _tmp_data_dir(tmp_path, monkeypatch):
     """Redirect token/circuit files to a temporary directory."""
     import app.agents.coach.garmin_client as gc
+
     monkeypatch.setattr(gc, "_TOKEN_FILE", tmp_path / "garmin_tokens.json")
     monkeypatch.setattr(gc, "_CIRCUIT_STATE_FILE", tmp_path / "garmin_circuit.json")
     yield tmp_path
@@ -17,6 +19,7 @@ def _tmp_data_dir(tmp_path, monkeypatch):
 @pytest.fixture()
 def gc_module():
     import app.agents.coach.garmin_client as gc
+
     return gc
 
 
@@ -39,7 +42,10 @@ class TestCircuitBreaker:
         assert not gc_module._is_circuit_open()
 
     def test_cooldown_expiry_closes_circuit(self, gc_module):
-        state = {"failures": 3, "open_until": (datetime.utcnow() - timedelta(hours=1)).isoformat()}
+        state = {
+            "failures": 3,
+            "open_until": (datetime.utcnow() - timedelta(hours=1)).isoformat(),
+        }
         gc_module._save_circuit_state(state)
         assert not gc_module._is_circuit_open()
 
@@ -72,7 +78,9 @@ class TestFetchAndStore:
 
         client = gc_module.GarminClient()
         monkeypatch.setattr(client, "_get_client", _bad_client)
-        monkeypatch.setattr(gc_module, "_record_failure", lambda: failures.append(1) or False)
+        monkeypatch.setattr(
+            gc_module, "_record_failure", lambda: failures.append(1) or False
+        )
 
         client.fetch_and_store_daily_metrics("user1")
         assert failures
@@ -81,7 +89,11 @@ class TestFetchAndStore:
 class TestGetDailyMetrics:
     def test_delegates_to_db(self, gc_module, monkeypatch):
         expected = {"training_readiness_score": 80}
-        monkeypatch.setattr(gc_module, "get_garmin_daily_metrics", lambda uid, d, max_stale_days: expected)
+        monkeypatch.setattr(
+            gc_module,
+            "get_garmin_daily_metrics",
+            lambda uid, d, max_stale_days: expected,
+        )
 
         client = gc_module.GarminClient()
         result = client.get_daily_metrics("user1", date.today())

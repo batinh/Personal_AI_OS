@@ -7,6 +7,7 @@ Covers:
   - build_activity_record: TRIMP calculation, field normalization
   - Error resilience: Strava API failures, empty responses
 """
+
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -21,8 +22,8 @@ class TestBuildActivityRecord(unittest.TestCase):
             "id": 12345678,
             "name": "Morning Easy Run",
             "start_date_local": "2025-01-15T07:00:00",
-            "distance": 10000,      # meters
-            "moving_time": 3600,     # seconds
+            "distance": 10000,  # meters
+            "moving_time": 3600,  # seconds
             "average_heartrate": 140,
             "max_heartrate": 165,
             "suffer_score": 80,
@@ -86,24 +87,42 @@ class TestHarvestData(unittest.TestCase):
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.upsert_user")
     @patch("app.agents.coach.harvest.init_db")
-    @patch("app.agents.coach.harvest.load_config", return_value={"max_hr": 185, "rest_hr": 55})
+    @patch(
+        "app.agents.coach.harvest.load_config",
+        return_value={"max_hr": 185, "rest_hr": 55},
+    )
     @patch("app.agents.coach.harvest.get_primary_user_id", return_value="12345")
     @patch.dict("os.environ", {"STRAVA_ATHLETE_ID": "99999"})
-    def test_harvest_saves_only_runs(self, mock_uid, mock_cfg, mock_init,
-                                     mock_upsert, mock_save, mock_db):
+    def test_harvest_saves_only_runs(
+        self, mock_uid, mock_cfg, mock_init, mock_upsert, mock_save, mock_db
+    ):
         mock_client = MagicMock()
         mock_client.get_athlete_stats.return_value = None
         mock_client.get_recent_activities.return_value = [
-            {"id": 1, "type": "Run", "distance": 5000, "moving_time": 1500,
-             "average_heartrate": 130, "start_date_local": "2025-01-15"},
+            {
+                "id": 1,
+                "type": "Run",
+                "distance": 5000,
+                "moving_time": 1500,
+                "average_heartrate": 130,
+                "start_date_local": "2025-01-15",
+            },
             {"id": 2, "type": "Ride", "distance": 30000, "moving_time": 3600},
-            {"id": 3, "type": "TrailRun", "distance": 8000, "moving_time": 3000,
-             "average_heartrate": 145, "start_date_local": "2025-01-16"},
+            {
+                "id": 3,
+                "type": "TrailRun",
+                "distance": 8000,
+                "moving_time": 3000,
+                "average_heartrate": 145,
+                "start_date_local": "2025-01-16",
+            },
         ]
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client), \
-             patch("builtins.open", MagicMock()):
+        with patch(
+            "app.agents.coach.harvest.StravaClient", return_value=mock_client
+        ), patch("builtins.open", MagicMock()):
             from app.agents.coach.harvest import harvest_data
+
             harvest_data()
 
         # Only Run and TrailRun should be saved (not Ride)
@@ -118,6 +137,7 @@ class TestHarvestData(unittest.TestCase):
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import harvest_data
+
             harvest_data()
 
         mock_client.get_recent_activities.assert_not_called()
@@ -131,14 +151,24 @@ class TestExecuteManualSync(unittest.TestCase):
     @patch("app.agents.coach.harvest.rag_db")
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.init_db")
-    @patch("app.agents.coach.harvest.load_config", return_value={"max_hr": 185, "rest_hr": 55})
-    def test_sync_skips_existing_rag_memories(self, mock_cfg, mock_init,
-                                               mock_save, mock_rag, mock_tg, mock_sleep):
+    @patch(
+        "app.agents.coach.harvest.load_config",
+        return_value={"max_hr": 185, "rest_hr": 55},
+    )
+    def test_sync_skips_existing_rag_memories(
+        self, mock_cfg, mock_init, mock_save, mock_rag, mock_tg, mock_sleep
+    ):
         """Activities already in ChromaDB should skip re-analysis."""
         mock_client = MagicMock()
         mock_client.get_recent_activities.return_value = [
-            {"id": 1, "type": "Run", "distance": 5000, "moving_time": 1500,
-             "average_heartrate": 130, "start_date_local": "2025-01-15T07:00:00"},
+            {
+                "id": 1,
+                "type": "Run",
+                "distance": 5000,
+                "moving_time": 1500,
+                "average_heartrate": 130,
+                "start_date_local": "2025-01-15T07:00:00",
+            },
         ]
 
         # RAG already has this activity
@@ -146,6 +176,7 @@ class TestExecuteManualSync(unittest.TestCase):
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import execute_manual_sync
+
             execute_manual_sync("12345", limit=3)
 
         # DB should still be updated (UPSERT)
@@ -157,22 +188,44 @@ class TestExecuteManualSync(unittest.TestCase):
     @patch("app.agents.coach.harvest.send_telegram_msg")
     @patch("app.agents.coach.harvest.rag_db")
     @patch("app.agents.coach.harvest.save_run_activity_raw")
-    @patch("app.agents.coach.harvest.save_activity_stream_to_file", return_value="/data/streams/2.json")
+    @patch(
+        "app.agents.coach.harvest.save_activity_stream_to_file",
+        return_value="/data/streams/2.json",
+    )
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.init_db")
-    @patch("app.agents.coach.harvest.load_config", return_value={"max_hr": 185, "rest_hr": 55})
-    def test_sync_fetches_streams_for_missing_rag(self, mock_cfg, mock_init,
-                                                   mock_save, mock_save_stream,
-                                                   mock_save_raw, mock_rag,
-                                                   mock_tg, mock_sleep):
+    @patch(
+        "app.agents.coach.harvest.load_config",
+        return_value={"max_hr": 185, "rest_hr": 55},
+    )
+    def test_sync_fetches_streams_for_missing_rag(
+        self,
+        mock_cfg,
+        mock_init,
+        mock_save,
+        mock_save_stream,
+        mock_save_raw,
+        mock_rag,
+        mock_tg,
+        mock_sleep,
+    ):
         """Activities NOT in ChromaDB should fetch streams and memorize."""
         mock_client = MagicMock()
         mock_client.get_recent_activities.return_value = [
-            {"id": 2, "type": "Run", "distance": 10000, "moving_time": 3600,
-             "average_heartrate": 140, "start_date_local": "2025-01-15T07:00:00"},
+            {
+                "id": 2,
+                "type": "Run",
+                "distance": 10000,
+                "moving_time": 3600,
+                "average_heartrate": 140,
+                "start_date_local": "2025-01-15T07:00:00",
+            },
         ]
         mock_client.get_activity_data.return_value = (
-            "Long Run", "Time_sec,HR_bpm\n0,140", {"distance": 10000}, {"time": {"data": [0]}}
+            "Long Run",
+            "Time_sec,HR_bpm\n0,140",
+            {"distance": 10000},
+            {"time": {"data": [0]}},
         )
 
         # RAG does NOT have this activity
@@ -180,6 +233,7 @@ class TestExecuteManualSync(unittest.TestCase):
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import execute_manual_sync
+
             execute_manual_sync("12345", limit=3)
 
         mock_client.get_activity_data.assert_called_once_with("2")
@@ -195,6 +249,7 @@ class TestExecuteManualSync(unittest.TestCase):
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import execute_manual_sync
+
             execute_manual_sync("12345", limit=3)
 
         # Should send both "syncing..." and "no activities" messages
@@ -205,9 +260,13 @@ class TestExecuteManualSync(unittest.TestCase):
     @patch("app.agents.coach.harvest.rag_db")
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.init_db")
-    @patch("app.agents.coach.harvest.load_config", return_value={"max_hr": 185, "rest_hr": 55})
-    def test_sync_filters_non_run_activities(self, mock_cfg, mock_init,
-                                              mock_save, mock_rag, mock_tg, mock_sleep):
+    @patch(
+        "app.agents.coach.harvest.load_config",
+        return_value={"max_hr": 185, "rest_hr": 55},
+    )
+    def test_sync_filters_non_run_activities(
+        self, mock_cfg, mock_init, mock_save, mock_rag, mock_tg, mock_sleep
+    ):
         """Only Run/TrailRun/VirtualRun should be processed."""
         mock_client = MagicMock()
         mock_client.get_recent_activities.return_value = [
@@ -217,6 +276,7 @@ class TestExecuteManualSync(unittest.TestCase):
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import execute_manual_sync
+
             execute_manual_sync("12345", limit=5)
 
         mock_save.assert_not_called()
@@ -226,23 +286,38 @@ class TestExecuteManualSync(unittest.TestCase):
     @patch("app.agents.coach.harvest.rag_db")
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.init_db")
-    @patch("app.agents.coach.harvest.load_config", return_value={"max_hr": 185, "rest_hr": 55})
-    def test_sync_month_filters_by_date(self, mock_cfg, mock_init,
-                                         mock_save, mock_rag, mock_tg, mock_sleep):
+    @patch(
+        "app.agents.coach.harvest.load_config",
+        return_value={"max_hr": 185, "rest_hr": 55},
+    )
+    def test_sync_month_filters_by_date(
+        self, mock_cfg, mock_init, mock_save, mock_rag, mock_tg, mock_sleep
+    ):
         """'/sync month' should filter activities within last 30 days."""
         mock_client = MagicMock()
         mock_client.get_recent_activities.return_value = [
-            {"id": 1, "type": "Run", "distance": 5000, "moving_time": 1500,
-             "average_heartrate": 130,
-             "start_date_local": "2020-01-01T07:00:00"},  # Old: should be excluded
-            {"id": 2, "type": "Run", "distance": 5000, "moving_time": 1500,
-             "average_heartrate": 130,
-             "start_date_local": "2099-01-01T07:00:00"},  # Future: should be included
+            {
+                "id": 1,
+                "type": "Run",
+                "distance": 5000,
+                "moving_time": 1500,
+                "average_heartrate": 130,
+                "start_date_local": "2020-01-01T07:00:00",
+            },  # Old: should be excluded
+            {
+                "id": 2,
+                "type": "Run",
+                "distance": 5000,
+                "moving_time": 1500,
+                "average_heartrate": 130,
+                "start_date_local": "2099-01-01T07:00:00",
+            },  # Future: should be included
         ]
         mock_rag.collection.get.return_value = {"ids": ["1", "2"]}
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import execute_manual_sync
+
             execute_manual_sync("12345", limit=50, days_back=30)
 
         # Only the future-dated activity should pass the date filter
@@ -258,20 +333,37 @@ class TestHarvestActivityTypes(unittest.TestCase):
     @patch("app.agents.coach.harvest.save_activity_stream_to_file", return_value=None)
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.init_db")
-    @patch("app.agents.coach.harvest.load_config", return_value={"max_hr": 185, "rest_hr": 55})
-    def test_harvest_includes_virtual_run(self, mock_cfg, mock_init, mock_save,
-                                          mock_save_stream, mock_save_raw,
-                                          mock_rag, mock_tg):
+    @patch(
+        "app.agents.coach.harvest.load_config",
+        return_value={"max_hr": 185, "rest_hr": 55},
+    )
+    def test_harvest_includes_virtual_run(
+        self,
+        mock_cfg,
+        mock_init,
+        mock_save,
+        mock_save_stream,
+        mock_save_raw,
+        mock_rag,
+        mock_tg,
+    ):
         mock_client = MagicMock()
         mock_client.get_recent_activities.return_value = [
-            {"id": 1, "type": "VirtualRun", "distance": 5000, "moving_time": 1500,
-             "average_heartrate": 140, "start_date_local": "2025-01-15T07:00:00"},
+            {
+                "id": 1,
+                "type": "VirtualRun",
+                "distance": 5000,
+                "moving_time": 1500,
+                "average_heartrate": 140,
+                "start_date_local": "2025-01-15T07:00:00",
+            },
         ]
         mock_client.get_activity_data.return_value = ("Virtual Run", None, None, None)
         mock_rag.collection.get.return_value = {"ids": []}
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import execute_manual_sync
+
             execute_manual_sync("12345", limit=5)
 
         mock_save.assert_called_once()
@@ -282,17 +374,39 @@ class TestHarvestActivityTypes(unittest.TestCase):
     @patch("app.agents.coach.harvest.save_activity_stream_to_file", return_value=None)
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.init_db")
-    @patch("app.agents.coach.harvest.load_config", return_value={"max_hr": 185, "rest_hr": 55})
-    def test_save_failure_on_one_activity_continues_to_next(self, mock_cfg, mock_init,
-                                                             mock_save, mock_save_stream,
-                                                             mock_save_raw, mock_rag, mock_tg):
+    @patch(
+        "app.agents.coach.harvest.load_config",
+        return_value={"max_hr": 185, "rest_hr": 55},
+    )
+    def test_save_failure_on_one_activity_continues_to_next(
+        self,
+        mock_cfg,
+        mock_init,
+        mock_save,
+        mock_save_stream,
+        mock_save_raw,
+        mock_rag,
+        mock_tg,
+    ):
         """A DB error saving one activity should not abort processing the remaining ones."""
         mock_client = MagicMock()
         mock_client.get_recent_activities.return_value = [
-            {"id": 1, "type": "Run", "distance": 5000, "moving_time": 1500,
-             "average_heartrate": 130, "start_date_local": "2025-01-15T07:00:00"},
-            {"id": 2, "type": "Run", "distance": 6000, "moving_time": 1800,
-             "average_heartrate": 135, "start_date_local": "2025-01-16T07:00:00"},
+            {
+                "id": 1,
+                "type": "Run",
+                "distance": 5000,
+                "moving_time": 1500,
+                "average_heartrate": 130,
+                "start_date_local": "2025-01-15T07:00:00",
+            },
+            {
+                "id": 2,
+                "type": "Run",
+                "distance": 6000,
+                "moving_time": 1800,
+                "average_heartrate": 135,
+                "start_date_local": "2025-01-16T07:00:00",
+            },
         ]
         mock_client.get_activity_data.return_value = ("Morning Run", None, None, None)
         mock_rag.collection.get.return_value = {"ids": []}
@@ -300,6 +414,7 @@ class TestHarvestActivityTypes(unittest.TestCase):
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import execute_manual_sync
+
             execute_manual_sync("12345", limit=5)
 
         # Second activity should still have been attempted
@@ -316,14 +431,31 @@ class TestManualSyncRateLimiting(unittest.TestCase):
     @patch("app.agents.coach.harvest.save_activity_stream_to_file", return_value=None)
     @patch("app.agents.coach.harvest.save_run_activity")
     @patch("app.agents.coach.harvest.init_db")
-    @patch("app.agents.coach.harvest.load_config", return_value={"max_hr": 185, "rest_hr": 55})
-    def test_sleep_between_activities(self, mock_cfg, mock_init, mock_save,
-                                      mock_save_stream, mock_save_raw,
-                                      mock_rag, mock_tg, mock_sleep):
+    @patch(
+        "app.agents.coach.harvest.load_config",
+        return_value={"max_hr": 185, "rest_hr": 55},
+    )
+    def test_sleep_between_activities(
+        self,
+        mock_cfg,
+        mock_init,
+        mock_save,
+        mock_save_stream,
+        mock_save_raw,
+        mock_rag,
+        mock_tg,
+        mock_sleep,
+    ):
         mock_client = MagicMock()
         mock_client.get_recent_activities.return_value = [
-            {"id": i, "type": "Run", "distance": 5000, "moving_time": 1500,
-             "average_heartrate": 130, "start_date_local": "2025-01-15T07:00:00"}
+            {
+                "id": i,
+                "type": "Run",
+                "distance": 5000,
+                "moving_time": 1500,
+                "average_heartrate": 130,
+                "start_date_local": "2025-01-15T07:00:00",
+            }
             for i in range(3)
         ]
         mock_client.get_activity_data.return_value = ("Run", None, None, None)
@@ -331,6 +463,7 @@ class TestManualSyncRateLimiting(unittest.TestCase):
 
         with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
             from app.agents.coach.harvest import execute_manual_sync
+
             execute_manual_sync("12345", limit=5)
 
         # time.sleep(1) should be called for each activity that triggers stream fetch

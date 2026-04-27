@@ -1,4 +1,5 @@
 """Tests for app/services/coverage_metrics.py and GET /admin/metrics/coverage."""
+
 import os
 import textwrap
 import unittest
@@ -67,16 +68,19 @@ def _write_tmp(tmp_dir: Path, filename: str, content: str) -> Path:
 # Unit tests: coverage_metrics service
 # ---------------------------------------------------------------------------
 
+
 class TestLoadCoverageReport(unittest.TestCase):
 
     def setUp(self):
         import tempfile
+
         self._tmpdir = Path(tempfile.mkdtemp())
         self._cov = _write_tmp(self._tmpdir, "coverage.xml", _COVERAGE_XML)
         self._junit = _write_tmp(self._tmpdir, "junit.xml", _JUNIT_XML)
 
     def test_returns_coverage_report(self):
         from app.services.coverage_metrics import load_coverage_report
+
         report = load_coverage_report(self._cov, self._junit)
         self.assertAlmostEqual(report.line_rate, 0.8)
         self.assertEqual(report.lines_valid, 100)
@@ -84,6 +88,7 @@ class TestLoadCoverageReport(unittest.TestCase):
 
     def test_packages_parsed(self):
         from app.services.coverage_metrics import load_coverage_report
+
         report = load_coverage_report(self._cov, self._junit)
         names = {p.name for p in report.packages}
         self.assertIn("core", names)
@@ -91,17 +96,20 @@ class TestLoadCoverageReport(unittest.TestCase):
 
     def test_package_line_rate(self):
         from app.services.coverage_metrics import load_coverage_report
+
         report = load_coverage_report(self._cov, self._junit)
         core = next(p for p in report.packages if p.name == "core")
         self.assertAlmostEqual(core.line_rate, 0.9)
 
     def test_coverage_timestamp_parsed(self):
         from app.services.coverage_metrics import load_coverage_report
+
         report = load_coverage_report(self._cov, self._junit)
         self.assertEqual(report.coverage_timestamp, 1776471036008)
 
     def test_test_counts_parsed(self):
         from app.services.coverage_metrics import load_coverage_report
+
         report = load_coverage_report(self._cov, self._junit)
         tc = report.test_counts
         self.assertIsNotNone(tc)
@@ -114,18 +122,21 @@ class TestLoadCoverageReport(unittest.TestCase):
 
     def test_raises_when_coverage_file_missing(self):
         from app.services.coverage_metrics import load_coverage_report
+
         with self.assertRaises(FileNotFoundError):
             load_coverage_report(self._tmpdir / "nonexistent.xml", self._junit)
 
     def test_raises_when_coverage_file_malformed(self):
         from app.services.coverage_metrics import load_coverage_report
         import xml.etree.ElementTree as ET
+
         bad = _write_tmp(self._tmpdir, "bad.xml", _MALFORMED_XML)
         with self.assertRaises(ET.ParseError):
             load_coverage_report(bad, self._junit)
 
     def test_test_counts_none_when_junit_missing(self):
         from app.services.coverage_metrics import load_coverage_report
+
         report = load_coverage_report(self._cov, self._tmpdir / "missing.xml")
         self.assertIsNone(report.test_counts)
 
@@ -134,12 +145,14 @@ class TestReportToDict(unittest.TestCase):
 
     def setUp(self):
         import tempfile
+
         self._tmpdir = Path(tempfile.mkdtemp())
         self._cov = _write_tmp(self._tmpdir, "coverage.xml", _COVERAGE_XML)
         self._junit = _write_tmp(self._tmpdir, "junit.xml", _JUNIT_XML)
 
     def _get_dict(self):
         from app.services.coverage_metrics import load_coverage_report, report_to_dict
+
         return report_to_dict(load_coverage_report(self._cov, self._junit))
 
     def test_summary_keys_present(self):
@@ -173,6 +186,7 @@ class TestReportToDict(unittest.TestCase):
 
     def test_output_json_serializable(self):
         import json
+
         d = self._get_dict()
         json.dumps(d)  # must not raise
 
@@ -181,12 +195,14 @@ class TestReportToDict(unittest.TestCase):
 # Integration tests: /admin/metrics/coverage endpoint
 # ---------------------------------------------------------------------------
 
+
 class TestCoverageEndpoint(unittest.TestCase):
 
     def setUp(self):
         import tempfile
         from fastapi.testclient import TestClient
         from app.main import app
+
         self._client = TestClient(app, raise_server_exceptions=False)
         self._tmpdir = Path(tempfile.mkdtemp())
         self._cov = _write_tmp(self._tmpdir, "coverage.xml", _COVERAGE_XML)
@@ -196,13 +212,17 @@ class TestCoverageEndpoint(unittest.TestCase):
     def _get(self, *, auth=True, cov_path=None, junit_path=None):
         cov = cov_path or self._cov
         junit = junit_path or self._junit
-        with patch("app.routers.metrics._COVERAGE_XML", cov), \
-             patch("app.routers.metrics._JUNIT_XML", junit):
+        with patch("app.routers.metrics._COVERAGE_XML", cov), patch(
+            "app.routers.metrics._JUNIT_XML", junit
+        ):
             if auth:
-                with patch.dict(os.environ, {
-                    "ADMIN_USERNAME": self._auth[0],
-                    "ADMIN_PASSWORD": self._auth[1],
-                }):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "ADMIN_USERNAME": self._auth[0],
+                        "ADMIN_PASSWORD": self._auth[1],
+                    },
+                ):
                     return self._client.get(
                         "/admin/metrics/coverage",
                         auth=self._auth,

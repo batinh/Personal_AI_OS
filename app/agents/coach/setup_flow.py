@@ -1,14 +1,20 @@
 import json
 
 from app.core.database import (
-    get_setup_session, upsert_setup_session, complete_setup_session,
+    get_setup_session,
+    upsert_setup_session,
+    complete_setup_session,
     abandon_stale_setup_sessions,
 )
 from app.core.config import load_config, save_config
 from app.core.logging_conf import get_module_logger
 from app.agents.coach.setup_validators import (
-    validate_distance, validate_date, validate_time,
-    validate_kmweek, validate_days, validate_rest_days,
+    validate_distance,
+    validate_date,
+    validate_time,
+    validate_kmweek,
+    validate_days,
+    validate_rest_days,
 )
 
 logger = get_module_logger("setup_flow")
@@ -74,6 +80,7 @@ _STEP_PROMPTS = [
 
 def _build_completion_message(data: dict) -> str:
     from datetime import date as date_type, datetime
+
     distance = data.get("race_distance_km", "?")
     race_date_str = data.get("race_date", "")
     target_min = data.get("race_target_time_min", 0)
@@ -81,8 +88,18 @@ def _build_completion_message(data: dict) -> str:
     training_days = data.get("training_days_per_week", "?")
     rest_days_raw = data.get("preferred_rest_days", [])
 
-    day_names = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"]
-    rest_day_names = ", ".join(day_names[d] for d in rest_days_raw) if rest_days_raw else "?"
+    day_names = [
+        "Thứ Hai",
+        "Thứ Ba",
+        "Thứ Tư",
+        "Thứ Năm",
+        "Thứ Sáu",
+        "Thứ Bảy",
+        "Chủ Nhật",
+    ]
+    rest_day_names = (
+        ", ".join(day_names[d] for d in rest_days_raw) if rest_days_raw else "?"
+    )
 
     target_fmt = f"{target_min // 60}:{target_min % 60:02d}" if target_min else "?"
 
@@ -213,11 +230,21 @@ def finalize_setup(user_id: str, collected_data: dict) -> None:
     """Write collected data to config.json and mark session completed."""
     config = load_config()
     config["race_date"] = collected_data.get("race_date", config.get("race_date", ""))
-    config["race_distance_km"] = collected_data.get("race_distance_km", config.get("race_distance_km", 21.1))
-    config["race_target_time_min"] = collected_data.get("race_target_time_min", config.get("race_target_time_min"))
-    config.setdefault("setup", {})["current_weekly_km"] = collected_data.get("current_weekly_km")
-    config["setup"]["training_days_per_week"] = collected_data.get("training_days_per_week")
-    config["setup"]["preferred_rest_days"] = collected_data.get("preferred_rest_days", [])
+    config["race_distance_km"] = collected_data.get(
+        "race_distance_km", config.get("race_distance_km", 21.1)
+    )
+    config["race_target_time_min"] = collected_data.get(
+        "race_target_time_min", config.get("race_target_time_min")
+    )
+    config.setdefault("setup", {})["current_weekly_km"] = collected_data.get(
+        "current_weekly_km"
+    )
+    config["setup"]["training_days_per_week"] = collected_data.get(
+        "training_days_per_week"
+    )
+    config["setup"]["preferred_rest_days"] = collected_data.get(
+        "preferred_rest_days", []
+    )
     save_config(config)
     complete_setup_session(user_id)
     logger.info(f"[SETUP] Finalized setup for user {user_id}: {collected_data}")
@@ -228,7 +255,10 @@ def invalidate_plans_for_resetup(user_id: str) -> None:
     Expire any pending/accepted plans before re-setup. Call before start_setup() on re-entry.
     """
     from datetime import date, timedelta
-    next_monday = (date.today() - timedelta(days=date.today().weekday()) + timedelta(weeks=4)).strftime("%Y-%m-%d")
+
+    next_monday = (
+        date.today() - timedelta(days=date.today().weekday()) + timedelta(weeks=4)
+    ).strftime("%Y-%m-%d")
     expire_stale_weekly_plans_range(user_id, before_date=next_monday)
     logger.info(f"[SETUP] Invalidated plans for user {user_id} due to re-setup")
 
@@ -236,6 +266,7 @@ def invalidate_plans_for_resetup(user_id: str) -> None:
 def expire_stale_weekly_plans_range(user_id: str, before_date: str) -> None:
     """Expire all pending plans before before_date."""
     from app.core.database import get_db
+
     try:
         with get_db() as conn:
             conn.execute(
@@ -250,5 +281,7 @@ def cleanup_stale_setup_sessions(timeout_hours: int = 24) -> int:
     """Abandon setup sessions with no activity for timeout_hours. Returns count."""
     count = abandon_stale_setup_sessions(timeout_hours)
     if count:
-        logger.info(f"[SETUP] Abandoned {count} stale setup session(s) (>{timeout_hours}h inactive)")
+        logger.info(
+            f"[SETUP] Abandoned {count} stale setup session(s) (>{timeout_hours}h inactive)"
+        )
     return count

@@ -7,6 +7,7 @@ Covers:
 - DB functions: insert_audit_entry, get_audit_entries, update_audit_status, get_audit_stats
 - API endpoints: /audit/api/entries, /audit/api/entries/{id}/acknowledge, /audit/api/run
 """
+
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,10 +22,10 @@ from app.core.database import (
     get_audit_stats,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture()
 def tmp_db(tmp_path, monkeypatch):
@@ -36,6 +37,7 @@ def tmp_db(tmp_path, monkeypatch):
 
     # Re-run init_db against the temp file
     from app.core.database import init_db
+
     init_db()
     return str(db_file)
 
@@ -44,6 +46,7 @@ def tmp_db(tmp_path, monkeypatch):
 def auth_headers(monkeypatch):
     """Basic-auth headers — force env to match so tests are isolated from .env."""
     import base64
+
     monkeypatch.setenv("ADMIN_USERNAME", "admin")
     monkeypatch.setenv("ADMIN_PASSWORD", "testpass")
     creds = base64.b64encode(b"admin:testpass").decode()
@@ -54,12 +57,14 @@ def auth_headers(monkeypatch):
 def client(tmp_db, auth_headers):
     """FastAPI test client with isolated DB."""
     from app.main import app
+
     return TestClient(app, raise_server_exceptions=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. categorize_line — unit tests
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestCategorizeLine:
     def test_traceback(self):
@@ -155,9 +160,12 @@ class TestCategorizeLine:
 # 2. run_audit — integration tests (file scanning)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestRunAudit:
     def test_returns_zero_when_no_log_file(self, tmp_db):
-        with patch("app.services.log_auditor.LOG_FILE_PATH", Path("/nonexistent/app.log")):
+        with patch(
+            "app.services.log_auditor.LOG_FILE_PATH", Path("/nonexistent/app.log")
+        ):
             count = run_audit("test_user")
         assert count == 0
 
@@ -184,7 +192,9 @@ class TestRunAudit:
 
     def test_scans_rotated_files(self, tmp_db, tmp_path):
         (tmp_path / "app.log").write_text("[ERROR] from main log\n", encoding="utf-8")
-        (tmp_path / "app.log.1").write_text("[ERROR] from rotated log\n", encoding="utf-8")
+        (tmp_path / "app.log.1").write_text(
+            "[ERROR] from rotated log\n", encoding="utf-8"
+        )
         main_log = tmp_path / "app.log"
         with patch("app.services.log_auditor.LOG_FILE_PATH", main_log):
             count = run_audit("test_user")
@@ -195,9 +205,12 @@ class TestRunAudit:
 # 3. DB functions — unit tests
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestAuditDbFunctions:
     def test_insert_and_get(self, tmp_db):
-        ok = insert_audit_entry("u1", "error", "network", "DNS failure", "raw line here")
+        ok = insert_audit_entry(
+            "u1", "error", "network", "DNS failure", "raw line here"
+        )
         assert ok is True
         entries = get_audit_entries("u1")
         assert len(entries) == 1
@@ -208,7 +221,9 @@ class TestAuditDbFunctions:
 
     def test_insert_duplicate_returns_false(self, tmp_db):
         insert_audit_entry("u1", "error", "network", "DNS failure", "same raw line")
-        ok2 = insert_audit_entry("u1", "error", "network", "DNS failure", "same raw line")
+        ok2 = insert_audit_entry(
+            "u1", "error", "network", "DNS failure", "same raw line"
+        )
         assert ok2 is False
 
     def test_filter_by_status(self, tmp_db):
@@ -247,6 +262,7 @@ class TestAuditDbFunctions:
 # 4. API endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestAuditApi:
     def test_list_entries_empty(self, client, auth_headers, tmp_db):
         with patch("app.routers.audit.get_primary_user_id", return_value="u1"):
@@ -266,7 +282,9 @@ class TestAuditApi:
             entries_r = client.get("/audit/api/entries", headers=auth_headers)
         entry_id = entries_r.json()["entries"][0]["id"]
         with patch("app.routers.audit.get_primary_user_id", return_value="u1"):
-            r = client.post(f"/audit/api/entries/{entry_id}/acknowledge", headers=auth_headers)
+            r = client.post(
+                f"/audit/api/entries/{entry_id}/acknowledge", headers=auth_headers
+            )
         assert r.status_code == 200
         assert r.json()["status"] == "acknowledged"
 
@@ -276,15 +294,18 @@ class TestAuditApi:
             entries_r = client.get("/audit/api/entries", headers=auth_headers)
         entry_id = entries_r.json()["entries"][0]["id"]
         with patch("app.routers.audit.get_primary_user_id", return_value="u1"):
-            r = client.post(f"/audit/api/entries/{entry_id}/resolve", headers=auth_headers)
+            r = client.post(
+                f"/audit/api/entries/{entry_id}/resolve", headers=auth_headers
+            )
         assert r.status_code == 200
         assert r.json()["status"] == "resolved"
 
     def test_run_audit_now(self, client, auth_headers, tmp_db, tmp_path):
         log_file = tmp_path / "app.log"
         log_file.write_text("[ERROR] test error for manual run\n", encoding="utf-8")
-        with patch("app.routers.audit.get_primary_user_id", return_value="u1"), \
-             patch("app.routers.audit.run_audit", return_value=1) as mock_run:
+        with patch("app.routers.audit.get_primary_user_id", return_value="u1"), patch(
+            "app.routers.audit.run_audit", return_value=1
+        ) as mock_run:
             r = client.post("/audit/api/run", headers=auth_headers)
         assert r.status_code == 200
         assert r.json()["new_entries"] == 1

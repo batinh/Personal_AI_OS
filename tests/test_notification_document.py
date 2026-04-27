@@ -40,7 +40,9 @@ class TestSendDocumentIntegration(unittest.TestCase):
             long_text = "B" * 100001
             send_telegram_msg("999999", long_text)
         except Exception as e:
-            self.fail(f"send_telegram_msg raised an exception on document upload failure: {e}")
+            self.fail(
+                f"send_telegram_msg raised an exception on document upload failure: {e}"
+            )
 
 
 if __name__ == "__main__":

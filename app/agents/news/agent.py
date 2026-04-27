@@ -17,10 +17,15 @@ Telegram routing:
   news_agent.telegram_chat_id set  → send to that channel/group
   news_agent.telegram_chat_id empty → fallback to primary TELEGRAM_CHAT_ID
 """
+
 import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+    as_completed,
+)
 from datetime import datetime
 
 from google import genai
@@ -39,7 +44,10 @@ from app.agents.news.prompts import (
 )
 from app.agents.news.memory import load_news_memory
 from app.agents.news.telegram_handler import ERR_001, ERR_002
-from app.core.gemini_utils import extract_text as _extract_text, strip_thought_preamble as _strip_thought_preamble
+from app.core.gemini_utils import (
+    extract_text as _extract_text,
+    strip_thought_preamble as _strip_thought_preamble,
+)
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
@@ -58,6 +66,7 @@ _TOPIC_TIMEOUT_S = 30
 # HELPERS
 # ==========================================
 
+
 def _resolve_chat_id(config: dict) -> str | None:
     """
     Resolve Telegram chat ID for news delivery.
@@ -71,7 +80,10 @@ def _resolve_chat_id(config: dict) -> str | None:
 
 
 def _get_model(config: dict) -> str:
-    return config.get("news_agent", {}).get("news_model", _DEFAULT_MODEL).strip() or _DEFAULT_MODEL
+    return (
+        config.get("news_agent", {}).get("news_model", _DEFAULT_MODEL).strip()
+        or _DEFAULT_MODEL
+    )
 
 
 def _now_date_str() -> str:
@@ -141,7 +153,9 @@ def _extract_grounding_urls(candidates: list) -> list[tuple[str, str]]:
     return urls
 
 
-_DOC_THEM_RE = re.compile(r'<a\s+href=["\'][^"\']*["\']>\s*Đọc thêm\s*</a>', re.IGNORECASE)
+_DOC_THEM_RE = re.compile(
+    r'<a\s+href=["\'][^"\']*["\']>\s*Đọc thêm\s*</a>', re.IGNORECASE
+)
 
 
 def _build_sources_block(urls: list[tuple[str, str]], max_sources: int = 3) -> str:
@@ -177,7 +191,9 @@ def _call_gemini_with_search(
         system_instruction=system_inst,
         tools=_SEARCH_TOOL,
         max_output_tokens=max_tokens,
-        thinking_config=types.ThinkingConfig(thinking_budget=0),  # 0 = disable thinking output
+        thinking_config=types.ThinkingConfig(
+            thinking_budget=0
+        ),  # 0 = disable thinking output
     )
     _t0 = time.monotonic()
     try:
@@ -211,23 +227,26 @@ def _call_gemini_with_search(
         for cand in candidates:
             fr = getattr(cand, "finish_reason", None)
             if str(fr) in ("FinishReason.MAX_TOKENS", "MAX_TOKENS"):
-                logger.warning("[NEWS] finish_reason=MAX_TOKENS — response may be truncated. Increase max_output_tokens.")
+                logger.warning(
+                    "[NEWS] finish_reason=MAX_TOKENS — response may be truncated. Increase max_output_tokens."
+                )
 
         latency_ms = int((time.monotonic() - _t0) * 1000)
         grounding_used = any(
-            getattr(c, "grounding_metadata", None) is not None
-            for c in candidates
+            getattr(c, "grounding_metadata", None) is not None for c in candidates
         )
         if not grounding_used:
             logger.warning(
-                "[NEWS] Grounding not invoked — REJECTING training-data response. latency_ms=%d", latency_ms
+                "[NEWS] Grounding not invoked — REJECTING training-data response. latency_ms=%d",
+                latency_ms,
             )
             return None, []
 
         grounding_urls = _extract_grounding_urls(candidates)
         logger.info(
             "[NEWS] Grounded call completed. grounding_used=True source_count=%d latency_ms=%d",
-            len(grounding_urls), latency_ms,
+            len(grounding_urls),
+            latency_ms,
         )
         for title, uri in grounding_urls:
             logger.info("[NEWS-SOURCE] %s: %s", title, uri)
@@ -247,7 +266,11 @@ def _call_gemini_with_search(
             text = stripped
 
         if _DEBUG_NEWS:
-            logger.debug("[NEWS-DEBUG] extracted text (%d chars): %r", len(text) if text else 0, (text or "")[:300])
+            logger.debug(
+                "[NEWS-DEBUG] extracted text (%d chars): %r",
+                len(text) if text else 0,
+                (text or "")[:300],
+            )
 
         return text, grounding_urls
     except Exception as e:
@@ -259,7 +282,10 @@ def _call_gemini_with_search(
 # PER-TOPIC WORKER (called in thread pool)
 # ==========================================
 
-def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[dict, str | None]:
+
+def _call_topic(
+    topic: dict, session: str, date_str: str, model: str
+) -> tuple[dict, str | None]:
     """
     Fetch news for a single topic. Designed to run in a ThreadPoolExecutor worker.
 
@@ -273,7 +299,9 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
     prompt = build_topic_prompt(topic_name, emoji, session, date_str)
 
     logger.info(f"[NEWS-TOPIC] Fetching '{topic_name}'...")
-    block, grounding_urls = _call_gemini_with_search(model, system_inst, prompt, max_tokens=6000)
+    block, grounding_urls = _call_gemini_with_search(
+        model, system_inst, prompt, max_tokens=6000
+    )
 
     if not block:
         logger.warning(f"[NEWS-TOPIC] No result for '{topic_name}'. Skipping.")
@@ -295,13 +323,16 @@ def _call_topic(topic: dict, session: str, date_str: str, model: str) -> tuple[d
     if sources:
         body = body + "\n\n" + sources
     formatted = f"{emoji} <b>{topic_name.upper()}</b>\n\n{body}"
-    logger.info(f"[NEWS-TOPIC] Got {len(block)} chars, {len(grounding_urls)} sources for '{topic_name}'")
+    logger.info(
+        f"[NEWS-TOPIC] Got {len(block)} chars, {len(grounding_urls)} sources for '{topic_name}'"
+    )
     return topic, formatted
 
 
 # ==========================================
 # SCHEDULED BRIEFING (parallel per-topic)
 # ==========================================
+
 
 def generate_news_briefing(config: dict, session: str = "morning") -> None:
     """
@@ -337,7 +368,10 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     topic_timeout_s = int(news_cfg.get("topic_timeout_seconds", _TOPIC_TIMEOUT_S))
     logger.info(
         "[NEWS] Starting parallel briefing: %d topics, session=%s, workers=%d, timeout=%ds",
-        len(topics), session, max_workers, topic_timeout_s,
+        len(topics),
+        session,
+        max_workers,
+        topic_timeout_s,
     )
     _t_start = time.monotonic()
 
@@ -358,12 +392,15 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
                     if block:
                         results[idx] = block
                 except Exception as e:
-                    logger.error(f"[NEWS-TOPIC] Worker error for topic index {idx}: {e}")
+                    logger.error(
+                        f"[NEWS-TOPIC] Worker error for topic index {idx}: {e}"
+                    )
         except FuturesTimeoutError:
             timed_out = len(future_map) - completed_count
             logger.warning(
                 "[NEWS-TOPIC] %d topic(s) timed out after %ds — skipping",
-                timed_out, topic_timeout_s,
+                timed_out,
+                topic_timeout_s,
             )
 
     duration_ms = int((time.monotonic() - _t_start) * 1000)
@@ -372,7 +409,9 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
         logger.error(
             "[NEWS] All topic calls failed — briefing not sent. "
             "session=%s topics_attempted=%d topics_succeeded=0 duration_ms=%d",
-            session, len(topics), duration_ms,
+            session,
+            len(topics),
+            duration_ms,
         )
         send_telegram_msg(chat_id, ERR_001)
         return
@@ -385,9 +424,15 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     logger.info(
         "[NEWS] Briefing assembled. session=%s topics_attempted=%d topics_succeeded=%d "
         "chars_sent=%d duration_ms=%d",
-        session, len(topics), len(results), len(message), duration_ms,
+        session,
+        len(topics),
+        len(results),
+        len(message),
+        duration_ms,
     )
-    logger.info(f"[TELEGRAM] Prepared message length={len(message)}; head={message[:80]!r}; tail={message[-60:]!r}")
+    logger.info(
+        f"[TELEGRAM] Prepared message length={len(message)}; head={message[:80]!r}; tail={message[-60:]!r}"
+    )
     send_telegram_msg(chat_id, message)
     logger.info(f"[NEWS] Sent {session} briefing to chat_id={chat_id}")
 
@@ -395,6 +440,7 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
 # ==========================================
 # ON-DEMAND BRIEFING (user query via @news)
 # ==========================================
+
 
 def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str | None:
     """
@@ -424,7 +470,9 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     system_inst = build_on_demand_system_instruction()
     prompt = build_on_demand_prompt(query, date_str)
 
-    reply, grounding_urls = _call_gemini_with_search(model, system_inst, prompt, max_tokens=8000)
+    reply, grounding_urls = _call_gemini_with_search(
+        model, system_inst, prompt, max_tokens=8000
+    )
 
     if not reply or len(reply) < 100:
         logger.warning(
@@ -439,7 +487,9 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     if sources:
         reply = reply.rstrip() + "\n\n" + sources
 
-    logger.info(f"[NEWS-ONDEMAND] Reply length={len(reply)}, sources={len(grounding_urls)}")
+    logger.info(
+        f"[NEWS-ONDEMAND] Reply length={len(reply)}, sources={len(grounding_urls)}"
+    )
     send_telegram_msg(chat_id, reply)
     logger.info(f"[NEWS-ONDEMAND] Sent reply to chat_id={chat_id}")
     return reply
@@ -449,7 +499,10 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
 # LEGACY SINGLE-CALL FALLBACK
 # ==========================================
 
-def _generate_legacy_briefing(config: dict, session: str, chat_id: str, model: str, date_str: str) -> None:
+
+def _generate_legacy_briefing(
+    config: dict, session: str, chat_id: str, model: str, date_str: str
+) -> None:
     """
     Legacy single-call briefing. Used as fallback when topics list is empty
     or all parallel topic calls fail.
@@ -460,7 +513,9 @@ def _generate_legacy_briefing(config: dict, session: str, chat_id: str, model: s
     prompt = build_session_prompt(session, interest_profile, date_str, memory)
     system_inst = build_news_system_instruction()
 
-    reply, grounding_urls = _call_gemini_with_search(model, system_inst, prompt, max_tokens=2000)
+    reply, grounding_urls = _call_gemini_with_search(
+        model, system_inst, prompt, max_tokens=2000
+    )
     if not reply:
         logger.error(f"[NEWS] Grounded call failed for {session}. Skipping send.")
         return

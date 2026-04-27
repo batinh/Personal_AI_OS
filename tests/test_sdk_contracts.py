@@ -7,6 +7,7 @@ timeout=30000 → 30s → X-Server-Timeout:30 → accepted.
 
 These tests catch the bug class statically (AST parse) without hitting the API.
 """
+
 import ast
 import pathlib
 
@@ -18,10 +19,12 @@ _AGENT_FILES = list(pathlib.Path("app").rglob("*.py"))
 
 # ── 1. SDK unit contract ───────────────────────────────────────────────────────
 
+
 def test_http_options_timeout_field_is_milliseconds():
     """Regression guard: if Google ever renames/redefines the unit, this fails fast.
     Reads SDK source from disk to bypass conftest's genai mock."""
     import sys as _sys
+
     # Find types.py in site-packages directly (bypasses sys.modules mock)
     types_path = None
     for p in _sys.path:
@@ -31,9 +34,9 @@ def test_http_options_timeout_field_is_milliseconds():
             break
     assert types_path is not None, "google-genai types.py not found in sys.path"
     src = types_path.read_text(encoding="utf-8")
-    assert "milliseconds" in src, (
-        "HttpOptions.timeout unit changed in SDK — audit ALL genai.Client() usages."
-    )
+    assert (
+        "milliseconds" in src
+    ), "HttpOptions.timeout unit changed in SDK — audit ALL genai.Client() usages."
 
 
 def test_http_options_timeout_converts_to_seconds_correctly():
@@ -42,11 +45,15 @@ def test_http_options_timeout_converts_to_seconds_correctly():
     # math.ceil(30000 / 1000) = 30  → X-Server-Timeout: 30  ✓
     # math.ceil(30    / 1000) = 1   → X-Server-Timeout: 1   ✗ (rejected)
     import math
+
     assert math.ceil(30_000 / 1000) == 30, "Expected 30s server deadline"
-    assert math.ceil(30 / 1000) == 1, "30ms bug reproducer: this is what broke Morning Briefing"
+    assert (
+        math.ceil(30 / 1000) == 1
+    ), "30ms bug reproducer: this is what broke Morning Briefing"
 
 
 # ── 2. Static AST audit of all genai.Client() calls ──────────────────────────
+
 
 def _find_http_options_timeouts(source: str) -> list[int]:
     """Return all HttpOptions(timeout=N) literal values in source."""
@@ -61,9 +68,8 @@ def _find_http_options_timeouts(source: str) -> list[int]:
             continue
         func = node.func
         # Match: HttpOptions(...) or types.HttpOptions(...)
-        is_http_options = (
-            (isinstance(func, ast.Name) and func.id == "HttpOptions")
-            or (isinstance(func, ast.Attribute) and func.attr == "HttpOptions")
+        is_http_options = (isinstance(func, ast.Name) and func.id == "HttpOptions") or (
+            isinstance(func, ast.Attribute) and func.attr == "HttpOptions"
         )
         if not is_http_options:
             continue
@@ -91,9 +97,10 @@ def test_all_http_options_timeouts_are_safe():
                     f"SDK uses milliseconds. Use {val * 1000} for {val}s."
                 )
 
-    assert not violations, (
-        "HttpOptions.timeout values below safe threshold (10_000ms):\n"
-        + "\n".join(violations)
+    assert (
+        not violations
+    ), "HttpOptions.timeout values below safe threshold (10_000ms):\n" + "\n".join(
+        violations
     )
 
 
@@ -104,6 +111,7 @@ def test_no_bare_genai_client_with_tiny_timeout():
     to catch edge cases the AST parser might miss (e.g. multi-line expressions).
     """
     import re
+
     pattern = re.compile(r"HttpOptions\(timeout=(\d+)\)")
     violations = []
     for path in _AGENT_FILES:
@@ -117,7 +125,6 @@ def test_no_bare_genai_client_with_tiny_timeout():
                 lineno = src[: match.start()].count("\n") + 1
                 violations.append(f"{path}:{lineno}: timeout={val} (< 10_000ms)")
 
-    assert not violations, (
-        "Suspiciously small HttpOptions.timeout values found:\n"
-        + "\n".join(violations)
-    )
+    assert (
+        not violations
+    ), "Suspiciously small HttpOptions.timeout values found:\n" + "\n".join(violations)

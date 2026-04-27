@@ -82,7 +82,9 @@ class GarminClient:
         try:
             from garminconnect import Garmin
         except ImportError:
-            logger.error("[GARMIN] garminconnect package not installed. Run: pip install garminconnect")
+            logger.error(
+                "[GARMIN] garminconnect package not installed. Run: pip install garminconnect"
+            )
             raise
 
         client = Garmin(self._email, self._password)
@@ -96,7 +98,9 @@ class GarminClient:
                 logger.info("[GARMIN] Resumed session from saved tokens")
                 return client
             except Exception as e:
-                logger.warning(f"[GARMIN] Token resume failed ({e}), falling back to full login")
+                logger.warning(
+                    f"[GARMIN] Token resume failed ({e}), falling back to full login"
+                )
 
         client.login()
         self._save_tokens(client)
@@ -112,7 +116,9 @@ class GarminClient:
         except Exception as e:
             logger.warning(f"[GARMIN] Could not save tokens: {e}")
 
-    def fetch_and_store_daily_metrics(self, user_id: str, target_date: Optional[date] = None) -> bool:
+    def fetch_and_store_daily_metrics(
+        self, user_id: str, target_date: Optional[date] = None
+    ) -> bool:
         """
         Fetch daily wellness metrics from Garmin Connect and store in DB.
         Returns True on success, False on failure.
@@ -130,7 +136,9 @@ class GarminClient:
             metrics = self._collect_metrics(client, target_date)
             upsert_garmin_daily_metrics(user_id, date_str, metrics)
             _reset_circuit()
-            logger.info(f"[GARMIN] Synced metrics for {user_id}/{date_str}: readiness={metrics.get('training_readiness_score')}")
+            logger.info(
+                f"[GARMIN] Synced metrics for {user_id}/{date_str}: readiness={metrics.get('training_readiness_score')}"
+            )
             return True
 
         except Exception as e:
@@ -166,11 +174,19 @@ class GarminClient:
             metrics["sleep_duration_sec"] = daily.get("sleepTimeSeconds")
             metrics["deep_sleep_sec"] = daily.get("deepSleepSeconds")
             scores = sleep_data.get("sleepScores", {})
-            metrics["sleep_score"] = scores.get("overall", {}).get("value") if isinstance(scores.get("overall"), dict) else scores.get("overall")
+            metrics["sleep_score"] = (
+                scores.get("overall", {}).get("value")
+                if isinstance(scores.get("overall"), dict)
+                else scores.get("overall")
+            )
 
         battery_data = _safe(client.get_body_battery, date_str, date_str)
         if battery_data and isinstance(battery_data, list):
-            charges = [d.get("charged", 0) for d in battery_data if d.get("charged") is not None]
+            charges = [
+                d.get("charged", 0)
+                for d in battery_data
+                if d.get("charged") is not None
+            ]
             if charges:
                 metrics["body_battery_morning"] = max(charges)
                 metrics["body_battery_evening"] = min(charges)
@@ -186,20 +202,26 @@ class GarminClient:
         training_status = _safe(client.get_training_status, date_str)
         if training_status:
             if isinstance(training_status, list) and training_status:
-                metrics["training_status"] = training_status[0].get("trainingLoadStatus")
+                metrics["training_status"] = training_status[0].get(
+                    "trainingLoadStatus"
+                )
             elif isinstance(training_status, dict):
                 metrics["training_status"] = training_status.get("trainingLoadStatus")
 
         return metrics
 
-    def get_daily_metrics(self, user_id: str, target_date: Optional[date] = None) -> Optional[dict]:
+    def get_daily_metrics(
+        self, user_id: str, target_date: Optional[date] = None
+    ) -> Optional[dict]:
         """
         Return cached Garmin metrics for user/date (up to 3-day fallback).
         Does NOT trigger a live sync — use fetch_and_store_daily_metrics() for that.
         """
         if target_date is None:
             target_date = date.today()
-        return get_garmin_daily_metrics(user_id, target_date.strftime("%Y-%m-%d"), max_stale_days=3)
+        return get_garmin_daily_metrics(
+            user_id, target_date.strftime("%Y-%m-%d"), max_stale_days=3
+        )
 
     def fetch_gear_stats(self, user_id: str) -> list[dict]:
         """Fetch gear (shoe) list with total mileage from Garmin."""
@@ -217,11 +239,13 @@ class GarminClient:
                         total_km = (stats.get("totalDistance") or 0) / 1000
                     except Exception:
                         total_km = 0
-                    result.append({
-                        "name": item.get("displayName", "Unknown"),
-                        "total_km": round(total_km, 1),
-                        "gear_id": gear_id,
-                    })
+                    result.append(
+                        {
+                            "name": item.get("displayName", "Unknown"),
+                            "total_km": round(total_km, 1),
+                            "gear_id": gear_id,
+                        }
+                    )
             return result
         except Exception as e:
             _record_failure()
@@ -233,11 +257,12 @@ class GarminClient:
         try:
             from app.core.notification import send_telegram_msg
             from app.core.user_context import get_primary_user_id
+
             chat_id = get_primary_user_id()
             send_telegram_msg(
                 chat_id,
                 "⚠️ Garmin Connect tạm thời không kết nối được (3 lần thất bại liên tiếp).\n"
-                "Hệ thống sẽ dùng dữ liệu cache trong 24h. Anh không cần làm gì."
+                "Hệ thống sẽ dùng dữ liệu cache trong 24h. Anh không cần làm gì.",
             )
         except Exception:
             pass

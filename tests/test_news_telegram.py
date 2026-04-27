@@ -1,4 +1,5 @@
 """Tests for app/agents/news/telegram_handler.py."""
+
 import pytest
 import time
 from unittest.mock import patch, MagicMock
@@ -7,10 +8,15 @@ from app.agents.news.telegram_handler import (
     handle_news_chat,
     _check_rate_limit,
     _rate_limit_store,
-    ERR_001, ERR_002, ERR_003, ERR_004, ERR_005, ERR_006,
-    RATE_LIMIT, RATE_WINDOW,
+    ERR_001,
+    ERR_002,
+    ERR_003,
+    ERR_004,
+    ERR_005,
+    ERR_006,
+    RATE_LIMIT,
+    RATE_WINDOW,
 )
-
 
 _DISABLED_CFG = {"news_agent": {"enabled": False}}
 _ENABLED_CFG = {"news_agent": {"enabled": True}}
@@ -66,17 +72,13 @@ class TestHandleNewsCommandValid:
     @pytest.mark.parametrize("session", ["morning", "afternoon", "evening"])
     def test_valid_session_calls_generate(self, session: str):
         with patch("app.agents.news.telegram_handler.send_telegram_msg"):
-            with patch(
-                "app.agents.news.agent.generate_news_briefing"
-            ) as mock_gen:
+            with patch("app.agents.news.agent.generate_news_briefing") as mock_gen:
                 handle_news_command("123", [session], _ENABLED_CFG)
         mock_gen.assert_called_once_with(_ENABLED_CFG, session=session)
 
     def test_no_args_defaults_to_morning(self):
         with patch("app.agents.news.telegram_handler.send_telegram_msg"):
-            with patch(
-                "app.agents.news.agent.generate_news_briefing"
-            ) as mock_gen:
+            with patch("app.agents.news.agent.generate_news_briefing") as mock_gen:
                 handle_news_command("123", [], _ENABLED_CFG)
         mock_gen.assert_called_once_with(_ENABLED_CFG, session="morning")
 
@@ -113,20 +115,30 @@ class TestHandleNewsChatEmptyText:
 class TestHandleNewsChatHappyPath:
     def test_calls_on_demand_briefing(self):
         with patch("app.agents.news.telegram_handler.send_telegram_msg"):
-            with patch("app.agents.news.telegram_handler.get_primary_user_id", return_value=1):
-                with patch("app.agents.news.agent._get_model", return_value=MagicMock()):
+            with patch(
+                "app.agents.news.telegram_handler.get_primary_user_id", return_value=1
+            ):
+                with patch(
+                    "app.agents.news.agent._get_model", return_value=MagicMock()
+                ):
                     with patch(
                         "app.agents.news.agent.generate_on_demand_briefing",
                         return_value="Some reply",
                     ) as mock_od:
-                        with patch("app.agents.news.telegram_handler.run_extract_in_background"):
+                        with patch(
+                            "app.agents.news.telegram_handler.run_extract_in_background"
+                        ):
                             handle_news_chat("123", "ETF Việt Nam", _ENABLED_CFG)
         mock_od.assert_called_once_with("ETF Việt Nam", "123", _ENABLED_CFG)
 
     def test_runs_memory_extraction_when_reply(self):
         with patch("app.agents.news.telegram_handler.send_telegram_msg"):
-            with patch("app.agents.news.telegram_handler.get_primary_user_id", return_value=42):
-                with patch("app.agents.news.agent._get_model", return_value=MagicMock()):
+            with patch(
+                "app.agents.news.telegram_handler.get_primary_user_id", return_value=42
+            ):
+                with patch(
+                    "app.agents.news.agent._get_model", return_value=MagicMock()
+                ):
                     with patch(
                         "app.agents.news.agent.generate_on_demand_briefing",
                         return_value="Reply content",
@@ -139,8 +151,12 @@ class TestHandleNewsChatHappyPath:
 
     def test_no_memory_extraction_when_no_reply(self):
         with patch("app.agents.news.telegram_handler.send_telegram_msg"):
-            with patch("app.agents.news.telegram_handler.get_primary_user_id", return_value=1):
-                with patch("app.agents.news.agent._get_model", return_value=MagicMock()):
+            with patch(
+                "app.agents.news.telegram_handler.get_primary_user_id", return_value=1
+            ):
+                with patch(
+                    "app.agents.news.agent._get_model", return_value=MagicMock()
+                ):
                     with patch(
                         "app.agents.news.agent.generate_on_demand_briefing",
                         return_value=None,
@@ -177,11 +193,16 @@ class TestCheckRateLimit:
     def test_mixed_old_and_recent(self):
         now = time.time()
         # 9 recent + RATE_LIMIT old expired → should allow one more
-        _rate_limit_store["rl_test"] = (
-            [now - RATE_WINDOW - 1] * RATE_LIMIT  # all expired
-            + [now - 60] * (RATE_LIMIT - 1)        # 9 recent
-        )
-        assert _check_rate_limit("rl_test") is True  # 9+1 = 10 = at limit, still allowed
+        _rate_limit_store["rl_test"] = [
+            now - RATE_WINDOW - 1
+        ] * RATE_LIMIT + [  # all expired
+            now - 60
+        ] * (
+            RATE_LIMIT - 1
+        )  # 9 recent
+        assert (
+            _check_rate_limit("rl_test") is True
+        )  # 9+1 = 10 = at limit, still allowed
         assert _check_rate_limit("rl_test") is False  # 11th blocked
 
 

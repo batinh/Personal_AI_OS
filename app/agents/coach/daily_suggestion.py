@@ -84,16 +84,22 @@ def compute_daily_suggestion(
     if athlete_state in ("sick", "injured"):
         s = dict(_SUGGESTION_TYPES["rest"])
         if athlete_state == "sick":
-            s["description_vi"] = "Anh đang ốm — hãy nghỉ hoàn toàn, uống nhiều nước và ăn uống đủ chất."
+            s["description_vi"] = (
+                "Anh đang ốm — hãy nghỉ hoàn toàn, uống nhiều nước và ăn uống đủ chất."
+            )
         else:
-            s["description_vi"] = "Đang chấn thương — không chạy. Tham khảo bác sĩ/PT trước khi quay lại tập."
+            s["description_vi"] = (
+                "Đang chấn thương — không chạy. Tham khảo bác sĩ/PT trước khi quay lại tập."
+            )
         s["reason"] = f"athlete_state={athlete_state}"
         return s
 
     if acwr is not None and acwr > ACWR_CRITICAL:
         s = dict(_SUGGESTION_TYPES["rest"])
         s["title_vi"] = "Nghỉ — nguy cơ quá tải"
-        s["description_vi"] = f"ACWR = {acwr:.2f} (ngưỡng nguy hiểm > 1.4). Nghỉ hôm nay để tránh chấn thương."
+        s["description_vi"] = (
+            f"ACWR = {acwr:.2f} (ngưỡng nguy hiểm > 1.4). Nghỉ hôm nay để tránh chấn thương."
+        )
         s["reason"] = f"acwr={acwr:.2f} > {ACWR_CRITICAL}"
         return s
 
@@ -106,13 +112,17 @@ def compute_daily_suggestion(
 
     if days_since_last_run >= 3:
         s = dict(_SUGGESTION_TYPES["easy"])
-        s["description_vi"] = f"Đã {days_since_last_run} ngày không chạy — chạy nhẹ hôm nay để duy trì thói quen."
+        s["description_vi"] = (
+            f"Đã {days_since_last_run} ngày không chạy — chạy nhẹ hôm nay để duy trì thói quen."
+        )
         s["reason"] = f"days_since_last_run={days_since_last_run}"
         return s
 
     if acwr is not None and acwr > ACWR_SAFE_MAX:
         s = dict(_SUGGESTION_TYPES["easy_short"])
-        s["description_vi"] = f"ACWR = {acwr:.2f} — không tăng khối lượng hôm nay. Chạy nhẹ và ngắn."
+        s["description_vi"] = (
+            f"ACWR = {acwr:.2f} — không tăng khối lượng hôm nay. Chạy nhẹ và ngắn."
+        )
         s["reason"] = f"acwr={acwr:.2f} > {ACWR_SAFE_MAX}"
         return s
 
@@ -128,13 +138,17 @@ def compute_daily_suggestion(
         return s
 
     recent_quality = sum(
-        1 for r in recent_runs
-        if r.get("workout_type_detected") in ("tempo", "interval") or (r.get("gcs_score") or 0) >= 7
+        1
+        for r in recent_runs
+        if r.get("workout_type_detected") in ("tempo", "interval")
+        or (r.get("gcs_score") or 0) >= 7
     )
 
     if eff_readiness >= READINESS_THRESHOLDS["excellent"] and recent_quality == 0:
         s = dict(_SUGGESTION_TYPES["tempo"])
-        s["reason"] = f"readiness={eff_readiness} (excellent), no recent quality session"
+        s["reason"] = (
+            f"readiness={eff_readiness} (excellent), no recent quality session"
+        )
         return s
 
     s = dict(_SUGGESTION_TYPES["easy"])
@@ -142,7 +156,9 @@ def compute_daily_suggestion(
     return s
 
 
-def format_daily_suggestion_for_briefing(suggestion: dict, garmin_data: Optional[dict] = None) -> str:
+def format_daily_suggestion_for_briefing(
+    suggestion: dict, garmin_data: Optional[dict] = None
+) -> str:
     """Format a daily suggestion dict into a Vietnamese Telegram message block."""
     lines = ["💡 <b>Gợi ý hôm nay (chưa có giáo án):</b>"]
 

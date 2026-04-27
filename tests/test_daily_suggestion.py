@@ -1,5 +1,9 @@
 """Tests for daily_suggestion.py — pure function, 10-rule priority chain."""
-from app.agents.coach.daily_suggestion import compute_daily_suggestion, format_daily_suggestion_for_briefing
+
+from app.agents.coach.daily_suggestion import (
+    compute_daily_suggestion,
+    format_daily_suggestion_for_briefing,
+)
 
 
 def _suggest(**kwargs):

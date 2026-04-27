@@ -1,12 +1,13 @@
 """Tests for setup_flow.py — 6-step onboarding FSM."""
+
 import json
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True)
 def _patch_db(monkeypatch):
@@ -41,24 +42,29 @@ def _patch_db(monkeypatch):
 # Validators
 # ---------------------------------------------------------------------------
 
+
 class TestValidateDistance:
     def test_numeric(self):
         from app.agents.coach.setup_validators import validate_distance
+
         ok, val, _ = validate_distance("42.2")
         assert ok and val == 42.2
 
     def test_alias_hm(self):
         from app.agents.coach.setup_validators import validate_distance
+
         ok, val, _ = validate_distance("HM")
         assert ok and val == 21.1
 
     def test_alias_fm(self):
         from app.agents.coach.setup_validators import validate_distance
+
         ok, val, _ = validate_distance("FM")
         assert ok and val == 42.2
 
     def test_out_of_range(self):
         from app.agents.coach.setup_validators import validate_distance
+
         ok, _, err = validate_distance("250")
         assert not ok and err
 
@@ -66,16 +72,19 @@ class TestValidateDistance:
 class TestValidateDate:
     def test_valid_future(self):
         from app.agents.coach.setup_validators import validate_date
+
         ok, val, _ = validate_date("15/06/2030")
         assert ok and val == "2030-06-15"
 
     def test_too_soon(self):
         from app.agents.coach.setup_validators import validate_date
+
         ok, _, err = validate_date("01/01/2000")
         assert not ok and err
 
     def test_invalid_format(self):
         from app.agents.coach.setup_validators import validate_date
+
         ok, _, err = validate_date("not-a-date")
         assert not ok and err
 
@@ -83,16 +92,19 @@ class TestValidateDate:
 class TestValidateTime:
     def test_hhmm_format(self):
         from app.agents.coach.setup_validators import validate_time
+
         ok, val, _ = validate_time("1:45", race_distance_km=21.1)
         assert ok and val == 105
 
     def test_minutes_format(self):
         from app.agents.coach.setup_validators import validate_time
+
         ok, val, _ = validate_time("105", race_distance_km=21.1)
         assert ok and val == 105
 
     def test_unreasonable_pace(self):
         from app.agents.coach.setup_validators import validate_time
+
         ok, _, err = validate_time("0:30", race_distance_km=21.1)
         assert not ok and err
 
@@ -100,11 +112,13 @@ class TestValidateTime:
 class TestValidateKmWeek:
     def test_valid(self):
         from app.agents.coach.setup_validators import validate_kmweek
+
         ok, val, _ = validate_kmweek("35")
         assert ok and val == 35.0
 
     def test_out_of_range(self):
         from app.agents.coach.setup_validators import validate_kmweek
+
         ok, _, err = validate_kmweek("300")
         assert not ok and err
 
@@ -112,11 +126,13 @@ class TestValidateKmWeek:
 class TestValidateDays:
     def test_valid(self):
         from app.agents.coach.setup_validators import validate_days
+
         ok, val, _ = validate_days("5")
         assert ok and val == 5
 
     def test_too_few(self):
         from app.agents.coach.setup_validators import validate_days
+
         ok, _, err = validate_days("1")
         assert not ok and err
 
@@ -124,17 +140,20 @@ class TestValidateDays:
 class TestValidateRestDays:
     def test_vietnamese_names(self):
         from app.agents.coach.setup_validators import validate_rest_days
+
         ok, val, _ = validate_rest_days("Thứ Hai, Thứ Sáu", training_days=5)
         assert ok
         assert 0 in val and 4 in val
 
     def test_aliases(self):
         from app.agents.coach.setup_validators import validate_rest_days
+
         ok, val, _ = validate_rest_days("T2, T6", training_days=5)
         assert ok and 0 in val and 4 in val
 
     def test_too_many_rest_days(self):
         from app.agents.coach.setup_validators import validate_rest_days
+
         ok, _, err = validate_rest_days("T2, T3, T4, T5, T6, T7", training_days=3)
         assert not ok and err
 
@@ -143,14 +162,17 @@ class TestValidateRestDays:
 # Setup FSM
 # ---------------------------------------------------------------------------
 
+
 class TestSetupFSM:
     def test_start_setup_returns_step1_prompt(self):
         from app.agents.coach.setup_flow import start_setup
+
         prompt = start_setup("user1")
         assert "Bước 1" in prompt
 
     def test_happy_path_6_steps(self):
         from app.agents.coach.setup_flow import start_setup, advance_setup
+
         start_setup("user2")
         replies = [
             ("42.2", "Bước 2"),
@@ -162,16 +184,20 @@ class TestSetupFSM:
         ]
         for user_input, expected_fragment in replies:
             resp = advance_setup("user2", user_input)
-            assert expected_fragment in resp, f"Expected '{expected_fragment}' in response for input '{user_input}'"
+            assert (
+                expected_fragment in resp
+            ), f"Expected '{expected_fragment}' in response for input '{user_input}'"
 
     def test_invalid_input_repeats_same_step(self):
         from app.agents.coach.setup_flow import start_setup, advance_setup
+
         start_setup("user3")
         resp = advance_setup("user3", "not-a-distance")
         assert "Bước 1" in resp
 
     def test_is_setup_in_progress(self):
         from app.agents.coach.setup_flow import start_setup, is_setup_in_progress
+
         assert not is_setup_in_progress("user99")
         start_setup("user99")
         assert is_setup_in_progress("user99")
