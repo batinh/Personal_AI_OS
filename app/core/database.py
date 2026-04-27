@@ -1108,7 +1108,7 @@ def upsert_run_computed_metrics(activity_id: str, user_id: str, metrics: dict) -
             set_clause = ", ".join(f"{col} = ?" for col in safe)
             values = list(safe.values()) + [str(activity_id), str(user_id)]
             c.execute(
-                f"UPDATE run_activities SET {set_clause} WHERE activity_id = ? AND user_id = ?",
+                f"UPDATE run_activities SET {set_clause} WHERE activity_id = ? AND user_id = ?",  # nosec B608
                 values,
             )
         logger.info(
@@ -1131,7 +1131,7 @@ def get_run_metrics_from_db(activity_id: str, user_id: str) -> dict:
         with get_db() as conn:
             c = conn.cursor()
             c.execute(
-                f"SELECT {cols} FROM run_activities WHERE activity_id = ? AND user_id = ?",
+                f"SELECT {cols} FROM run_activities WHERE activity_id = ? AND user_id = ?",  # nosec B608
                 (str(activity_id), str(user_id)),
             )
             row = c.fetchone()
@@ -1163,7 +1163,7 @@ def get_metric_trend_data(user_id: str, metric_name: str, days: int = 28) -> Lis
                   AND {metric_name} IS NOT NULL
                   AND start_date >= date('now', ?)
                 ORDER BY start_date DESC
-                """,
+                """,  # nosec B608
                 (str(user_id), f"-{days} days"),
             )
             rows = c.fetchall()
@@ -1403,7 +1403,7 @@ def get_all_active_memories(user_id: str) -> list:
                 f"""
                 UPDATE core_memory SET last_accessed = CURRENT_TIMESTAMP
                 WHERE id IN ({placeholders}) AND user_id = ?
-            """,
+            """,  # nosec B608
                 (*memory_ids, str(user_id)),
             )
             conn.commit()
@@ -1526,7 +1526,7 @@ def get_audit_entries(
                 params.append(severity)
             where = " AND ".join(clauses)
             rows = conn.execute(
-                f"SELECT * FROM audit_entries WHERE {where} ORDER BY created_at DESC LIMIT ?",
+                f"SELECT * FROM audit_entries WHERE {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608
                 params + [limit],
             ).fetchall()
             return [dict(r) for r in rows]

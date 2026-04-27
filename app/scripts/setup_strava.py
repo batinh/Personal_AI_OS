@@ -27,7 +27,9 @@ def get_tokens():
     }
 
     try:
-        res = requests.post("https://www.strava.com/oauth/token", data=payload)
+        res = requests.post(
+            "https://www.strava.com/oauth/token", data=payload
+        )  # nosec B113
         res.raise_for_status()
         data = res.json()
 

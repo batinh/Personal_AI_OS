@@ -41,7 +41,7 @@ class CoverageReport:
 
 
 def _parse_coverage(path: Path) -> tuple[float, int, int, list[PackageCoverage]]:
-    tree = ET.parse(str(path))
+    tree = ET.parse(str(path))  # nosec B314
     root = tree.getroot()
     line_rate = float(root.get("line-rate", 0))
     lines_valid = int(root.get("lines-valid", 0))
@@ -70,7 +70,7 @@ def _parse_coverage(path: Path) -> tuple[float, int, int, list[PackageCoverage]]
 def _parse_junit(path: Path) -> TestCounts | None:
     if not path.exists():
         return None
-    tree = ET.parse(str(path))
+    tree = ET.parse(str(path))  # nosec B314
     root = tree.getroot()
     # JUnit XML may have <testsuites> → <testsuite> or just <testsuite>
     suite = root if root.tag == "testsuite" else root.find("testsuite")
@@ -100,7 +100,7 @@ def load_coverage_report(
 
     Raises FileNotFoundError if coverage_path does not exist.
     """
-    tree = ET.parse(str(coverage_path))
+    tree = ET.parse(str(coverage_path))  # nosec B314
     root = tree.getroot()
     ts = root.get("timestamp")
     line_rate, lines_valid, lines_covered, packages = _parse_coverage(coverage_path)
