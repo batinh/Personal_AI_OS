@@ -4,7 +4,6 @@ Tests for run_activity_raw: stream_file_path storage and retrieval.
 import os
 import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from app.core import database

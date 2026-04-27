@@ -12,7 +12,7 @@ Covers extract_implicit_memory():
 """
 import json
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 
 _PATCHES = [

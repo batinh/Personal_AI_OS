@@ -1,8 +1,6 @@
 """Tests for garmin_client.py — mock garminconnect, circuit breaker."""
-import json
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

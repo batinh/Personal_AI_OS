@@ -3,7 +3,6 @@ Stream file storage: save/load raw Strava activity streams under data/streams.
 Used for full-fidelity re-analysis and segment-level analysis without re-fetching from API.
 """
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional

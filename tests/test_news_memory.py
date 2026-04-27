@@ -143,7 +143,8 @@ class TestRunExtractInBackground(unittest.TestCase):
     @patch("app.agents.news.memory.extract_and_save_signals")
     def test_spawns_thread(self, mock_extract):
         run_extract_in_background("user1", "chat", "model")
-        import time; time.sleep(0.05)  # let daemon thread start
+        import time
+        time.sleep(0.05)  # let daemon thread start
         mock_extract.assert_called_once()
 
 

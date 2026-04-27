@@ -10,10 +10,10 @@ from app.core.logging_conf import log_capture_string
 from app.core.state import state
 from app.core.admin_auth import verify_admin
 from app.services.scheduler import reload_scheduler
+from app.core.logging_conf import get_module_logger
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-from app.core.logging_conf import get_module_logger
 logger = get_module_logger("admin")
 
 # ==========================================

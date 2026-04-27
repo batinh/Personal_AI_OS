@@ -1,6 +1,5 @@
 """Tests for _classify_intent and _text_matches_keyword_list in coach agent."""
-import pytest
-from app.agents.coach.agent import _classify_intent, _FAST_EXACT, _STANDARD_KEYWORDS, _text_matches_keyword_list, _is_degenerate_response
+from app.agents.coach.agent import _classify_intent, _text_matches_keyword_list, _is_degenerate_response
 
 
 class TestFastExactWhitelist:

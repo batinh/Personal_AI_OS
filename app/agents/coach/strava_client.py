@@ -3,7 +3,6 @@ from typing import Optional
 
 import requests
 import pandas as pd
-import numpy as np
 from dotenv import load_dotenv
 
 from app.core.logging_conf import get_module_logger
@@ -110,16 +109,6 @@ class StravaClient:
                 {"km": s.get("split"), "pace": s.get("average_speed"), "hr": s.get("average_heartrate", 0)}
                 for s in splits
             ]
-            laps = act_data.get("laps", [])
-            laps_summary = [
-                {
-                    "lap_name": l.get("name"),
-                    "distance": l.get("distance"),
-                    "pace": l.get("average_speed"),
-                    "hr": l.get("average_heartrate", 0),
-                }
-                for l in laps
-            ]
             extended_meta = {
                 "start_date_local": act_data.get("start_date_local"),
                 "moving_time": act_data.get("moving_time", 0),
@@ -174,7 +163,8 @@ class StravaClient:
     def update_activity_description(self, activity_id: str, description: str):
         """Update the description of a Strava activity."""
         token = self.get_access_token()
-        if not token: return False
+        if not token:
+            return False
 
         url = f"{self.base_url}/activities/{activity_id}"
         headers = {'Authorization': f'Bearer {token}'}

@@ -1,6 +1,5 @@
 """Tests for setup_flow.py — 6-step onboarding FSM."""
 import json
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -35,8 +34,6 @@ def _patch_db(monkeypatch):
     monkeypatch.setattr(sf, "abandon_stale_setup_sessions", _abandon)
     monkeypatch.setattr(sf, "save_config", lambda cfg: None)
     monkeypatch.setattr(sf, "load_config", lambda: {})
-    monkeypatch.setattr(sf, "update_weekly_plan_status", lambda *a, **kw: None)
-    monkeypatch.setattr(sf, "get_pending_weekly_plan", lambda uid: None)
     yield sessions
 
 

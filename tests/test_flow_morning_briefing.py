@@ -11,7 +11,6 @@ Covers generate_morning_briefing():
   - Gemini exception: error logged, no crash
 """
 import unittest
-from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
 
@@ -27,24 +26,8 @@ def _make_config():
     }
 
 
-def _make_agent_ctx():
-    from app.agents.coach.utils import AgentContext
-    return AgentContext(
-        user_id="123456",
-        now=datetime(2026, 4, 26, 7, 0, tzinfo=timezone.utc),
-        phase_text="Build | Week 3",
-        countdown_text="Còn 7 tuần đến ngày đua.",
-        acwr_text="1.05 (Optimal)",
-        actual_volume=35.0,
-        weekly_decision_context="Week context",
-        system_inst="Sys instruction",
-        shared_context="Shared context",
-    )
-
-
 _PATCHES = [
     "app.agents.coach.flows.morning_briefing.get_primary_user_id",
-    "app.agents.coach.flows.morning_briefing.build_agent_context",
     "app.agents.coach.flows.morning_briefing.get_plan_for_date",
     "app.agents.coach.flows.morning_briefing.load_history_for_gemini",
     "app.agents.coach.flows.morning_briefing.get_all_active_memories",
@@ -71,7 +54,6 @@ class TestGenerateMorningBriefing(unittest.TestCase):
             mocks[key] = m
 
         mocks["get_primary_user_id"].return_value = chat_id
-        mocks["build_agent_context"].return_value = _make_agent_ctx()
         mocks["get_plan_for_date"].return_value = {"workout_title": "Easy Run", "description": "45min easy"}
         mocks["load_history_for_gemini"].return_value = history or []
         mocks["get_all_active_memories"].return_value = memories or []

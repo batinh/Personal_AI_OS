@@ -335,7 +335,8 @@ def send_typing_action(chat_id):
 def send_html_email(subject, html_content, config):
     """Sends an HTML email report using SMTP configuration."""
     email_cfg = config.get("email_config", {})
-    if not email_cfg.get("enabled"): return
+    if not email_cfg.get("enabled"):
+        return
 
     env_sender = os.getenv("EMAIL_SENDER")
     env_password = os.getenv("EMAIL_PASSWORD")

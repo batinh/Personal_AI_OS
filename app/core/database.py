@@ -608,7 +608,8 @@ def get_recent_runs_log(user_id: str, limit: int = 10) -> str:
         rows = c.fetchall()
         conn.close()
         
-        if not rows: return "No recent runs found in database."
+        if not rows:
+            return "No recent runs found in database."
         log_lines = []
         for r in rows:
             date_str = r['start_date'][:10] if r['start_date'] else "N/A"
@@ -750,7 +751,8 @@ def get_upcoming_plans(user_id: str, limit_days: int = 7) -> str:
         rows = cursor.fetchall()
         conn.close()
         
-        if not rows: return "Chưa có giáo án nào được lên lịch cho những ngày tới."
+        if not rows:
+            return "Chưa có giáo án nào được lên lịch cho những ngày tới."
         plan_text = [f"- Ngày {r['date']} [{r['status']}]: {r['workout_title']} - {r['description']}" for r in rows]
         return "\n".join(plan_text)
     except Exception as e:

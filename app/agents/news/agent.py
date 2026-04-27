@@ -17,8 +17,8 @@ Telegram routing:
   news_agent.telegram_chat_id set  → send to that channel/group
   news_agent.telegram_chat_id empty → fallback to primary TELEGRAM_CHAT_ID
 """
-import logging
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from datetime import datetime
@@ -39,6 +39,7 @@ from app.agents.news.prompts import (
 )
 from app.agents.news.memory import load_news_memory
 from app.agents.news.telegram_handler import ERR_001, ERR_002
+from app.core.gemini_utils import extract_text as _extract_text, strip_thought_preamble as _strip_thought_preamble
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
@@ -112,10 +113,6 @@ def _session_header(session: str, date_str: str) -> str:
 # ==========================================
 # GEMINI CALL WRAPPERS
 # ==========================================
-
-import re
-
-from app.core.gemini_utils import extract_text as _extract_text, strip_thought_preamble as _strip_thought_preamble
 
 _DEBUG_NEWS = os.getenv("DEBUG_NEWS", "").lower() in ("1", "true", "yes")
 

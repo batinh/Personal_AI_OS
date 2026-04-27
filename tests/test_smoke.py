@@ -217,7 +217,8 @@ class TestSDKContracts(unittest.TestCase):
         """Regression: HttpOptions.timeout is MILLISECONDS not seconds.
         If SDK upgrades change the unit, this fails immediately.
         Incident: timeout=30 → 30ms → X-Server-Timeout:1 → 400 rejected (2026-04-21)."""
-        import pathlib, sys as _sys
+        import pathlib
+        import sys as _sys
         types_path = None
         for p in _sys.path:
             candidate = pathlib.Path(p) / "google" / "genai" / "types.py"

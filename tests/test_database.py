@@ -647,7 +647,7 @@ class TestVolumeStats(_TempDbMixin, unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 # 9. CORE MEMORY — insert, dedup, get_all_active, archive
 # ══════════════════════════════════════════════════════════════════════════════
-class TestCoreMemory(_TempDbMixin, unittest.TestCase):
+class TestCoreMemoryExtended(_TempDbMixin, unittest.TestCase):
     UID = "mem_user"
 
     def test_insert_new_memory(self):

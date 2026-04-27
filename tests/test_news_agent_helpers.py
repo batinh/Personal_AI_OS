@@ -1,7 +1,5 @@
 """Tests for pure helper functions in app/agents/news/agent.py."""
-import pytest
-from unittest.mock import patch, MagicMock, call
-from google.genai import types
+from unittest.mock import patch, MagicMock
 from app.agents.news.agent import (
     _resolve_chat_id,
     _get_model,
@@ -160,7 +158,7 @@ class TestBuildSourcesBlock:
     def test_capped_at_max_sources(self):
         urls = [(f"Title{i}", f"https://example.com/{i}") for i in range(5)]
         result = _build_sources_block(urls, max_sources=3)
-        lines = [l for l in result.splitlines() if l.startswith("•")]
+        lines = [ln for ln in result.splitlines() if ln.startswith("•")]
         assert len(lines) == 3
 
     def test_fourth_url_not_included(self):

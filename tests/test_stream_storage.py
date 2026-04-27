@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.services.stream_storage import (
-    DATA_DIR,
     get_stream_arrays,
     get_stream_file_path,
     load_activity_stream_from_file,

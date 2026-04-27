@@ -22,7 +22,7 @@ if cache_dir:
     os.environ["XDG_CACHE_HOME"] = cache_dir # Add this to completely fix ONNX cache issues
 # 3. AFTER SETTING ENV VARS, FINALLY IMPORT CHROMA
 
-from app.core.logging_conf import get_module_logger
+from app.core.logging_conf import get_module_logger  # noqa: E402
 logger = get_module_logger("memory")
 
 class RagMemory:
@@ -75,7 +75,7 @@ class RagMemory:
         try:
             self.collection.delete(ids=[doc_id])
             logger.debug(f"[RAG] Successfully erased memory item: {doc_id}")
-        except Exception as e:
+        except Exception:
             logger.warning(f"[RAG] Ignore delete memory {doc_id} (Maybe not exists).")
 
 rag_db = RagMemory()

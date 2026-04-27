@@ -1,5 +1,4 @@
 import requests
-import webbrowser
 
 # --- CẤU HÌNH TẠM THỜI ĐỂ LẤY TOKEN ---
 # Bạn hãy điền Client ID và Secret từ Strava vào đây để chạy script này

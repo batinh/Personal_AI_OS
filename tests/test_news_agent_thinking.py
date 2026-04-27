@@ -55,7 +55,7 @@ def _make_response(*candidates: MagicMock, fallback_text: str = "") -> MagicMock
 # (conftest.py stubs google.genai before any import, so these are safe)
 # ─────────────────────────────────────────────────────────────────────────────
 
-from app.agents.news.agent import _extract_text, _strip_thought_preamble
+from app.agents.news.agent import _extract_text, _strip_thought_preamble  # noqa: E402
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -383,16 +383,14 @@ class TestDockerIntegration(unittest.TestCase):
         Requires a valid Telegram-style payload; skipped if TELEGRAM_BOT_TOKEN
         is not configured in the container (query will be rejected by auth).
         """
-        import subprocess, time
+        import subprocess
+        import time
 
-        # Record log position before triggering
-        before = subprocess.run(
+        # Record log position before triggering (result discarded intentionally)
+        subprocess.run(
             ["docker", "logs", "airunningcoach", "--tail", "1"],
             capture_output=True, text=True, timeout=10,
-        ).stderr + subprocess.run(
-            ["docker", "logs", "airunningcoach", "--tail", "1"],
-            capture_output=True, text=True, timeout=10,
-        ).stdout
+        )
 
         # We don't have a real Telegram token here, so the webhook will
         # reject the request. What we verify is that the endpoint is alive

@@ -10,7 +10,7 @@ Covers scheduled task functions:
                 cron time fallback on invalid format
 """
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 
 def _make_config(news_enabled=False, briefing_time="06:00", backup_time="02:00",

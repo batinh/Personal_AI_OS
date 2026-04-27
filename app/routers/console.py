@@ -16,6 +16,7 @@ from app.core.logging_conf import (
     apply_log_levels,
     get_effective_log_levels,
     KNOWN_DOMAINS,
+    get_module_logger,
 )
 from app.core.state import state
 from app.core.user_context import get_primary_user_id
@@ -31,7 +32,6 @@ from app.services.scheduler import reload_scheduler
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-from app.core.logging_conf import get_module_logger
 logger = get_module_logger("admin")
 
 

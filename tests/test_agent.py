@@ -7,7 +7,6 @@ NOTE: google.genai + chromadb stubs are injected by conftest.py at session
       level — no need to stub them again here.
 """
 import json
-import os
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -126,7 +125,6 @@ class TestHandleTelegramChat(unittest.TestCase):
             "g_vol":   patch("app.agents.coach.agent.get_weekly_volume", return_value=25.0),
             "g_loads": patch("app.agents.coach.agent.get_training_loads",
                              return_value={"acute_load_7d": 100, "chronic_load_28d": 400}),
-            "g_target": patch("app.agents.coach.agent.get_weekly_target", return_value=None),
             "g_mems":  patch("app.agents.coach.agent.get_all_active_memories", return_value=[]),
             "client":  patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT),
         }

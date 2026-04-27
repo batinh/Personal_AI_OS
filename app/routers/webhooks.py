@@ -1,11 +1,23 @@
-from fastapi import APIRouter, Request, BackgroundTasks
 import json
 import os
 from typing import Any, Optional
 
+from fastapi import APIRouter, Request, BackgroundTasks
 from pydantic import BaseModel, Field
 
 from app.core.user_context import get_primary_user_id
+from app.core.config import load_config
+from app.core.notification import send_telegram_msg, send_html_email
+from app.core.state import state
+from app.core.database import save_run_activity, save_run_activity_raw, delete_run_activity, upsert_run_computed_metrics
+from app.core.logging_conf import get_module_logger
+from app.agents.coach.agent import analyze_run_with_gemini, handle_telegram_chat
+from app.agents.coach.strava_client import StravaClient
+from app.agents.coach.harvest import execute_manual_sync, execute_sync_all, build_activity_record
+from app.agents.coach.metrics_engine import compute_stream_metrics
+from app.services.scheduler import task_morning_briefing
+from app.services.rag_memory import rag_db
+from app.services.stream_storage import save_activity_stream_to_file
 
 
 class StravaWebhookPayload(BaseModel):
@@ -17,22 +29,8 @@ class StravaWebhookPayload(BaseModel):
     event_time: Optional[int] = None
     updates: Optional[dict[str, Any]] = None
 
-from app.core.config import load_config
-from app.core.notification import send_telegram_msg, send_html_email
-from app.agents.coach.agent import analyze_run_with_gemini, handle_telegram_chat
-from app.agents.coach.strava_client import StravaClient
-
-# Include execute_manual_sync in imports
-from app.agents.coach.harvest import harvest_data, execute_manual_sync, execute_sync_all, build_activity_record
-from app.core.state import state
-from app.services.scheduler import task_morning_briefing
-from app.core.database import save_run_activity, save_run_activity_raw, delete_run_activity, upsert_run_computed_metrics
-from app.services.rag_memory import rag_db
-from app.services.stream_storage import save_activity_stream_to_file
-from app.agents.coach.metrics_engine import compute_stream_metrics
 
 router = APIRouter()
-from app.core.logging_conf import get_module_logger
 logger = get_module_logger("webhook")
 
 # --- BUSINESS LOGIC (SERVICE LAYER) ---

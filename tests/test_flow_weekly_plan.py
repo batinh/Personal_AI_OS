@@ -1,6 +1,5 @@
 """Tests for flows/weekly_plan_generation.py — schema validation, accept/reject."""
 import json
-from unittest.mock import MagicMock, patch
 
 import pytest
 

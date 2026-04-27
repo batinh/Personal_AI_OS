@@ -8,7 +8,6 @@ timeout=30000 → 30s → X-Server-Timeout:30 → accepted.
 These tests catch the bug class statically (AST parse) without hitting the API.
 """
 import ast
-import inspect
 import pathlib
 
 # ── Minimum safe timeout: 10 seconds expressed in milliseconds ─────────────────

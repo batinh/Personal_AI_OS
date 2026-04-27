@@ -5,14 +5,11 @@ All tests here are pure math/logic – no DB, no network, no mocks needed.
 Covers: TRIMP, ACWR, Training Phase, Grade Adjusted Pace, Decoupling,
         Efficiency Factor, Weekly Context formatting.
 """
-import math
-import os
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pandas as pd
-import numpy as np
 
 
 # ─────────────────────────────────────────────────────────────────────────────

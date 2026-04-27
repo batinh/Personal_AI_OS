@@ -72,7 +72,8 @@ def calculate_efficiency_factor(avg_speed_mpm: float, avg_hr: float) -> float:
     Formula: EF = Speed (meters/min) / Average HR
     Indicates cardiovascular efficiency.
     """
-    if avg_hr == 0: return 0.0
+    if avg_hr == 0:
+        return 0.0
     return round(avg_speed_mpm / avg_hr, 2)
 
 def calculate_grade_adjusted_pace(velocity_ms: float, grade_pct: float) -> float:
@@ -130,15 +131,15 @@ def calculate_lthr_zones(lthr_bpm: int) -> dict:
     Calculate 7 Joe Friel HR Zones based on Lactate Threshold Heart Rate (LTHR).
     Boundaries: Z1<70%, Z2 70-85%, Z3 85-90%, Z4 90-95%, Z5a 95-98%, Z5b 98-102%, Z5c >102% LTHR.
     """
-    l = lthr_bpm
+    lthr = lthr_bpm
     return {
-        "zone1":  {"name": "Recovery",       "min": 0,               "max": round(l * 0.70), "pct": "<70% LTHR"},
-        "zone2":  {"name": "Aerobic",         "min": round(l * 0.70), "max": round(l * 0.85), "pct": "70-85% LTHR"},
-        "zone3":  {"name": "Tempo",           "min": round(l * 0.85), "max": round(l * 0.90), "pct": "85-90% LTHR"},
-        "zone4":  {"name": "Sub-Threshold",   "min": round(l * 0.90), "max": round(l * 0.95), "pct": "90-95% LTHR"},
-        "zone5a": {"name": "VO2max (5a)",     "min": round(l * 0.95), "max": round(l * 0.98), "pct": "95-98% LTHR"},
-        "zone5b": {"name": "Anaerobic (5b)",  "min": round(l * 0.98), "max": round(l * 1.02), "pct": "98-102% LTHR"},
-        "zone5c": {"name": "Max Speed (5c)",  "min": round(l * 1.02), "max": 9999,              "pct": ">102% LTHR"},
+        "zone1":  {"name": "Recovery",       "min": 0,               "max": round(lthr *0.70), "pct": "<70% LTHR"},
+        "zone2":  {"name": "Aerobic",         "min": round(lthr *0.70), "max": round(lthr *0.85), "pct": "70-85% LTHR"},
+        "zone3":  {"name": "Tempo",           "min": round(lthr *0.85), "max": round(lthr *0.90), "pct": "85-90% LTHR"},
+        "zone4":  {"name": "Sub-Threshold",   "min": round(lthr *0.90), "max": round(lthr *0.95), "pct": "90-95% LTHR"},
+        "zone5a": {"name": "VO2max (5a)",     "min": round(lthr *0.95), "max": round(lthr *0.98), "pct": "95-98% LTHR"},
+        "zone5b": {"name": "Anaerobic (5b)",  "min": round(lthr *0.98), "max": round(lthr *1.02), "pct": "98-102% LTHR"},
+        "zone5c": {"name": "Max Speed (5c)",  "min": round(lthr *1.02), "max": 9999,              "pct": ">102% LTHR"},
     }
 
 
@@ -316,7 +317,8 @@ def gather_weekly_decision_inputs(user_id: str, week_start_date: str) -> dict:
     current_acute = loads.get("acute_load_7d", 0)
     max_safe_acute = chronic_load * 1.3
     safe_trimp_remaining = round(max_safe_acute - current_acute, 1)
-    if safe_trimp_remaining < 0: safe_trimp_remaining = 0
+    if safe_trimp_remaining < 0:
+        safe_trimp_remaining = 0
 
     db_target = get_weekly_target(user_id, week_start_date)
 

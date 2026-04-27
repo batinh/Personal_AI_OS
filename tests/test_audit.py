@@ -7,11 +7,8 @@ Covers:
 - DB functions: insert_audit_entry, get_audit_entries, update_audit_status, get_audit_stats
 - API endpoints: /audit/api/entries, /audit/api/entries/{id}/acknowledge, /audit/api/run
 """
-import os
-import sqlite3
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient

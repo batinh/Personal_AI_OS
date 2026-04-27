@@ -1,7 +1,5 @@
-import os
-from app.core.user_context import get_primary_user_id
 import json
-import pytz
+from app.core.user_context import get_primary_user_id
 from datetime import datetime
 from app.core.timezone_utils import get_local_tz
 
@@ -15,7 +13,7 @@ from app.core.database import (
 )
 from app.agents.coach.utils import (
     calculate_acwr, calculate_training_phase, debug_log_prompt,
-    get_formatted_weekly_context, send_message_with_retry, build_agent_context,
+    get_formatted_weekly_context, send_message_with_retry,
 )
 from app.agents.coach.prompts import (
     build_system_instruction, get_shared_context_block,

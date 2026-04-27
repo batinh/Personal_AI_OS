@@ -1,16 +1,15 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-import os
-from app.core.user_context import get_primary_user_id
 
+from app.core.user_context import get_primary_user_id
 from app.core.database import get_db_connection, get_training_loads, get_historical_training_loads
 from app.agents.coach.utils import calculate_acwr
 from app.core.config import load_config
+from app.core.logging_conf import get_module_logger
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-from app.core.logging_conf import get_module_logger
 logger = get_module_logger("admin")
 
 @router.get("/dashboard", response_class=HTMLResponse)

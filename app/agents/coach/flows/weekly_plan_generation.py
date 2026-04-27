@@ -1,4 +1,3 @@
-import json
 from datetime import date, timedelta
 from typing import Optional
 
@@ -224,7 +223,6 @@ def _call_gemini_for_plan(config: dict, prompt: str) -> Optional[WeeklyPlanResul
     try:
         from google import genai
         from google.genai import types
-        import pydantic
 
         client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
         model = config.get("model_name", "models/gemini-flash-latest")

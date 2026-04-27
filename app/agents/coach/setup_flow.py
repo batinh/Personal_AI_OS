@@ -1,15 +1,14 @@
 import json
-from typing import Optional
 
 from app.core.database import (
     get_setup_session, upsert_setup_session, complete_setup_session,
-    abandon_stale_setup_sessions, update_weekly_plan_status, get_pending_weekly_plan,
+    abandon_stale_setup_sessions,
 )
 from app.core.config import load_config, save_config
 from app.core.logging_conf import get_module_logger
 from app.agents.coach.setup_validators import (
     validate_distance, validate_date, validate_time,
-    validate_kmweek, validate_days, validate_rest_days, validate_hr,
+    validate_kmweek, validate_days, validate_rest_days,
 )
 
 logger = get_module_logger("setup_flow")
@@ -229,7 +228,6 @@ def invalidate_plans_for_resetup(user_id: str) -> None:
     Expire any pending/accepted plans before re-setup. Call before start_setup() on re-entry.
     """
     from datetime import date, timedelta
-    current_monday = (date.today() - timedelta(days=date.today().weekday())).strftime("%Y-%m-%d")
     next_monday = (date.today() - timedelta(days=date.today().weekday()) + timedelta(weeks=4)).strftime("%Y-%m-%d")
     expire_stale_weekly_plans_range(user_id, before_date=next_monday)
     logger.info(f"[SETUP] Invalidated plans for user {user_id} due to re-setup")

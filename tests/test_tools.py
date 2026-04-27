@@ -6,7 +6,7 @@ Test tập trung vào: output format đúng, error handling graceful,
 tool routing logic, và guard clauses.
 """
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from app.agents.coach.tools import (
     check_training_status,
@@ -80,14 +80,13 @@ class TestUpdateTodaysPlan(unittest.TestCase):
     @patch("app.agents.coach.tools.update_daily_plan")
     def test_calls_db_with_todays_date(self, mock_update):
         mock_update.return_value = "✅ Đã cập nhật giáo án"
-        result = update_todays_plan("u1", "Rest Day", "Recovery - easy walk")
+        update_todays_plan("u1", "Rest Day", "Recovery - easy walk")
         mock_update.assert_called_once()
         call_args = mock_update.call_args[0]
         # arg[0]=user_id, arg[1]=date_str, arg[2]=title, arg[3]=description
         self.assertEqual(call_args[0], "u1")
         self.assertEqual(call_args[2], "Rest Day")
         # Date should be in YYYY-MM-DD format
-        import re
         self.assertRegex(call_args[1], r"\d{4}-\d{2}-\d{2}")
 
     @patch("app.agents.coach.tools.update_daily_plan")

@@ -1,11 +1,10 @@
 """Tests for generate_news_briefing, generate_on_demand_briefing, and _generate_legacy_briefing."""
-import pytest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch
 from app.agents.news.agent import (
     generate_news_briefing,
     generate_on_demand_briefing,
 )
-from app.agents.news.telegram_handler import ERR_001, ERR_002, ERR_003
+from app.agents.news.telegram_handler import ERR_001, ERR_002
 
 _ENABLED_CFG = {
     "news_agent": {
@@ -134,7 +133,7 @@ class TestGenerateOnDemandBriefingHappyPath:
                 return_value="📎 sources block",
             ):
                 with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
-                    result = generate_on_demand_briefing("query", "123", _ENABLED_CFG)
+                    generate_on_demand_briefing("query", "123", _ENABLED_CFG)
         sent_text = mock_send.call_args[0][1]
         assert "sources block" in sent_text
 

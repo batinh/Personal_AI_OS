@@ -9,7 +9,6 @@ Memory is stored as key-value pairs in news_agent_state (SQLite):
 """
 
 import json
-import logging
 import threading
 from typing import Optional
 

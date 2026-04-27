@@ -7,9 +7,8 @@ Covers:
   - build_activity_record: TRIMP calculation, field normalization
   - Error resilience: Strava API failures, empty responses
 """
-import os
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 from app.agents.coach.harvest import build_activity_record
 

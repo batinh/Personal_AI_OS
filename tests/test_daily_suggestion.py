@@ -1,5 +1,4 @@
 """Tests for daily_suggestion.py — pure function, 10-rule priority chain."""
-import pytest
 from app.agents.coach.daily_suggestion import compute_daily_suggestion, format_daily_suggestion_for_briefing
 
 

@@ -131,7 +131,7 @@ def get_total_run_stats(user_id: str) -> str:
         with open("data/athlete_stats.json", "r") as f:
             stats = json.load(f)
         return f"Volume 4 tuần: {stats.get('recent_run_totals', 0):.1f}km | YTD: {stats.get('ytd_run_totals', 0):.1f}km"
-    except Exception as e:
+    except Exception:
         return "Chưa có dữ liệu thống kê tổng km."
 
 def set_workout_plan(user_id: str, target_date: str, workout_title: str, description: str) -> str:
