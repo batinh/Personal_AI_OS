@@ -11,6 +11,9 @@ from app.agents.coach.harvest import harvest_data
 from app.agents.coach.utils import calculate_training_phase
 from app.services.backup import perform_backup
 from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, extract_implicit_memory
+from app.agents.coach.garmin_client import get_garmin_client
+from app.agents.coach.setup_flow import cleanup_stale_setup_sessions
+from app.agents.coach.flows.weekly_plan_generation import generate_weekly_plan
 from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
 from app.services.log_auditor import run_audit
@@ -211,6 +214,53 @@ def task_proactive_coach_check():
 
 
 # ==========================================
+# ⌚ GARMIN SYNC
+# ==========================================
+def task_garmin_sync():
+    """Sync Garmin daily metrics at 5:45 AM. Regular def (thread pool)."""
+    try:
+        chat_id = str(get_primary_user_id())
+        if not chat_id or chat_id == "None":
+            return
+        logger.info("[SCHEDULER] Syncing Garmin metrics...")
+        get_garmin_client().fetch_and_store_daily_metrics(chat_id)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_garmin_sync failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 📋 WEEKLY PLAN GENERATION
+# ==========================================
+def task_weekly_plan_generation():
+    """Generate AI weekly plan on Sunday at 20:30. Regular def (thread pool)."""
+    try:
+        chat_id = str(get_primary_user_id())
+        if not chat_id or chat_id == "None":
+            return
+        config = load_config()
+        if not config.get("race_date"):
+            logger.info("[SCHEDULER] Skipping weekly plan — no race_date configured.")
+            return
+        logger.info("[SCHEDULER] Generating weekly plan...")
+        generate_weekly_plan(chat_id, config)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_weekly_plan_generation failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 🧹 STALE SESSION CLEANUP
+# ==========================================
+def task_cleanup_stale_setup():
+    """Abandon setup sessions with no activity for 24h. Regular def (thread pool)."""
+    try:
+        count = cleanup_stale_setup_sessions(timeout_hours=24)
+        if count:
+            logger.info(f"[SCHEDULER] Cleaned {count} stale setup session(s).")
+    except Exception as e:
+        logger.error("[SCHEDULER] task_cleanup_stale_setup failed: %s", e, exc_info=True)
+
+
+# ==========================================
 # 🔍 LOG AUDIT
 # ==========================================
 def task_log_audit():
@@ -259,6 +309,9 @@ def setup_jobs():
     scheduler.add_job(task_weekly_reflection, CronTrigger(day_of_week='sun', hour=20, minute=0, timezone=TZ_VN), id='weekly_reflection', replace_existing=True)
     scheduler.add_job(task_proactive_coach_check, CronTrigger(hour=12, minute=0, timezone=TZ_VN), id='proactive_check', replace_existing=True)
     scheduler.add_job(task_log_audit, IntervalTrigger(hours=6, timezone=TZ_VN), id='log_audit', replace_existing=True)
+    scheduler.add_job(task_garmin_sync, CronTrigger(hour=5, minute=45, timezone=TZ_VN), id='garmin_sync', replace_existing=True)
+    scheduler.add_job(task_weekly_plan_generation, CronTrigger(day_of_week='sun', hour=20, minute=30, timezone=TZ_VN), id='weekly_plan_gen', replace_existing=True)
+    scheduler.add_job(task_cleanup_stale_setup, CronTrigger(hour=3, minute=0, timezone=TZ_VN), id='cleanup_stale_setup', replace_existing=True)
 
     # News Agent jobs (only if enabled in config)
     news_cfg = config.get("news_agent", {})

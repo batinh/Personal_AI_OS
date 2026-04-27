@@ -161,6 +161,55 @@ class TestNewsAgentImports(unittest.TestCase):
         from app.services.scheduler import _is_late_trigger  # noqa: F401
 
 
+class TestGarminCoachPlanningImports(unittest.TestCase):
+    """Garmin + coach planning symbols — all new modules from feat/garmin-coach-planning."""
+
+    def test_setup_validators_importable(self):
+        from app.agents.coach.setup_validators import (  # noqa: F401
+            validate_distance, validate_date, validate_time,
+            validate_kmweek, validate_days, validate_rest_days, validate_hr,
+        )
+
+    def test_setup_flow_importable(self):
+        from app.agents.coach.setup_flow import (  # noqa: F401
+            start_setup, advance_setup, finalize_setup,
+            is_setup_in_progress, cleanup_stale_setup_sessions,
+        )
+
+    def test_garmin_client_importable(self):
+        from app.agents.coach.garmin_client import GarminClient, get_garmin_client  # noqa: F401
+
+    def test_schemas_importable(self):
+        from app.agents.coach.schemas import WorkoutDay, WeeklyPlanResult  # noqa: F401
+
+    def test_daily_suggestion_importable(self):
+        from app.agents.coach.daily_suggestion import (  # noqa: F401
+            compute_daily_suggestion, format_daily_suggestion_for_briefing,
+        )
+
+    def test_weekly_plan_generation_importable(self):
+        from app.agents.coach.flows.weekly_plan_generation import (  # noqa: F401
+            generate_weekly_plan, accept_weekly_plan, reject_weekly_plan,
+        )
+
+    def test_database_garmin_functions_importable(self):
+        from app.core.database import (  # noqa: F401
+            upsert_garmin_daily_metrics, get_garmin_daily_metrics,
+            get_athlete_state, set_athlete_state,
+            upsert_weekly_plan, get_pending_weekly_plan,
+            update_weekly_plan_status, has_active_plan_this_week,
+            get_setup_session, upsert_setup_session, complete_setup_session,
+        )
+
+    def test_agent_command_aliases_importable(self):
+        from app.agents.coach.agent import COMMAND_ALIASES, resolve_command  # noqa: F401
+
+    def test_scheduler_new_tasks_importable(self):
+        from app.services.scheduler import (  # noqa: F401
+            task_garmin_sync, task_weekly_plan_generation, task_cleanup_stale_setup,
+        )
+
+
 class TestSDKContracts(unittest.TestCase):
     """SDK parameter unit contracts — catch wrong units before they hit production."""
 

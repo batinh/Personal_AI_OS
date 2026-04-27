@@ -279,14 +279,15 @@ class TestSetupJobs(unittest.TestCase):
     def test_total_jobs_with_news_enabled(self):
         cfg = _make_config(news_enabled=True)
         mock_sched = self._run_setup(cfg)
-        # 6 core + 3 news (morning, afternoon, evening) = 9
-        self.assertEqual(mock_sched.add_job.call_count, 9)
+        # 9 core (briefing, backup, harvest, reflection, proactive, log_audit,
+        #          garmin_sync, weekly_plan_gen, cleanup_stale_setup) + 3 news = 12
+        self.assertEqual(mock_sched.add_job.call_count, 12)
 
     def test_total_jobs_without_news(self):
         cfg = _make_config(news_enabled=False)
         mock_sched = self._run_setup(cfg)
-        # 6 core only
-        self.assertEqual(mock_sched.add_job.call_count, 6)
+        # 9 core only
+        self.assertEqual(mock_sched.add_job.call_count, 9)
 
 
 # ==========================================

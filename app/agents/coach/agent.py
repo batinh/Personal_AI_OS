@@ -20,6 +20,7 @@ from app.core.database import (
     get_plan_for_date, update_plan_status, get_weekly_volume, get_runs_in_last_days,
     insert_memory, get_all_active_memories, get_weekly_target, # [ARCHITECTURE UPDATE] Using global deduplication
     get_run_metrics_from_db,
+    get_athlete_state, set_athlete_state, has_active_plan_this_week,
 )
 from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context, send_message_with_retry
 from app.services.rag_memory import rag_db
@@ -42,6 +43,9 @@ from app.agents.coach.tools import (
     get_volume_for_week, get_volume_summary,
 )
 from app.agents.coach.metrics_engine import build_run_metrics_block
+from app.agents.coach.setup_flow import is_setup_in_progress, advance_setup, start_setup
+from app.agents.coach.flows.weekly_plan_generation import accept_weekly_plan, reject_weekly_plan, generate_weekly_plan
+from app.agents.coach.daily_suggestion import compute_daily_suggestion, format_daily_suggestion_for_briefing
 
 # [ARCHITECTURE UPDATE] Import Strict Data Contracts
 from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
@@ -81,6 +85,26 @@ _WRITE_INTENT_KEYWORDS = [
     "đổi", "thay", "hủy", "nghỉ", "bận", "giảm", "tăng", "chốt", "lên lịch",
     "set", "update", "change", "cancel", "reschedule", "target"
 ]
+
+COMMAND_ALIASES = {
+    "/chap": "/accept",
+    "/bochap": "/reject",
+    "/om": "/sick",
+    "/khoe": "/recover",
+    "/kehoach": "/plan",
+    "/setup_coach": "/setup",
+}
+
+
+def resolve_command(text: str) -> str:
+    """Normalize Vietnamese command aliases to canonical English commands."""
+    stripped = text.strip().lower().split()[0] if text.strip() else text
+    canonical = COMMAND_ALIASES.get(stripped)
+    if canonical is None:
+        return text
+    rest = text.strip()[len(stripped):].strip()
+    return f"{canonical} {rest}".strip() if rest else canonical
+
 
 def _select_tools_for_message(text: str) -> list:
     """
@@ -268,6 +292,46 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     chat_id = get_primary_user_id()
     user_id_str = str(chat_id)
 
+    # [GUARD] No race configured → prompt user to run /setup
+    if not config.get("race_date"):
+        send_telegram_msg(
+            chat_id,
+            "☀️ Chào buổi sáng!\n\n⚙️ Chưa có thông tin luyện tập. Dùng /setup để thiết lập mục tiêu và giáo án cá nhân nhé."
+        )
+        return
+
+    # [FALLBACK] No active plan this week → show rule-based daily suggestion instead of AI briefing
+    if not has_active_plan_this_week(user_id_str):
+        try:
+            loads = get_training_loads(user_id_str)
+            acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
+            recent_runs = get_runs_in_last_days(user_id_str, days=7)
+            athlete_state = get_athlete_state(user_id_str)
+            last_run_days = 1
+            if recent_runs:
+                from datetime import date as _date
+                last_date_str = recent_runs[0].get("activity_date", "")
+                if last_date_str:
+                    try:
+                        last_date = _date.fromisoformat(last_date_str[:10])
+                        last_run_days = (_date.today() - last_date).days
+                    except Exception:
+                        pass
+            suggestion = compute_daily_suggestion(
+                readiness_score=None,
+                acwr=acwr_data.get('acwr'),
+                recent_runs=recent_runs,
+                athlete_state=athlete_state,
+                day_of_week=now.weekday(),
+                days_since_last_run=last_run_days,
+            )
+            msg = f"☀️ Chào buổi sáng!\n\n{format_daily_suggestion_for_briefing(suggestion)}"
+            send_telegram_msg(chat_id, msg)
+        except Exception as e:
+            logger.error(f"[COACH AGENT] Daily suggestion fallback error: {e}")
+            send_telegram_msg(chat_id, "☀️ Chào buổi sáng! Dùng /plan để tạo giáo án tuần này nhé.")
+        return
+
     # 1. Gather Data (Data Injection Pattern)
     loads = get_training_loads(user_id_str)
     acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
@@ -359,12 +423,55 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     # [UX - INSTANT FEEDBACK] Send typing indicator immediately before any processing
     send_typing_action(chat_id)
 
+    # [0] Normalize Vietnamese command aliases before any routing
+    text = resolve_command(text)
+
+    # [0a] Setup FSM intercept — if user is mid-setup, route all input to the wizard
+    if is_setup_in_progress(chat_id):
+        if text.strip().lower() not in ("/setup", "/clear", "/reset"):
+            reply = advance_setup(chat_id, text)
+            send_telegram_msg(chat_id, reply)
+            return
+
     # [1] Handle Memory Reset
     if text.strip().lower() in ["/clear", "/reset"]:
         clear_history(chat_id)
         send_telegram_msg(chat_id, "🧹 Đã xóa sạch ký ức ngắn hạn.")
         return
         
+    # [1b] /setup → start/restart onboarding wizard
+    if text.strip().lower() == "/setup":
+        logger.info(f"[WEBHOOK] /setup triggered by {chat_id}")
+        reply = start_setup(chat_id)
+        send_telegram_msg(chat_id, reply)
+        return
+
+    # [1c] /sick and /recover → athlete state transitions
+    if text.strip().lower() == "/sick":
+        set_athlete_state(chat_id, "sick")
+        send_telegram_msg(chat_id, "😷 Đã ghi nhận: anh đang bị ốm. Hệ thống sẽ gợi ý nghỉ ngơi hoàn toàn cho đến khi anh báo khỏe lại (/recover).")
+        return
+
+    if text.strip().lower() == "/recover":
+        set_athlete_state(chat_id, "healthy")
+        send_telegram_msg(chat_id, "✅ Đã cập nhật: trạng thái khoẻ. Tiếp tục chế độ tập luyện bình thường.")
+        return
+
+    # [1d] /accept → accept pending weekly plan
+    if text.strip().lower() == "/accept":
+        logger.info(f"[WEBHOOK] /accept triggered by {chat_id}")
+        reply = accept_weekly_plan(chat_id)
+        send_telegram_msg(chat_id, reply)
+        return
+
+    # [1e] /reject [reason] → reject pending weekly plan
+    if text.strip().lower().startswith("/reject"):
+        logger.info(f"[WEBHOOK] /reject triggered by {chat_id}")
+        reason = text.strip()[len("/reject"):].strip()
+        reply = reject_weekly_plan(chat_id, reason)
+        send_telegram_msg(chat_id, reply)
+        return
+
     # [2a] /brief → dedicated morning briefing flow (avoids generic chat verbosity)
     if text.strip().lower() in ["/brief", "/standup"]:
         logger.info(f"[WEBHOOK] /brief triggered by {chat_id}")
@@ -372,11 +479,19 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         generate_morning_briefing(load_config())
         return
 
-    # [2c] /plan → show upcoming 7-day training schedule
+    # [2c] /plan → generate AI weekly plan or show existing schedule
     if text.strip().lower() in ["/plan", "/schedule"]:
         logger.info(f"[WEBHOOK] /plan triggered by {chat_id}")
-        plan_text = get_upcoming_plans(chat_id, limit_days=7)
-        send_telegram_msg(chat_id, f"📅 Giáo án 7 ngày tới:\n\n{plan_text}")
+        from app.core.config import load_config as _load_cfg
+        cfg = _load_cfg()
+        if not cfg.get("race_date"):
+            send_telegram_msg(chat_id, "⚙️ Chưa có thông tin giáo án. Dùng /setup để thiết lập mục tiêu trước nhé.")
+            return
+        send_telegram_msg(chat_id, "⏳ Đang tạo giáo án tuần... (~15s)")
+        result = generate_weekly_plan(chat_id, cfg)
+        if result is None:
+            plan_text = get_upcoming_plans(chat_id, limit_days=7)
+            send_telegram_msg(chat_id, f"📅 Giáo án 7 ngày tới:\n\n{plan_text}")
         return
 
     # [2b] Handle Manual Reflection Trigger (TESTING/ADMIN MODE)

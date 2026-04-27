@@ -145,6 +145,8 @@ class TestHandleTelegramChat(unittest.TestCase):
             "g_target": patch("app.agents.coach.agent.get_weekly_target", return_value=None),
             "g_mems":  patch("app.agents.coach.agent.get_all_active_memories", return_value=[]),
             "client":  patch("app.agents.coach.agent.client", _FAKE_GEMINI_CLIENT),
+            "is_setup": patch("app.agents.coach.agent.is_setup_in_progress", return_value=False),
+            "gen_plan": patch("app.agents.coach.agent.generate_weekly_plan", return_value=None),
         }
 
     def _start_patches(self, patches):
@@ -187,10 +189,11 @@ class TestHandleTelegramChat(unittest.TestCase):
         try:
             from app.agents.coach.agent import handle_telegram_chat
             handle_telegram_chat("u1", "/plan", _make_config())
-            mocks["send_tg"].assert_called_once()
-            sent = mocks["send_tg"].call_args[0][1]
-            self.assertIn("📅", sent)
-            self.assertIn("Easy Run", sent)
+            # New flow sends 2 messages: "generating" + fallback schedule
+            calls = mocks["send_tg"].call_args_list
+            self.assertGreaterEqual(len(calls), 1)
+            all_text = " ".join(c[0][1] for c in calls)
+            self.assertIn("Easy Run", all_text)
         finally:
             self._stop_patches(ps)
 
@@ -200,7 +203,8 @@ class TestHandleTelegramChat(unittest.TestCase):
         try:
             from app.agents.coach.agent import handle_telegram_chat
             handle_telegram_chat("u1", "/schedule", _make_config())
-            mocks["g_plans"].assert_called_once_with("u1", limit_days=7)
+            # fallback to get_upcoming_plans when plan gen returns None
+            mocks["g_plans"].assert_called_with("u1", limit_days=7)
         finally:
             self._stop_patches(ps)
 
