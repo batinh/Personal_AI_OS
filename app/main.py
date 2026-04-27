@@ -71,7 +71,7 @@ app.include_router(console.router)   # Unified console (replaces admin + dashboa
 app.include_router(admin.router)     # Legacy — redirects to /console
 app.include_router(dashboard.router) # Legacy — redirects to /console
 app.include_router(audit.router)     # Log audit dashboard
-app.include_router(metrics.router)   # UT coverage metrics
+app.include_router(metrics.router)   # Coverage / test metrics
 
 
 # 5. Health check endpoint for Docker and uptime monitoring

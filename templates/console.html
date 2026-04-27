@@ -280,11 +280,6 @@
         <i class="nav-icon fas fa-sliders-h"></i>
         <span>Log Levels</span>
       </a>
-      <a class="nav-item-link {{ 'active' if active_tab == 'metrics' else '' }}"
-         onclick="switchTab('metrics')" href="/console?tab=metrics">
-        <i class="nav-icon fas fa-vial"></i>
-        <span>Test Metrics</span>
-      </a>
       <a class="nav-item-link {{ 'active' if active_tab == 'system' else '' }}"
          onclick="switchTab('system')" href="/console?tab=system">
         <i class="nav-icon fas fa-terminal"></i>
@@ -819,28 +814,6 @@
         </div>
       </div>
 
-      <div class="tab-pane {{ 'active' if active_tab == 'metrics' else '' }}" id="tab-metrics">
-        <div class="section-title">🧪 Test Metrics</div>
-        <div class="section-sub">Coverage + test counts from the last <code>pytest --cov</code> run</div>
-        <div id="metrics-loading" class="text-muted small mb-3">Loading…</div>
-        <div id="metrics-content" style="display:none">
-          <div class="row g-3 mb-3" id="metrics-summary-row"></div>
-          <div class="stat-card mb-3">
-            <div class="form-section-header"><i class="fas fa-box me-2"></i>Coverage by Package</div>
-            <table class="table os-table mb-0" id="metrics-pkg-table">
-              <thead><tr>
-                <th>Package</th>
-                <th>Coverage %</th>
-                <th>Lines covered / valid</th>
-                <th>Bar</th>
-              </tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-        <div id="metrics-error" class="alert alert-warning" style="display:none"></div>
-      </div>
-
     </div><!-- /content-area -->
   </div><!-- /main-content -->
 </div><!-- /os-shell -->
@@ -858,7 +831,6 @@
       news:     '📰 News Agent',
       logging:  '📋 Log Levels',
       system:   '🖥️ System',
-      metrics:  '🧪 Test Metrics',
     };
     // Hide all panes
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
@@ -875,7 +847,6 @@
     document.getElementById('topbarTitle').innerHTML = titles[tabName] || tabName;
     // Update URL without reload
     history.replaceState(null, '', '/console?tab=' + tabName);
-    if (tabName === 'metrics') loadMetrics();
   }
 
   // Prevent sidebar links from reloading — intercept clicks
@@ -1002,76 +973,6 @@
     });
     document.getElementById('interestProfileJson').value = JSON.stringify(profile);
   }
-
-  // ---- Test Metrics tab ----
-  let _metricsLoaded = false;
-
-  function loadMetrics() {
-    if (_metricsLoaded) return;
-    fetch('/admin/metrics/coverage')
-      .then(r => {
-        if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText); });
-        return r.json();
-      })
-      .then(data => {
-        _metricsLoaded = true;
-        document.getElementById('metrics-loading').style.display = 'none';
-        document.getElementById('metrics-content').style.display = 'block';
-        renderMetrics(data);
-      })
-      .catch(err => {
-        document.getElementById('metrics-loading').style.display = 'none';
-        const el = document.getElementById('metrics-error');
-        el.style.display = 'block';
-        el.textContent = 'Could not load metrics: ' + err.message;
-      });
-  }
-
-  function renderMetrics(data) {
-    const s = data.summary;
-    const tc = data.test_counts;
-    const summaryRow = document.getElementById('metrics-summary-row');
-    const cards = [
-      { label: 'Line Coverage', value: s.line_rate_pct.toFixed(1) + '%',
-        icon: 'fa-percent', color: s.line_rate_pct >= 80 ? 'text-success' : 'text-warning' },
-      { label: 'Lines Covered', value: s.lines_covered + ' / ' + s.lines_valid,
-        icon: 'fa-code', color: '' },
-    ];
-    if (tc) {
-      cards.push(
-        { label: 'Tests Total', value: tc.total, icon: 'fa-vial', color: '' },
-        { label: 'Passed', value: tc.passed, icon: 'fa-check-circle', color: 'text-success' },
-        { label: 'Failed', value: tc.failed, icon: 'fa-times-circle',
-          color: tc.failed > 0 ? 'text-danger' : '' },
-        { label: 'Skipped', value: tc.skipped, icon: 'fa-forward', color: 'text-muted' },
-        { label: 'Duration', value: tc.duration_seconds + 's', icon: 'fa-clock', color: '' },
-      );
-    }
-    summaryRow.innerHTML = cards.map(c => `
-      <div class="col-6 col-md-3">
-        <div class="stat-card text-center">
-          <div class="stat-label"><i class="fas ${c.icon} me-1"></i>${c.label}</div>
-          <div class="stat-value ${c.color}">${c.value}</div>
-        </div>
-      </div>`).join('');
-
-    const tbody = document.querySelector('#metrics-pkg-table tbody');
-    tbody.innerHTML = data.by_package.map(p => {
-      const pct = p.line_rate_pct;
-      const color = pct >= 80 ? '#48bb78' : pct >= 50 ? '#ed8936' : '#fc8181';
-      return `<tr>
-        <td><code>${p.name}</code></td>
-        <td class="fw-bold" style="color:${color}">${pct.toFixed(1)}%</td>
-        <td>${p.lines_covered} / ${p.lines_valid}</td>
-        <td style="min-width:120px">
-          <div style="background:#e2e8f0;border-radius:4px;height:8px">
-            <div style="width:${Math.min(pct,100)}%;background:${color};height:8px;border-radius:4px"></div>
-          </div>
-        </td>
-      </tr>`;
-    }).join('');
-  }
-
 </script>
 
 </body>

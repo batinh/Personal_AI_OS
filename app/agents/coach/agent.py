@@ -1,8 +1,8 @@
 import os
 import json
 import re
-import threading
 import unicodedata
+import pytz
 import uuid
 import time
 from datetime import datetime, timedelta
@@ -22,10 +22,11 @@ from app.core.database import (
     get_run_metrics_from_db,
     get_athlete_state, set_athlete_state, has_active_plan_this_week,
 )
-from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context, send_message_with_retry
+from app.agents.coach.setup_flow import is_setup_in_progress, advance_setup, start_setup
+from app.agents.coach.flows.weekly_plan_generation import accept_weekly_plan, reject_weekly_plan, generate_weekly_plan
+from app.agents.coach.daily_suggestion import compute_daily_suggestion, format_daily_suggestion_for_briefing
+from app.agents.coach.utils import calculate_trimp, calculate_acwr, calculate_training_phase, debug_log_prompt, get_formatted_weekly_context
 from app.services.rag_memory import rag_db
-from app.core.timezone_utils import get_local_tz
-from app.core.user_context import get_primary_user_id
 
 # [REFACTOR] Import builder functions
 from app.agents.coach.prompts import (
@@ -43,9 +44,6 @@ from app.agents.coach.tools import (
     get_volume_for_week, get_volume_summary,
 )
 from app.agents.coach.metrics_engine import build_run_metrics_block
-from app.agents.coach.setup_flow import is_setup_in_progress, advance_setup, start_setup
-from app.agents.coach.flows.weekly_plan_generation import accept_weekly_plan, reject_weekly_plan, generate_weekly_plan
-from app.agents.coach.daily_suggestion import compute_daily_suggestion, format_daily_suggestion_for_briefing
 
 # [ARCHITECTURE UPDATE] Import Strict Data Contracts
 from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
@@ -57,6 +55,30 @@ client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in
 # ==========================================
 # 🛡️ RESILIENCE PATTERN: EXPONENTIAL BACKOFF
 # ==========================================
+def send_message_with_retry(chat_session, message, max_retries=3):
+    """
+    Wrapper to call Gemini API with an exponential backoff retry mechanism 
+    when the Google Server is overloaded.
+    Gracefully handles 503 (Unavailable) and 429 (Too Many Requests) errors.
+    """
+    for attempt in range(max_retries):
+        try:
+            return chat_session.send_message(message)
+        except Exception as e:
+            error_msg = str(e)
+            _RETRYABLE = ("503", "429", "Unavailable", "timed out", "timeout", "ssl", "SSL", "handshake")
+            if any(token in error_msg for token in _RETRYABLE):
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Wait 1s, 2s, 4s...
+                    logger.warning(f"[API RESILIENCE] Transient error ({error_msg[:80]}). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.error("[API RESILIENCE] Max retries reached. Last error: %s", error_msg[:120])
+                    raise e
+            else:
+                # Non-retryable error (e.g., invalid API Key) — fail immediately
+                raise e
+
 # ==========================================
 # 🚀 PERFORMANCE: TOOL ROUTING BY INTENT
 # ==========================================
@@ -88,22 +110,20 @@ _WRITE_INTENT_KEYWORDS = [
 
 COMMAND_ALIASES = {
     "/chap": "/accept",
-    "/bochap": "/reject",
+    "/tu_choi": "/reject",
     "/om": "/sick",
+    "/benh": "/sick",
     "/khoe": "/recover",
-    "/kehoach": "/plan",
-    "/setup_coach": "/setup",
+    "/binh_thuong": "/recover",
+    "/ke_hoach": "/plan",
+    "/thiet_lap": "/setup",
 }
 
 
 def resolve_command(text: str) -> str:
-    """Normalize Vietnamese command aliases to canonical English commands."""
-    stripped = text.strip().lower().split()[0] if text.strip() else text
-    canonical = COMMAND_ALIASES.get(stripped)
-    if canonical is None:
-        return text
-    rest = text.strip()[len(stripped):].strip()
-    return f"{canonical} {rest}".strip() if rest else canonical
+    """Normalize Vietnamese command aliases to canonical commands."""
+    stripped = text.strip().lower()
+    return COMMAND_ALIASES.get(stripped, text)
 
 
 def _select_tools_for_message(text: str) -> list:
@@ -194,9 +214,9 @@ def _is_degenerate_response(text: str | None) -> bool:
 # --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dict, config: dict):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
-    tz = get_local_tz()
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
-    chat_id = get_primary_user_id()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)
     
     # 1. Prepare Context data
@@ -252,7 +272,7 @@ def analyze_run_with_gemini(activity_id: str, activity_name: str, meta_data: dic
     # 3. Call Gemini with Native Schema
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-flash-latest"),
+            model=config.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst, # Explicit System Instruction separation
                 temperature=0.7,
@@ -287,50 +307,10 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     Can be triggered by Scheduler (Cron) or Telegram Webhook.
     """
     logger.info("[COACH AGENT] Starting Morning Briefing reasoning flow...")
-    tz = get_local_tz()
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
-    chat_id = get_primary_user_id()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)
-
-    # [GUARD] No race configured → prompt user to run /setup
-    if not config.get("race_date"):
-        send_telegram_msg(
-            chat_id,
-            "☀️ Chào buổi sáng!\n\n⚙️ Chưa có thông tin luyện tập. Dùng /setup để thiết lập mục tiêu và giáo án cá nhân nhé."
-        )
-        return
-
-    # [FALLBACK] No active plan this week → show rule-based daily suggestion instead of AI briefing
-    if not has_active_plan_this_week(user_id_str):
-        try:
-            loads = get_training_loads(user_id_str)
-            acwr_data = calculate_acwr(loads.get('acute_load_7d', 0), loads.get('chronic_load_28d', 0))
-            recent_runs = get_runs_in_last_days(user_id_str, days=7)
-            athlete_state = get_athlete_state(user_id_str)
-            last_run_days = 1
-            if recent_runs:
-                from datetime import date as _date
-                last_date_str = recent_runs[0].get("activity_date", "")
-                if last_date_str:
-                    try:
-                        last_date = _date.fromisoformat(last_date_str[:10])
-                        last_run_days = (_date.today() - last_date).days
-                    except Exception:
-                        pass
-            suggestion = compute_daily_suggestion(
-                readiness_score=None,
-                acwr=acwr_data.get('acwr'),
-                recent_runs=recent_runs,
-                athlete_state=athlete_state,
-                day_of_week=now.weekday(),
-                days_since_last_run=last_run_days,
-            )
-            msg = f"☀️ Chào buổi sáng!\n\n{format_daily_suggestion_for_briefing(suggestion)}"
-            send_telegram_msg(chat_id, msg)
-        except Exception as e:
-            logger.error(f"[COACH AGENT] Daily suggestion fallback error: {e}")
-            send_telegram_msg(chat_id, "☀️ Chào buổi sáng! Dùng /plan để tạo giáo án tuần này nhé.")
-        return
 
     # 1. Gather Data (Data Injection Pattern)
     loads = get_training_loads(user_id_str)
@@ -338,13 +318,39 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     actual_volume = get_weekly_volume(user_id_str, now)
     
     race_date_str = config.get("race_date", "")
+
+    # Guard 1: no race_date → prompt user to run /setup
+    if not race_date_str:
+        if chat_id:
+            send_telegram_msg(chat_id, "⚙️ Chào buổi sáng! Bạn chưa cấu hình thông tin tập luyện. Hãy gõ /setup để bắt đầu nhé!")
+        return
+
     phase_info = calculate_training_phase(race_date_str)
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
     countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race." if race_date_str else "Duy trì thể lực."
-    
+
     today_plan = get_plan_for_date(user_id_str, now.strftime('%Y-%m-%d'))
     plan_context = f"{today_plan['workout_title']}: {today_plan['description']}" if today_plan else "Chạy tự do."
     weekly_decision_context = get_formatted_weekly_context(user_id_str)
+
+    # Guard 2: no active plan this week → send daily suggestion instead of full AI briefing
+    if not has_active_plan_this_week(user_id_str):
+        loads = get_training_loads(user_id_str)
+        from app.agents.coach.utils import calculate_acwr as _calc_acwr
+        acwr_data = _calc_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
+        state = get_athlete_state(user_id_str) or {}
+        recent = get_runs_in_last_days(user_id_str, days=7)
+        suggestion = compute_daily_suggestion(
+            readiness_score=70,
+            acwr=float(acwr_data.get("acwr", 0)),
+            recent_runs=recent,
+            athlete_state=state,
+        )
+        reply = format_daily_suggestion_for_briefing(suggestion)
+        if chat_id:
+            send_telegram_msg(chat_id, reply)
+            save_message(user_id_str, "model", f"[MORNING BRIEFING - SUGGESTION] {reply}")
+        return
 
     # Fetch short-term memory (last 5 interactions) to maintain conversation context
     raw_history = load_history_for_gemini(user_id_str, limit=5)
@@ -398,7 +404,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     # 3. Execution (Resilience Pattern)
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-flash-latest"),
+            model=config.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 # [PERF] Slim tool set for morning briefing — read-only is sufficient
@@ -423,15 +429,8 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     # [UX - INSTANT FEEDBACK] Send typing indicator immediately before any processing
     send_typing_action(chat_id)
 
-    # [0] Normalize Vietnamese command aliases before any routing
+    # [0] Normalize Vietnamese command aliases
     text = resolve_command(text)
-
-    # [0a] Setup FSM intercept — if user is mid-setup, route all input to the wizard
-    if is_setup_in_progress(chat_id):
-        if text.strip().lower() not in ("/setup", "/clear", "/reset"):
-            reply = advance_setup(chat_id, text)
-            send_telegram_msg(chat_id, reply)
-            return
 
     # [1] Handle Memory Reset
     if text.strip().lower() in ["/clear", "/reset"]:
@@ -439,59 +438,11 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         send_telegram_msg(chat_id, "🧹 Đã xóa sạch ký ức ngắn hạn.")
         return
         
-    # [1b] /setup → start/restart onboarding wizard
-    if text.strip().lower() == "/setup":
-        logger.info(f"[WEBHOOK] /setup triggered by {chat_id}")
-        reply = start_setup(chat_id)
-        send_telegram_msg(chat_id, reply)
-        return
-
-    # [1c] /sick and /recover → athlete state transitions
-    if text.strip().lower() == "/sick":
-        set_athlete_state(chat_id, "sick")
-        send_telegram_msg(chat_id, "😷 Đã ghi nhận: anh đang bị ốm. Hệ thống sẽ gợi ý nghỉ ngơi hoàn toàn cho đến khi anh báo khỏe lại (/recover).")
-        return
-
-    if text.strip().lower() == "/recover":
-        set_athlete_state(chat_id, "healthy")
-        send_telegram_msg(chat_id, "✅ Đã cập nhật: trạng thái khoẻ. Tiếp tục chế độ tập luyện bình thường.")
-        return
-
-    # [1d] /accept → accept pending weekly plan
-    if text.strip().lower() == "/accept":
-        logger.info(f"[WEBHOOK] /accept triggered by {chat_id}")
-        reply = accept_weekly_plan(chat_id)
-        send_telegram_msg(chat_id, reply)
-        return
-
-    # [1e] /reject [reason] → reject pending weekly plan
-    if text.strip().lower().startswith("/reject"):
-        logger.info(f"[WEBHOOK] /reject triggered by {chat_id}")
-        reason = text.strip()[len("/reject"):].strip()
-        reply = reject_weekly_plan(chat_id, reason)
-        send_telegram_msg(chat_id, reply)
-        return
-
     # [2a] /brief → dedicated morning briefing flow (avoids generic chat verbosity)
     if text.strip().lower() in ["/brief", "/standup"]:
         logger.info(f"[WEBHOOK] /brief triggered by {chat_id}")
         from app.core.config import load_config
         generate_morning_briefing(load_config())
-        return
-
-    # [2c] /plan → generate AI weekly plan or show existing schedule
-    if text.strip().lower() in ["/plan", "/schedule"]:
-        logger.info(f"[WEBHOOK] /plan triggered by {chat_id}")
-        from app.core.config import load_config as _load_cfg
-        cfg = _load_cfg()
-        if not cfg.get("race_date"):
-            send_telegram_msg(chat_id, "⚙️ Chưa có thông tin giáo án. Dùng /setup để thiết lập mục tiêu trước nhé.")
-            return
-        send_telegram_msg(chat_id, "⏳ Đang tạo giáo án tuần... (~15s)")
-        result = generate_weekly_plan(chat_id, cfg)
-        if result is None:
-            plan_text = get_upcoming_plans(chat_id, limit_days=7)
-            send_telegram_msg(chat_id, f"📅 Giáo án 7 ngày tới:\n\n{plan_text}")
         return
 
     # [2b] Handle Manual Reflection Trigger (TESTING/ADMIN MODE)
@@ -516,8 +467,68 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     
         return
 
+    # [2c] /setup → start 6-step onboarding wizard
+    if text.strip().lower() == "/setup":
+        reply = start_setup(chat_id)
+        send_telegram_msg(chat_id, reply)
+        return
+
+    # [2d] Setup FSM intercept — if wizard is in progress, route all messages to it
+    if is_setup_in_progress(chat_id):
+        reply = advance_setup(chat_id, text)
+        send_telegram_msg(chat_id, reply)
+        return
+
+    # [2e] /sick — mark athlete as sick, force rest
+    if text.strip().lower() in ["/sick", "/om"]:
+        set_athlete_state(chat_id, "sick", note="User reported illness via /sick command")
+        send_telegram_msg(chat_id, "🤒 Đã ghi nhận trạng thái <b>ốm</b>. Hôm nay nghỉ hoàn toàn nhé. Uống nhiều nước, ngủ đủ giấc!")
+        return
+
+    # [2f] /recover — mark athlete as recovered
+    if text.strip().lower() in ["/recover", "/khoe"]:
+        set_athlete_state(chat_id, "recovered", note="User reported recovery via /recover command")
+        send_telegram_msg(chat_id, "💪 Tuyệt vời! Đã ghi nhận trạng thái <b>hồi phục</b>. Bắt đầu lại nhẹ nhàng nhé!")
+        return
+
+    # [2g] /accept — accept the pending weekly plan
+    if text.strip().lower() in ["/accept", "/chap"]:
+        reply = accept_weekly_plan(chat_id)
+        send_telegram_msg(chat_id, reply)
+        return
+
+    # [2h] /reject — reject the pending weekly plan
+    if text.strip().lower().startswith("/reject"):
+        reason = text.strip()[7:].strip()
+        reply = reject_weekly_plan(chat_id, reason=reason)
+        send_telegram_msg(chat_id, reply)
+        return
+
+    # [2i] /plan — show upcoming plan or generate daily suggestion if no active plan
+    if text.strip().lower() in ["/plan", "/ke_hoach"]:
+        send_telegram_msg(chat_id, "⏳ Đang tải kế hoạch...")
+        upcoming = get_upcoming_plans(chat_id, limit_days=7)
+        if upcoming:
+            send_telegram_msg(chat_id, f"📅 <b>Lịch tập tuần này:</b>\n{upcoming}")
+        else:
+            loads = get_training_loads(chat_id)
+            from app.agents.coach.utils import calculate_acwr
+            acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
+            state = get_athlete_state(chat_id) or {}
+            recent = get_runs_in_last_days(chat_id, days=7)
+            days_since = 1
+            suggestion = compute_daily_suggestion(
+                readiness_score=70,
+                acwr=float(acwr_data.get("acwr", 0)),
+                recent_runs=recent,
+                athlete_state=state,
+            )
+            reply = format_daily_suggestion_for_briefing(suggestion)
+            send_telegram_msg(chat_id, reply)
+        return
+
     # 1. Calculate Context (fast vs standard path)
-    tz = get_local_tz()
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     phase_info = calculate_training_phase(config.get("race_date", ""))
     phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
     countdown_text = f"Còn {phase_info['weeks_left']} tuần đến Race."
@@ -599,7 +610,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         # Fast path caps output to keep greetings/simple Q&A concise
         max_tokens = 512 if intent == "fast" else 1200
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-flash-latest"),
+            model=config.get("model_name", "models/gemini-2.0-flash"),
             history=formatted_history[:-1], # Pass previous history
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
@@ -618,7 +629,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
                 int(config.get("max_hr", 185)), int(config.get("rest_hr", 55))
             )
             retry_session = client.chats.create(
-                model=config.get("model_name", "models/gemini-flash-latest"),
+                model=config.get("model_name", "models/gemini-2.0-flash"),
                 history=formatted_history[:-1],
                 config=types.GenerateContentConfig(
                     system_instruction=standard_inst,
@@ -636,9 +647,6 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         save_message(chat_id, "user", text)
         save_message(chat_id, "model", reply)
         send_telegram_msg(chat_id, reply)
-
-        if intent != "fast":
-            threading.Thread(target=extract_implicit_memory, args=(chat_id,), daemon=True).start()
     except Exception as e:
         logger.error(f"[TELEGRAM] Chat Error: {e}")
         # [ZONE 3] User-facing notification remains in Vietnamese
@@ -652,9 +660,9 @@ def generate_weekly_reflection(config: dict):
     Strictly follows Data Injection (no tool calling for data gathering).
     """
     logger.info("[COACH AGENT] Generating Weekly Self-Reflection...")
-    tz = get_local_tz()
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
-    chat_id = get_primary_user_id()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
     user_id_str = str(chat_id)
 
     # 1. Gather Context (Data Injection Pattern)
@@ -703,7 +711,7 @@ def generate_weekly_reflection(config: dict):
     # 3. Call Gemini with Action Tool allowed
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-flash-latest"),
+            model=config.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,

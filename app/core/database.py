@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 import pytz
 
 from app.core.logging_conf import get_module_logger
-from app.core.timezone_utils import get_local_tz
 logger = get_module_logger("database")
 
 # --- Absolute path anchored to this file's location ---
@@ -287,108 +286,6 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_run_activities_user_date
         ON run_activities(user_id, start_date)
     ''')
-
-    # [GARMIN COACH] Table: garmin_daily_metrics (daily wellness sync from Garmin Connect)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS garmin_daily_metrics (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            date TEXT NOT NULL,
-            training_readiness_score INTEGER,
-            hrv_status TEXT,
-            hrv_weekly_avg REAL,
-            hrv_last_night REAL,
-            sleep_score INTEGER,
-            sleep_duration_sec INTEGER,
-            deep_sleep_sec INTEGER,
-            body_battery_morning INTEGER,
-            body_battery_evening INTEGER,
-            resting_hr INTEGER,
-            stress_avg INTEGER,
-            spo2_avg REAL,
-            training_status TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id, date)
-        )
-    ''')
-    c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_garmin_daily_user_date
-        ON garmin_daily_metrics(user_id, date)
-    ''')
-
-    # [GARMIN COACH] Table: athlete_state (append-only state machine: healthy/sick/injured/tapering)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS athlete_state (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            state TEXT NOT NULL DEFAULT 'healthy',
-            note TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_by TEXT DEFAULT 'user'
-        )
-    ''')
-
-    # [GARMIN COACH] Table: weekly_plans (staging area for AI-generated plans, pending/accepted/rejected)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS weekly_plans (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            week_start_date TEXT NOT NULL,
-            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ai_output TEXT NOT NULL,
-            status TEXT DEFAULT 'pending',
-            rejected_reason TEXT,
-            UNIQUE(user_id, week_start_date)
-        )
-    ''')
-
-    # [GARMIN COACH] Table: setup_sessions (onboarding wizard FSM state — persists across restarts)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS setup_sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            step INTEGER NOT NULL DEFAULT 1,
-            data TEXT NOT NULL DEFAULT '{}',
-            status TEXT NOT NULL DEFAULT 'active',
-            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id)
-        )
-    ''')
-    c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_setup_sessions_user
-        ON setup_sessions(user_id, status)
-    ''')
-
-    # [GARMIN COACH] Extend run_activities: rpe_score column
-    try:
-        c.execute("ALTER TABLE run_activities ADD COLUMN rpe_score INTEGER DEFAULT NULL")
-    except sqlite3.OperationalError:
-        pass
-
-    # [GARMIN COACH] Extend training_plans: full WorkoutDay schema columns
-    _plan_migrations = [
-        "ALTER TABLE training_plans ADD COLUMN workout_type TEXT",
-        "ALTER TABLE training_plans ADD COLUMN target_distance_km REAL",
-        "ALTER TABLE training_plans ADD COLUMN target_duration_min INTEGER",
-        "ALTER TABLE training_plans ADD COLUMN target_pace_range TEXT",
-        "ALTER TABLE training_plans ADD COLUMN target_hr_zone INTEGER",
-        "ALTER TABLE training_plans ADD COLUMN target_hr_range TEXT",
-        "ALTER TABLE training_plans ADD COLUMN rpe_target INTEGER",
-        "ALTER TABLE training_plans ADD COLUMN nutrition_alert TEXT",
-        "ALTER TABLE training_plans ADD COLUMN readiness_gated_from TEXT",
-        "ALTER TABLE training_plans ADD COLUMN actual_distance_km REAL",
-        "ALTER TABLE training_plans ADD COLUMN actual_rpe_score INTEGER",
-        "ALTER TABLE training_plans ADD COLUMN skipped_reason TEXT",
-        "ALTER TABLE training_plans ADD COLUMN weekly_plan_id INTEGER",
-        "ALTER TABLE training_plans ADD COLUMN created_at TIMESTAMP",
-        "ALTER TABLE training_plans ADD COLUMN updated_at TIMESTAMP",
-    ]
-    for _sql in _plan_migrations:
-        try:
-            c.execute(_sql)
-        except sqlite3.OperationalError:
-            pass
 
     conn.commit()
     conn.close()
@@ -890,8 +787,8 @@ def get_weekly_volume(user_id: str, target_date: datetime = None) -> float:
     - user_id: Athlete ID.
     - target_date: Any date falling within the target week. If None, defaults to today.
     """
-    tz = get_local_tz()
-
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    
     if target_date is None:
         target_date = datetime.now(tz)
     elif target_date.tzinfo is None:
@@ -1416,6 +1313,283 @@ def update_audit_status(entry_id: int, new_status: str) -> bool:
         return False
 
 
+# ==========================================
+# ⌚ GARMIN DAILY METRICS
+# ==========================================
+def upsert_garmin_daily_metrics(user_id: str, date_str: str, metrics: dict) -> None:
+    """Upsert Garmin daily wellness metrics for a given date."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS garmin_daily_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    training_readiness_score INTEGER,
+                    hrv_status TEXT,
+                    sleep_duration_sec INTEGER,
+                    training_status TEXT,
+                    daily_steps INTEGER,
+                    avg_stress_level INTEGER,
+                    raw_json TEXT,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, date)
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO garmin_daily_metrics
+                    (user_id, date, training_readiness_score, hrv_status, sleep_duration_sec,
+                     training_status, daily_steps, avg_stress_level, raw_json, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, date) DO UPDATE SET
+                    training_readiness_score=excluded.training_readiness_score,
+                    hrv_status=excluded.hrv_status,
+                    sleep_duration_sec=excluded.sleep_duration_sec,
+                    training_status=excluded.training_status,
+                    daily_steps=excluded.daily_steps,
+                    avg_stress_level=excluded.avg_stress_level,
+                    raw_json=excluded.raw_json,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    user_id, date_str,
+                    metrics.get("training_readiness_score"),
+                    metrics.get("hrv_status"),
+                    metrics.get("sleep_duration_sec"),
+                    metrics.get("training_status"),
+                    metrics.get("daily_steps"),
+                    metrics.get("avg_stress_level"),
+                    str(metrics),
+                ),
+            )
+    except Exception as e:
+        logger.error(f"[DB_ERROR] upsert_garmin_daily_metrics failed: {e}")
+
+
+def get_garmin_daily_metrics(user_id: str, date_str: str) -> Optional[dict]:
+    """Retrieve Garmin daily metrics for a given date. Returns None if not found."""
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                """
+                SELECT training_readiness_score, hrv_status, sleep_duration_sec,
+                       training_status, daily_steps, avg_stress_level
+                FROM garmin_daily_metrics
+                WHERE user_id=? AND date=?
+                """,
+                (user_id, date_str),
+            ).fetchone()
+            if row:
+                return dict(row)
+            return None
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_garmin_daily_metrics failed: {e}")
+        return None
+
+
+# ==========================================
+# 🏃 ATHLETE STATE (sick / healthy / injured)
+# ==========================================
+def get_athlete_state(user_id: str) -> str:
+    """Return the latest athlete state for user_id. Defaults to 'healthy' if no record."""
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT state FROM athlete_state WHERE user_id=? ORDER BY id DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            return row["state"] if row else "healthy"
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_athlete_state failed: {e}")
+        return "healthy"
+
+
+def set_athlete_state(user_id: str, state: str, note: str = "", updated_by: str = "user") -> None:
+    """Append a new athlete state row (append-only, latest via ORDER BY id DESC)."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO athlete_state (user_id, state, note, updated_at, updated_by) VALUES (?,?,?,CURRENT_TIMESTAMP,?)",
+                (user_id, state, note, updated_by),
+            )
+    except Exception as e:
+        logger.error(f"[DB_ERROR] set_athlete_state failed: {e}")
+
+
+# ==========================================
+# 📋 WEEKLY PLANS
+# ==========================================
+def upsert_weekly_plan(user_id: str, week_start_date: str, ai_output: str) -> None:
+    """Insert or replace a weekly plan (status='pending')."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS weekly_plans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    week_start_date TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    ai_output TEXT,
+                    rejected_reason TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, week_start_date)
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO weekly_plans (user_id, week_start_date, status, ai_output, created_at, updated_at)
+                VALUES (?,?,'pending',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, week_start_date) DO UPDATE SET
+                    status='pending', ai_output=excluded.ai_output, updated_at=CURRENT_TIMESTAMP
+                """,
+                (user_id, week_start_date, ai_output),
+            )
+    except Exception as e:
+        logger.error(f"[DB_ERROR] upsert_weekly_plan failed: {e}")
+
+
+def get_pending_weekly_plan(user_id: str, week_start_date: str) -> Optional[dict]:
+    """Return the pending weekly plan row for the given week. None if not found."""
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT id, user_id, week_start_date, status, ai_output FROM weekly_plans WHERE user_id=? AND week_start_date=? AND status='pending'",
+                (user_id, week_start_date),
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_pending_weekly_plan failed: {e}")
+        return None
+
+
+def update_weekly_plan_status(user_id: str, week_start_date: str, status: str, rejected_reason: str = "") -> None:
+    """Update the status of the weekly plan (pending → accepted/rejected/expired)."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE weekly_plans SET status=?, rejected_reason=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND week_start_date=?",
+                (status, rejected_reason, user_id, week_start_date),
+            )
+    except Exception as e:
+        logger.error(f"[DB_ERROR] update_weekly_plan_status failed: {e}")
+
+
+def has_active_plan_this_week(user_id: str, week_start_date: str = "") -> bool:
+    """Return True if there is an accepted plan for the given week (defaults to current week Monday)."""
+    if not week_start_date:
+        from datetime import date, timedelta
+        today = date.today()
+        week_start_date = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM weekly_plans WHERE user_id=? AND week_start_date=? AND status='accepted' LIMIT 1",
+                (user_id, week_start_date),
+            ).fetchone()
+            return row is not None
+    except Exception as e:
+        logger.error(f"[DB_ERROR] has_active_plan_this_week failed: {e}")
+        return False
+
+
+# ==========================================
+# ⚙️ SETUP SESSIONS (onboarding FSM)
+# ==========================================
+def get_setup_session(user_id: str) -> Optional[dict]:
+    """Return the active setup session row for user_id. None if no session."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS setup_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL UNIQUE,
+                    step INTEGER NOT NULL DEFAULT 1,
+                    data TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            row = conn.execute(
+                "SELECT id, user_id, step, data, status, updated_at FROM setup_sessions WHERE user_id=? AND status='active'",
+                (user_id,),
+            ).fetchone()
+            return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_setup_session failed: {e}")
+        return None
+
+
+def upsert_setup_session(user_id: str, step: int, data: dict, status: str = "active") -> None:
+    """Create or update the setup session for user_id."""
+    import json as _json
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS setup_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL UNIQUE,
+                    step INTEGER NOT NULL DEFAULT 1,
+                    data TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO setup_sessions (user_id, step, data, status, created_at, updated_at)
+                VALUES (?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    step=excluded.step, data=excluded.data, status=excluded.status,
+                    updated_at=CURRENT_TIMESTAMP
+                """,
+                (user_id, step, _json.dumps(data), status),
+            )
+    except Exception as e:
+        logger.error(f"[DB_ERROR] upsert_setup_session failed: {e}")
+
+
+def complete_setup_session(user_id: str) -> None:
+    """Mark setup session as completed."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE setup_sessions SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE user_id=?",
+                (user_id,),
+            )
+    except Exception as e:
+        logger.error(f"[DB_ERROR] complete_setup_session failed: {e}")
+
+
+def abandon_stale_setup_sessions(timeout_hours: int = 24) -> int:
+    """Mark active sessions with no activity for > timeout_hours as abandoned. Returns count."""
+    try:
+        with get_db() as conn:
+            result = conn.execute(
+                """
+                UPDATE setup_sessions SET status='abandoned', updated_at=CURRENT_TIMESTAMP
+                WHERE status='active'
+                  AND updated_at < datetime('now', ? || ' hours')
+                """,
+                (f"-{timeout_hours}",),
+            )
+            return result.rowcount
+    except Exception as e:
+        logger.error(f"[DB_ERROR] abandon_stale_setup_sessions failed: {e}")
+        return 0
+
+
 def get_audit_stats(user_id: str) -> Dict:
     """Return total count and breakdowns by severity and status for a user's audit entries."""
     try:
@@ -1441,292 +1615,3 @@ def get_audit_stats(user_id: str) -> Dict:
     except Exception as e:
         logger.error(f"[DB_ERROR] Failed to get audit stats: {e}")
         return {"total": 0, "by_severity": {}, "by_status": {}}
-
-
-# ==========================================
-# GARMIN DAILY METRICS CRUD
-# ==========================================
-
-def upsert_garmin_daily_metrics(user_id: str, date: str, metrics: dict) -> None:
-    """Insert or replace Garmin daily wellness metrics for a user/date."""
-    try:
-        with get_db() as conn:
-            conn.execute(
-                """
-                INSERT INTO garmin_daily_metrics
-                    (user_id, date, training_readiness_score, hrv_status,
-                     hrv_weekly_avg, hrv_last_night, sleep_score, sleep_duration_sec,
-                     deep_sleep_sec, body_battery_morning, body_battery_evening,
-                     resting_hr, stress_avg, spo2_avg, training_status)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(user_id, date) DO UPDATE SET
-                    training_readiness_score=excluded.training_readiness_score,
-                    hrv_status=excluded.hrv_status,
-                    hrv_weekly_avg=excluded.hrv_weekly_avg,
-                    hrv_last_night=excluded.hrv_last_night,
-                    sleep_score=excluded.sleep_score,
-                    sleep_duration_sec=excluded.sleep_duration_sec,
-                    deep_sleep_sec=excluded.deep_sleep_sec,
-                    body_battery_morning=excluded.body_battery_morning,
-                    body_battery_evening=excluded.body_battery_evening,
-                    resting_hr=excluded.resting_hr,
-                    stress_avg=excluded.stress_avg,
-                    spo2_avg=excluded.spo2_avg,
-                    training_status=excluded.training_status
-                """,
-                (
-                    user_id, date,
-                    metrics.get("training_readiness_score"),
-                    metrics.get("hrv_status"),
-                    metrics.get("hrv_weekly_avg"),
-                    metrics.get("hrv_last_night"),
-                    metrics.get("sleep_score"),
-                    metrics.get("sleep_duration_sec"),
-                    metrics.get("deep_sleep_sec"),
-                    metrics.get("body_battery_morning"),
-                    metrics.get("body_battery_evening"),
-                    metrics.get("resting_hr"),
-                    metrics.get("stress_avg"),
-                    metrics.get("spo2_avg"),
-                    metrics.get("training_status"),
-                ),
-            )
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to upsert garmin metrics for {user_id}/{date}: {e}")
-
-
-def get_garmin_daily_metrics(user_id: str, date: str, max_stale_days: int = 3) -> Optional[Dict]:
-    """
-    Get Garmin metrics for a specific date. Falls back to most recent within max_stale_days.
-    Returns None if no data available within the staleness window.
-    """
-    try:
-        with get_db() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM garmin_daily_metrics
-                WHERE user_id = ? AND date <= ?
-                ORDER BY date DESC LIMIT 1
-                """,
-                (user_id, date),
-            ).fetchone()
-            if not row:
-                return None
-            from datetime import date as date_type
-            row_date = datetime.strptime(row["date"], "%Y-%m-%d").date()
-            query_date = datetime.strptime(date, "%Y-%m-%d").date()
-            if (query_date - row_date).days > max_stale_days:
-                return None
-            return dict(row)
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to get garmin metrics: {e}")
-        return None
-
-
-def get_garmin_metrics_last_n_days(user_id: str, days: int = 7) -> List[Dict]:
-    """Get Garmin daily metrics for the last N days for trend analysis."""
-    try:
-        with get_db() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM garmin_daily_metrics
-                WHERE user_id = ?
-                ORDER BY date DESC LIMIT ?
-                """,
-                (user_id, days),
-            ).fetchall()
-            return [dict(r) for r in rows]
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to get garmin metrics last {days} days: {e}")
-        return []
-
-
-# ==========================================
-# ATHLETE STATE CRUD (append-only)
-# ==========================================
-
-def get_athlete_state(user_id: str) -> str:
-    """Return the current athlete state (latest row). Defaults to 'healthy' if no rows."""
-    try:
-        with get_db() as conn:
-            row = conn.execute(
-                "SELECT state FROM athlete_state WHERE user_id = ? ORDER BY id DESC LIMIT 1",
-                (user_id,),
-            ).fetchone()
-            return row["state"] if row else "healthy"
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to get athlete state: {e}")
-        return "healthy"
-
-
-def set_athlete_state(user_id: str, state: str, note: str = "", updated_by: str = "user") -> None:
-    """Append a new athlete state row (never update in place — audit trail)."""
-    valid_states = {"healthy", "sick", "injured", "tapering", "race_week"}
-    if state not in valid_states:
-        logger.error(f"[DB_ERROR] Invalid athlete state: {state}")
-        return
-    try:
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO athlete_state (user_id, state, note, updated_by) VALUES (?,?,?,?)",
-                (user_id, state, note, updated_by),
-            )
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to set athlete state: {e}")
-
-
-# ==========================================
-# WEEKLY PLANS CRUD
-# ==========================================
-
-def upsert_weekly_plan(user_id: str, week_start_date: str, ai_output: str) -> Optional[int]:
-    """Insert or replace a weekly plan in pending status. Returns the plan id."""
-    try:
-        with get_db() as conn:
-            conn.execute(
-                """
-                INSERT INTO weekly_plans (user_id, week_start_date, ai_output, status)
-                VALUES (?, ?, ?, 'pending')
-                ON CONFLICT(user_id, week_start_date) DO UPDATE SET
-                    ai_output=excluded.ai_output,
-                    status='pending',
-                    rejected_reason=NULL,
-                    generated_at=CURRENT_TIMESTAMP
-                """,
-                (user_id, week_start_date, ai_output),
-            )
-            row = conn.execute(
-                "SELECT id FROM weekly_plans WHERE user_id=? AND week_start_date=?",
-                (user_id, week_start_date),
-            ).fetchone()
-            return row["id"] if row else None
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to upsert weekly plan: {e}")
-        return None
-
-
-def get_pending_weekly_plan(user_id: str, week_start_date: str) -> Optional[Dict]:
-    """Get the pending plan for a user/week. Returns None if no pending plan."""
-    try:
-        with get_db() as conn:
-            row = conn.execute(
-                "SELECT * FROM weekly_plans WHERE user_id=? AND week_start_date=? AND status='pending'",
-                (user_id, week_start_date),
-            ).fetchone()
-            return dict(row) if row else None
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to get pending weekly plan: {e}")
-        return None
-
-
-def update_weekly_plan_status(
-    user_id: str, week_start_date: str, status: str, rejected_reason: str = ""
-) -> bool:
-    """Update plan status to accepted/rejected/expired. Returns True on success."""
-    try:
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE weekly_plans SET status=?, rejected_reason=? WHERE user_id=? AND week_start_date=?",
-                (status, rejected_reason, user_id, week_start_date),
-            )
-            return conn.execute("SELECT changes()").fetchone()[0] > 0
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to update weekly plan status: {e}")
-        return False
-
-
-def has_active_plan_this_week(user_id: str, week_start_date: str) -> bool:
-    """Return True if an accepted plan exists for this user/week."""
-    try:
-        with get_db() as conn:
-            row = conn.execute(
-                "SELECT id FROM weekly_plans WHERE user_id=? AND week_start_date=? AND status='accepted'",
-                (user_id, week_start_date),
-            ).fetchone()
-            return row is not None
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to check active plan: {e}")
-        return False
-
-
-def expire_stale_weekly_plans(user_id: str, before_date: str) -> int:
-    """Expire pending plans older than before_date. Returns count of expired plans."""
-    try:
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE weekly_plans SET status='expired' WHERE user_id=? AND week_start_date<? AND status='pending'",
-                (user_id, before_date),
-            )
-            return conn.execute("SELECT changes()").fetchone()[0]
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to expire weekly plans: {e}")
-        return 0
-
-
-# ==========================================
-# SETUP SESSIONS CRUD
-# ==========================================
-
-def get_setup_session(user_id: str) -> Optional[Dict]:
-    """Get the active setup session for a user. Returns None if not in setup."""
-    try:
-        with get_db() as conn:
-            row = conn.execute(
-                "SELECT * FROM setup_sessions WHERE user_id=? AND status='active'",
-                (user_id,),
-            ).fetchone()
-            return dict(row) if row else None
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to get setup session: {e}")
-        return None
-
-
-def upsert_setup_session(user_id: str, step: int, data: dict, status: str = "active") -> None:
-    """Insert or replace the setup session for a user."""
-    import json as _json
-    try:
-        with get_db() as conn:
-            conn.execute(
-                """
-                INSERT INTO setup_sessions (user_id, step, data, status, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    step=excluded.step,
-                    data=excluded.data,
-                    status=excluded.status,
-                    updated_at=CURRENT_TIMESTAMP
-                """,
-                (user_id, step, _json.dumps(data, ensure_ascii=False), status),
-            )
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to upsert setup session: {e}")
-
-
-def complete_setup_session(user_id: str) -> None:
-    """Mark setup session as completed."""
-    try:
-        with get_db() as conn:
-            conn.execute(
-                "UPDATE setup_sessions SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE user_id=?",
-                (user_id,),
-            )
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to complete setup session: {e}")
-
-
-def abandon_stale_setup_sessions(timeout_hours: int = 24) -> int:
-    """Mark setup sessions with no activity in timeout_hours as abandoned. Returns count."""
-    try:
-        with get_db() as conn:
-            conn.execute(
-                """
-                UPDATE setup_sessions SET status='abandoned', updated_at=CURRENT_TIMESTAMP
-                WHERE status='active'
-                  AND updated_at < datetime('now', ? || ' hours')
-                """,
-                (f"-{timeout_hours}",),
-            )
-            return conn.execute("SELECT changes()").fetchone()[0]
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to abandon stale setup sessions: {e}")
-        return 0

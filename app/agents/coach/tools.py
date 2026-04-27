@@ -1,6 +1,7 @@
 # app/agents/coach/tools.py
 
 import os
+import pytz
 import json
 from datetime import datetime
 from app.core.database import (
@@ -15,7 +16,6 @@ from app.services.rag_memory import rag_db
 from app.services.stream_storage import load_activity_stream_from_file, get_stream_arrays
 from app.agents.coach.utils import calculate_acwr
 from app.agents.coach.metrics_engine import build_run_metrics_block
-from app.core.timezone_utils import get_local_tz
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
@@ -28,7 +28,7 @@ def update_todays_plan(user_id: str, workout_title: str, description: str) -> st
     To cancel: pass workout_title='Cancel' and description=''.
     ONLY for today. For any future date use set_workout_plan() instead.
     """
-    tz = get_local_tz()
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now_str = datetime.now(tz).strftime('%Y-%m-%d')
     logger.info(f"[TOOL-USE] 🤖 AI automatically changed today's plan: {workout_title}")
     return update_daily_plan(str(user_id), now_str, workout_title, description, status="Pending")

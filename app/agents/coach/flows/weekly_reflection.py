@@ -1,6 +1,8 @@
 import os
 from app.core.user_context import get_primary_user_id
+import pytz
 from datetime import datetime, timedelta
+from app.core.timezone_utils import get_local_tz
 
 from google import genai
 from google.genai import types
@@ -13,7 +15,6 @@ from app.agents.coach.utils import (
     calculate_acwr, calculate_training_phase, debug_log_prompt,
     get_formatted_weekly_context, send_message_with_retry, build_agent_context,
 )
-from app.core.timezone_utils import get_local_tz
 from app.agents.coach.prompts import (
     build_system_instruction, get_shared_context_block, build_weekly_reflection_prompt,
 )
@@ -26,7 +27,7 @@ from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
+client = genai.Client()
 
 
 def generate_weekly_reflection(config: dict):
@@ -92,7 +93,7 @@ def generate_weekly_reflection(config: dict):
     # 3. Call Gemini with Action Tool allowed
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-flash-latest"),
+            model=config.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,

@@ -1,6 +1,8 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+import pytz
+import os
 from datetime import datetime
 
 from app.core.user_context import get_primary_user_id
@@ -11,17 +13,42 @@ from app.agents.coach.harvest import harvest_data
 from app.agents.coach.utils import calculate_training_phase
 from app.services.backup import perform_backup
 from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, extract_implicit_memory
-from app.agents.coach.garmin_client import get_garmin_client
-from app.agents.coach.setup_flow import cleanup_stale_setup_sessions
-from app.agents.coach.flows.weekly_plan_generation import generate_weekly_plan
 from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
 from app.services.log_auditor import run_audit
-from app.core.timezone_utils import get_local_tz
+from app.agents.coach.garmin_client import get_garmin_client
+from app.agents.coach.setup_flow import cleanup_stale_setup_sessions
+from app.agents.coach.flows.weekly_plan_generation import generate_weekly_plan
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("scheduler")
-TZ_VN = get_local_tz()
+TZ_VN = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+
+
+_SESSION_DEFAULTS = {
+    "morning": "06:30",
+    "afternoon": "17:30",
+    "evening": "20:00",
+}
+
+
+def _is_late_trigger(session: str, config: dict) -> bool:
+    """Return True if now is more than skip_minutes past the scheduled session time.
+
+    Fails open (returns False) on invalid config so jobs still run.
+    """
+    news_cfg = config.get("news_agent", {})
+    time_str = news_cfg.get(f"{session}_time", _SESSION_DEFAULTS.get(session, "06:30"))
+    skip_minutes = int(news_cfg.get("late_trigger_skip_minutes", 30))
+
+    try:
+        h, m = map(int, time_str.split(":"))
+    except (ValueError, AttributeError):
+        return False
+
+    now = datetime.now(TZ_VN)
+    diff = (now.hour * 60 + now.minute) - (h * 60 + m)
+    return diff > skip_minutes
 # BackgroundScheduler runs jobs in a thread pool — all task functions must be regular def.
 scheduler = BackgroundScheduler()
 
@@ -87,51 +114,11 @@ def task_weekly_reflection():
 # ==========================================
 # 📰 NEWS BRIEFINGS
 # ==========================================
-
-_NEWS_SESSION_TIMES = {
-    "morning": "morning_time",
-    "afternoon": "afternoon_time",
-    "evening": "evening_time",
-}
-
-_NEWS_SESSION_DEFAULTS = {
-    "morning": "06:30",
-    "afternoon": "17:30",
-    "evening": "20:00",
-}
-
-
-def _is_late_trigger(session: str, config: dict) -> bool:
-    """
-    Returns True if the task fired more than late_trigger_skip_minutes after its scheduled time.
-    Used to skip stale triggers — e.g., a reboot at 07:15 would fire the 06:30 job immediately.
-    """
-    news_cfg = config.get("news_agent", {})
-    skip_minutes = int(news_cfg.get("late_trigger_skip_minutes", 30))
-    time_key = _NEWS_SESSION_TIMES.get(session, "morning_time")
-    scheduled_time_str = news_cfg.get(time_key, _NEWS_SESSION_DEFAULTS[session])
-    try:
-        sh, sm = map(int, scheduled_time_str.split(":"))
-    except (ValueError, AttributeError):
-        return False
-    now = datetime.now(TZ_VN)
-    scheduled_minutes = sh * 60 + sm
-    current_minutes = now.hour * 60 + now.minute
-    diff = current_minutes - scheduled_minutes
-    # Wrap midnight crossing
-    if diff < -720:
-        diff += 1440
-    return diff > skip_minutes
-
-
 def task_morning_news():
     """Morning news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        config = load_config()
-        if _is_late_trigger("morning", config):
-            logger.warning("[SCHEDULER] Briefing skipped — trigger late for morning session.")
-            return
         logger.info("[SCHEDULER] Triggering morning news briefing...")
+        config = load_config()
         generate_news_briefing(config, session="morning")
     except Exception as e:
         logger.error("[SCHEDULER] task_morning_news failed: %s", e, exc_info=True)
@@ -140,11 +127,8 @@ def task_morning_news():
 def task_afternoon_news():
     """Afternoon news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        config = load_config()
-        if _is_late_trigger("afternoon", config):
-            logger.warning("[SCHEDULER] Briefing skipped — trigger late for afternoon session.")
-            return
         logger.info("[SCHEDULER] Triggering afternoon news briefing...")
+        config = load_config()
         generate_news_briefing(config, session="afternoon")
     except Exception as e:
         logger.error("[SCHEDULER] task_afternoon_news failed: %s", e, exc_info=True)
@@ -153,11 +137,8 @@ def task_afternoon_news():
 def task_evening_news():
     """Evening news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        config = load_config()
-        if _is_late_trigger("evening", config):
-            logger.warning("[SCHEDULER] Briefing skipped — trigger late for evening session.")
-            return
         logger.info("[SCHEDULER] Triggering evening news briefing...")
+        config = load_config()
         generate_news_briefing(config, session="evening")
     except Exception as e:
         logger.error("[SCHEDULER] task_evening_news failed: %s", e, exc_info=True)
@@ -214,53 +195,6 @@ def task_proactive_coach_check():
 
 
 # ==========================================
-# ⌚ GARMIN SYNC
-# ==========================================
-def task_garmin_sync():
-    """Sync Garmin daily metrics at 5:45 AM. Regular def (thread pool)."""
-    try:
-        chat_id = str(get_primary_user_id())
-        if not chat_id or chat_id == "None":
-            return
-        logger.info("[SCHEDULER] Syncing Garmin metrics...")
-        get_garmin_client().fetch_and_store_daily_metrics(chat_id)
-    except Exception as e:
-        logger.error("[SCHEDULER] task_garmin_sync failed: %s", e, exc_info=True)
-
-
-# ==========================================
-# 📋 WEEKLY PLAN GENERATION
-# ==========================================
-def task_weekly_plan_generation():
-    """Generate AI weekly plan on Sunday at 20:30. Regular def (thread pool)."""
-    try:
-        chat_id = str(get_primary_user_id())
-        if not chat_id or chat_id == "None":
-            return
-        config = load_config()
-        if not config.get("race_date"):
-            logger.info("[SCHEDULER] Skipping weekly plan — no race_date configured.")
-            return
-        logger.info("[SCHEDULER] Generating weekly plan...")
-        generate_weekly_plan(chat_id, config)
-    except Exception as e:
-        logger.error("[SCHEDULER] task_weekly_plan_generation failed: %s", e, exc_info=True)
-
-
-# ==========================================
-# 🧹 STALE SESSION CLEANUP
-# ==========================================
-def task_cleanup_stale_setup():
-    """Abandon setup sessions with no activity for 24h. Regular def (thread pool)."""
-    try:
-        count = cleanup_stale_setup_sessions(timeout_hours=24)
-        if count:
-            logger.info(f"[SCHEDULER] Cleaned {count} stale setup session(s).")
-    except Exception as e:
-        logger.error("[SCHEDULER] task_cleanup_stale_setup failed: %s", e, exc_info=True)
-
-
-# ==========================================
 # 🔍 LOG AUDIT
 # ==========================================
 def task_log_audit():
@@ -276,6 +210,54 @@ def task_log_audit():
             logger.info(f"[SCHEDULER] Log audit complete: {count} new entries inserted.")
     except Exception as e:
         logger.error("[SCHEDULER] task_log_audit failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# ⌚ GARMIN SYNC
+# ==========================================
+def task_garmin_sync():
+    """Sync Garmin daily metrics. Runs in BackgroundScheduler thread pool."""
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping Garmin sync.")
+            return
+        logger.info("[SCHEDULER] Syncing Garmin daily metrics...")
+        garmin = get_garmin_client()
+        garmin.fetch_and_store_daily_metrics(user_id)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_garmin_sync failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 📋 WEEKLY PLAN GENERATION
+# ==========================================
+def task_weekly_plan_generation():
+    """Generate weekly training plan on Sunday evening. Runs in BackgroundScheduler thread pool."""
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping weekly plan generation.")
+            return
+        logger.info("[SCHEDULER] Generating weekly training plan...")
+        config = load_config()
+        generate_weekly_plan(user_id, config)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_weekly_plan_generation failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 🧹 CLEANUP STALE SETUP SESSIONS
+# ==========================================
+def task_cleanup_stale_setup():
+    """Abandon setup sessions stale for >24h. Runs in BackgroundScheduler thread pool."""
+    try:
+        logger.info("[SCHEDULER] Cleaning up stale setup sessions...")
+        count = cleanup_stale_setup_sessions(timeout_hours=24)
+        if count:
+            logger.info(f"[SCHEDULER] Cleaned up {count} stale setup sessions.")
+    except Exception as e:
+        logger.error("[SCHEDULER] task_cleanup_stale_setup failed: %s", e, exc_info=True)
 
 
 # ==========================================

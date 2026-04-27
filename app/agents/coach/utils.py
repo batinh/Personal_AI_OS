@@ -2,6 +2,7 @@ import numpy as np
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import pytz
 import math
 import os
 import pandas as pd
@@ -213,7 +214,7 @@ def format_pace_zones_for_prompt(zones: dict) -> str:
     return "\n".join(lines)
 
 
-def calculate_training_phase(race_date_str: str, race_distance_km: float = 21.1) -> dict:
+def calculate_training_phase(race_date_str: str, race_distance_km: float = 21.1, timezone_str: str = os.getenv("TZ", "Asia/Ho_Chi_Minh")) -> dict:
     """
     Calculate current Training Phase, Microcycle, and Taper Factor
     based on the upcoming race date AND race distance.
@@ -230,7 +231,7 @@ def calculate_training_phase(race_date_str: str, race_distance_km: float = 21.1)
         return {"phase": "Base Phase", "weeks_left": 99, "microcycle": "Load", "taper_factor": 1.0}
 
     try:
-        tz = get_local_tz()
+        tz = pytz.timezone(timezone_str)
         today = datetime.now(tz).date()
         race_date = datetime.strptime(race_date_str, "%Y-%m-%d").date()
 

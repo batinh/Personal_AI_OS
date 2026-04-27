@@ -14,7 +14,7 @@ from app.core.schemas import MemoryExtractionResult
 
 from app.core.logging_conf import get_module_logger
 logger = get_module_logger("coach")
-client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
+client = genai.Client()
 
 
 def extract_implicit_memory(user_id_str: str):
@@ -51,7 +51,7 @@ def extract_implicit_memory(user_id_str: str):
         cfg = load_config()
 
         chat_session = client.chats.create(
-            model=cfg.get("model_name", "models/gemini-flash-latest"),
+            model=cfg.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(
                 temperature=0.2,  # Lowered temperature to minimize hallucinations
                 response_mime_type="application/json",
