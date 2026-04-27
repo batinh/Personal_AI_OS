@@ -34,10 +34,8 @@ class TestCoreImports(unittest.TestCase):
         from app.core.timezone_utils import get_local_tz  # noqa: F401
 
     def test_gemini_utils_importable(self):
-        from app.core.gemini_utils import (
-            extract_text,
-            strip_thought_preamble,
-        )  # noqa: F401
+        from app.core.gemini_utils import extract_text  # noqa: F401
+        from app.core.gemini_utils import strip_thought_preamble  # noqa: F401
 
 
 class TestRouterImports(unittest.TestCase):
@@ -69,10 +67,10 @@ class TestServiceImports(unittest.TestCase):
         from app.services.telegram_router import route_message  # noqa: F401
 
     def test_coverage_metrics_importable(self):
-        from app.services.coverage_metrics import (
+        from app.services.coverage_metrics import (  # noqa: F401
             load_coverage_report,
             report_to_dict,
-        )  # noqa: F401
+        )
 
 
 class TestCoachAgentImports(unittest.TestCase):
@@ -147,10 +145,10 @@ class TestNewsAgentImports(unittest.TestCase):
         from app.agents.news.prompts import build_topic_prompt  # noqa: F401
 
     def test_news_on_demand_prompt_importable(self):
-        from app.agents.news.prompts import (
+        from app.agents.news.prompts import (  # noqa: F401
             build_on_demand_system_instruction,
-        )  # noqa: F401
-        from app.agents.news.prompts import build_on_demand_prompt  # noqa: F401
+            build_on_demand_prompt,
+        )
 
     def test_generate_on_demand_briefing_importable(self):
         from app.agents.news.agent import generate_on_demand_briefing  # noqa: F401
@@ -170,11 +168,11 @@ class TestNewsAgentImports(unittest.TestCase):
         )
 
     def test_rate_limit_importable(self):
-        from app.agents.news.telegram_handler import (
+        from app.agents.news.telegram_handler import (  # noqa: F401
             _check_rate_limit,
             RATE_LIMIT,
             RATE_WINDOW,
-        )  # noqa: F401
+        )
 
     def test_scheduler_late_trigger_importable(self):
         from app.services.scheduler import _is_late_trigger  # noqa: F401
@@ -204,10 +202,10 @@ class TestGarminCoachPlanningImports(unittest.TestCase):
         )
 
     def test_garmin_client_importable(self):
-        from app.agents.coach.garmin_client import (
+        from app.agents.coach.garmin_client import (  # noqa: F401
             GarminClient,
             get_garmin_client,
-        )  # noqa: F401
+        )
 
     def test_schemas_importable(self):
         from app.agents.coach.schemas import WorkoutDay, WeeklyPlanResult  # noqa: F401
@@ -241,10 +239,10 @@ class TestGarminCoachPlanningImports(unittest.TestCase):
         )
 
     def test_agent_command_aliases_importable(self):
-        from app.agents.coach.agent import (
+        from app.agents.coach.agent import (  # noqa: F401
             COMMAND_ALIASES,
             resolve_command,
-        )  # noqa: F401
+        )
 
     def test_scheduler_new_tasks_importable(self):
         from app.services.scheduler import (  # noqa: F401
