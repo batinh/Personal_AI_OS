@@ -334,6 +334,45 @@ def get_volume_summary(user_id: str, period: str, year: int, month: int = 0) -> 
     return "\n".join(lines)
 
 
+def save_bulk_workout_plan(user_id: str, plan_json: str) -> str:
+    """
+    [TOOL] Save a multi-day training schedule in one call.
+    Use when the athlete shares a structured training plan (multiple days/weeks) and asks to
+    save it to the database. Call ONCE with the full plan rather than set_workout_plan per day.
+    plan_json: JSON array of objects, each with keys:
+      date (YYYY-MM-DD), workout_title (str), description (str).
+    Example: '[{"date":"2026-05-01","workout_title":"Easy Run","description":"6km Zone 2"}]'
+    Returns a summary of how many days were saved and any errors.
+    """
+    logger.info(f"[TOOL-USE] 🤖 AI saving bulk plan for user {user_id}")
+    try:
+        entries = json.loads(plan_json)
+    except Exception as e:
+        return f"❌ plan_json không hợp lệ (JSON parse error): {e}"
+
+    if not isinstance(entries, list) or not entries:
+        return "❌ plan_json phải là mảng JSON không rỗng."
+
+    saved, errors = 0, []
+    for entry in entries:
+        date = entry.get("date", "")
+        title = entry.get("workout_title", "")
+        desc = entry.get("description", "")
+        if not date or not title:
+            errors.append(f"Bỏ qua entry thiếu date/title: {entry}")
+            continue
+        result = update_daily_plan(str(user_id), date, title, desc, status="Pending")
+        if result.startswith("✅"):
+            saved += 1
+        else:
+            errors.append(result)
+
+    summary = f"✅ Đã lưu {saved}/{len(entries)} ngày vào lịch tập."
+    if errors:
+        summary += f"\n⚠️ {len(errors)} lỗi: " + "; ".join(errors[:3])
+    return summary
+
+
 def set_actual_weekly_target(
     user_id: str, week_start_date: str, actual_target_km: float, reasoning: str
 ) -> str:

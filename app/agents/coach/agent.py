@@ -71,6 +71,7 @@ from app.agents.coach.tools import (
     search_long_term_memory,
     set_workout_plan,
     set_actual_weekly_target,
+    save_bulk_workout_plan,
     get_run_full_details,
     get_run_stream_csv,
     get_run_computed_metrics,
@@ -132,6 +133,68 @@ def send_message_with_retry(chat_session, message, max_retries=3):
 
 
 # ==========================================
+# 🤖 AGENTIC TOOL-CALL LOOP
+# ==========================================
+def _run_agentic_loop(chat_session, initial_message: str, max_rounds: int = 5) -> str:
+    """
+    Send a message and execute any tool calls Gemini requests, feeding results back
+    until a final text reply is produced.  Returns the accumulated text reply.
+
+    Without this loop, function_call parts are silently discarded and tools never run.
+    """
+    message = initial_message
+    accumulated_text: list[str] = []
+
+    for round_num in range(max_rounds):
+        response = send_message_with_retry(chat_session, message)
+
+        # Collect text parts from this turn
+        turn_text = _extract_gemini_text(response)
+        if turn_text:
+            accumulated_text.append(turn_text)
+
+        # Check for function calls in the response
+        candidates = response.candidates or []
+        parts = getattr(candidates[0].content, "parts", []) if candidates else []
+        fn_calls = [p for p in parts if getattr(p, "function_call", None)]
+
+        if not fn_calls:
+            # No tool calls → conversation complete
+            break
+
+        # Execute each tool and build function_response parts
+        response_parts = []
+        for part in fn_calls:
+            fc = part.function_call
+            fn_name = fc.name
+            fn_args = dict(fc.args) if fc.args else {}
+            logger.info(f"[AGENTIC] Executing tool '{fn_name}' args={list(fn_args.keys())}")
+
+            fn_callable = _TOOL_DISPATCH.get(fn_name)
+            if fn_callable is None:
+                tool_result = f"❌ Unknown tool: {fn_name}"
+                logger.error(f"[AGENTIC] Tool '{fn_name}' not in dispatch map")
+            else:
+                try:
+                    tool_result = fn_callable(**fn_args)
+                except Exception as exc:
+                    tool_result = f"❌ Tool error ({fn_name}): {exc}"
+                    logger.error(f"[AGENTIC] Tool '{fn_name}' raised: {exc}")
+
+            logger.info(f"[AGENTIC] Tool '{fn_name}' result: {str(tool_result)[:120]}")
+            response_parts.append(
+                types.Part.from_function_response(
+                    name=fn_name, response={"result": tool_result}
+                )
+            )
+
+        # Feed all function results back to Gemini in a single turn
+        message = response_parts  # type: ignore[assignment]
+
+    return "\n".join(accumulated_text) if accumulated_text else ""
+
+
+# ==========================================
 # 🚀 PERFORMANCE: TOOL ROUTING BY INTENT
 # ==========================================
 # Read-only tools: used for informational queries (no state changes)
@@ -151,6 +214,7 @@ _TOOLS_READ_ONLY = [
 _TOOLS_WRITE = [
     set_workout_plan,
     set_actual_weekly_target,
+    save_bulk_workout_plan,
     update_todays_plan,
 ]
 
@@ -165,13 +229,38 @@ _WRITE_INTENT_KEYWORDS = [
     "tăng",
     "chốt",
     "lên lịch",
+    "lưu",
+    "lập",
+    "tạo",
+    "kế hoạch",
+    "giáo án",
+    "lịch tập",
     "set",
     "update",
     "change",
     "cancel",
     "reschedule",
     "target",
+    "save",
+    "schedule",
 ]
+
+# Dispatch map: Gemini tool name → Python callable (for agentic tool-call loop)
+_TOOL_DISPATCH: dict = {
+    "update_todays_plan": update_todays_plan,
+    "check_training_status": check_training_status,
+    "get_recent_workouts": get_recent_workouts,
+    "search_long_term_memory": search_long_term_memory,
+    "set_workout_plan": set_workout_plan,
+    "set_actual_weekly_target": set_actual_weekly_target,
+    "save_bulk_workout_plan": save_bulk_workout_plan,
+    "get_run_full_details": get_run_full_details,
+    "get_run_stream_csv": get_run_stream_csv,
+    "get_run_computed_metrics": get_run_computed_metrics,
+    "get_metric_trend": get_metric_trend,
+    "get_volume_for_week": get_volume_for_week,
+    "get_volume_summary": get_volume_summary,
+}
 
 COMMAND_ALIASES = {
     "/chap": "/accept",
@@ -863,10 +952,9 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
                 tools=selected_tools,
             ),
         )
-        response = send_message_with_retry(
+        reply = _run_agentic_loop(
             chat_session, formatted_history[-1]["parts"][0]["text"]
         )
-        reply = _extract_gemini_text(response)
 
         # Phase 4: degenerate-response gate — retry once with full standard context
         if _is_degenerate_response(reply) and intent == "fast":
@@ -888,10 +976,9 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
                     tools=selected_tools,
                 ),
             )
-            retry_response = send_message_with_retry(
+            reply = _run_agentic_loop(
                 retry_session, formatted_history[-1]["parts"][0]["text"]
             )
-            reply = _extract_gemini_text(retry_response)
 
         if not reply:
             logger.error(

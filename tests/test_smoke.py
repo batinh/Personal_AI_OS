@@ -110,6 +110,13 @@ class TestCoachAgentImports(unittest.TestCase):
             get_metric_trend,
             get_volume_for_week,
             get_volume_summary,
+            save_bulk_workout_plan,
+        )
+
+    def test_agentic_loop_importable(self):
+        from app.agents.coach.agent import (  # noqa: F401
+            _run_agentic_loop,
+            _TOOL_DISPATCH,
         )
 
     def test_database_computed_metrics_functions(self):

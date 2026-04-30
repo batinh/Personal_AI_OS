@@ -27,6 +27,7 @@ def _make_response(text: str):
     part = MagicMock()
     part.text = text
     part.thought = False
+    part.function_call = None  # no tool call → agentic loop exits after one turn
     content = MagicMock()
     content.parts = [part]
     candidate = MagicMock()
