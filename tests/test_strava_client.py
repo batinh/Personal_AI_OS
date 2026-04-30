@@ -9,6 +9,7 @@ Covers:
   - Activity description update
   - get_recent_activities and get_athlete_stats
 """
+
 import time
 import unittest
 from unittest.mock import patch, MagicMock
@@ -31,11 +32,14 @@ def _mock_token_response(token="fake-access-token", expires_at=None):
 class TestTokenCaching(unittest.TestCase):
     """Token should be cached in memory until near expiry."""
 
-    @patch.dict("os.environ", {
-        "STRAVA_CLIENT_ID": "123",
-        "STRAVA_CLIENT_SECRET": "secret",
-        "STRAVA_REFRESH_TOKEN": "refresh",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "STRAVA_CLIENT_ID": "123",
+            "STRAVA_CLIENT_SECRET": "secret",
+            "STRAVA_REFRESH_TOKEN": "refresh",
+        },
+    )
     @patch("app.agents.coach.strava_client.requests.post")
     def test_first_call_refreshes_token(self, mock_post):
         mock_post.return_value = _mock_token_response("token-A")
@@ -45,11 +49,14 @@ class TestTokenCaching(unittest.TestCase):
         self.assertEqual(token, "token-A")
         mock_post.assert_called_once()
 
-    @patch.dict("os.environ", {
-        "STRAVA_CLIENT_ID": "123",
-        "STRAVA_CLIENT_SECRET": "secret",
-        "STRAVA_REFRESH_TOKEN": "refresh",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "STRAVA_CLIENT_ID": "123",
+            "STRAVA_CLIENT_SECRET": "secret",
+            "STRAVA_REFRESH_TOKEN": "refresh",
+        },
+    )
     @patch("app.agents.coach.strava_client.requests.post")
     def test_second_call_uses_cache(self, mock_post):
         mock_post.return_value = _mock_token_response("token-A", time.time() + 7200)
@@ -63,11 +70,14 @@ class TestTokenCaching(unittest.TestCase):
         # Only one HTTP call — second was served from cache
         self.assertEqual(mock_post.call_count, 1)
 
-    @patch.dict("os.environ", {
-        "STRAVA_CLIENT_ID": "123",
-        "STRAVA_CLIENT_SECRET": "secret",
-        "STRAVA_REFRESH_TOKEN": "refresh",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "STRAVA_CLIENT_ID": "123",
+            "STRAVA_CLIENT_SECRET": "secret",
+            "STRAVA_REFRESH_TOKEN": "refresh",
+        },
+    )
     @patch("app.agents.coach.strava_client.requests.post")
     def test_expired_token_triggers_refresh(self, mock_post):
         """Token within 60s buffer of expiry should trigger a re-refresh."""
@@ -83,11 +93,14 @@ class TestTokenCaching(unittest.TestCase):
         self.assertEqual(token2, "token-B")
         self.assertEqual(mock_post.call_count, 2)
 
-    @patch.dict("os.environ", {
-        "STRAVA_CLIENT_ID": "123",
-        "STRAVA_CLIENT_SECRET": "secret",
-        "STRAVA_REFRESH_TOKEN": "refresh",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "STRAVA_CLIENT_ID": "123",
+            "STRAVA_CLIENT_SECRET": "secret",
+            "STRAVA_REFRESH_TOKEN": "refresh",
+        },
+    )
     @patch("app.agents.coach.strava_client.requests.post")
     def test_token_refresh_failure_returns_none(self, mock_post):
         mock_post.side_effect = Exception("Network error")
@@ -141,7 +154,10 @@ class TestGetActivityData(unittest.TestCase):
         client._cached_token = None
         client._token_expires_at = 0
 
-        with patch("app.agents.coach.strava_client.requests.post", side_effect=Exception("down")):
+        with patch(
+            "app.agents.coach.strava_client.requests.post",
+            side_effect=Exception("down"),
+        ):
             name, csv, meta, raw = client.get_activity_data("123")
 
         self.assertIsNone(name)
@@ -171,6 +187,7 @@ class TestGetActivityData(unittest.TestCase):
     def test_timeout_returns_none_tuple(self, mock_get):
         """requests.exceptions.Timeout should be caught and return (None, None, None, None)."""
         import requests as req_mod
+
         mock_get.side_effect = req_mod.exceptions.Timeout("timed out")
 
         name, csv, meta, raw = self._make_client().get_activity_data("123")
@@ -249,7 +266,9 @@ class TestGetActivityStreamsRaw(unittest.TestCase):
         client._cached_token = None
         client._token_expires_at = 0
 
-        with patch("app.agents.coach.strava_client.requests.post", side_effect=Exception("err")):
+        with patch(
+            "app.agents.coach.strava_client.requests.post", side_effect=Exception("err")
+        ):
             result = client.get_activity_streams_raw("123")
         self.assertIsNone(result)
 
@@ -340,9 +359,9 @@ class TestGetAthleteStats(unittest.TestCase):
         resp = MagicMock()
         resp.status_code = 200
         resp.json.return_value = {
-            "recent_run_totals": {"distance": 50000},   # 50km
-            "ytd_run_totals": {"distance": 1200000},    # 1200km
-            "all_run_totals": {"distance": 5000000},    # 5000km
+            "recent_run_totals": {"distance": 50000},  # 50km
+            "ytd_run_totals": {"distance": 1200000},  # 1200km
+            "all_run_totals": {"distance": 5000000},  # 5000km
         }
         mock_get.return_value = resp
 

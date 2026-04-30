@@ -10,6 +10,7 @@ FIX: Replace both heavy modules with lightweight MagicMock stubs at the
 sys.modules level. pytest loads conftest.py first, so all subsequent imports
 across every test file reuse these stubs — zero network, zero disk I/O.
 """
+
 import sys
 from unittest.mock import MagicMock
 
@@ -28,7 +29,9 @@ _chroma_stub = MagicMock()
 sys.modules.setdefault("chromadb", _chroma_stub)
 sys.modules.setdefault("chromadb.config", _chroma_stub.config)
 sys.modules.setdefault("chromadb.utils", _chroma_stub.utils)
-sys.modules.setdefault("chromadb.utils.embedding_functions", _chroma_stub.utils.embedding_functions)
+sys.modules.setdefault(
+    "chromadb.utils.embedding_functions", _chroma_stub.utils.embedding_functions
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. Stub: rag_memory module itself — the singleton `rag_db` used across tools

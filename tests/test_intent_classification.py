@@ -1,6 +1,10 @@
 """Tests for _classify_intent and _text_matches_keyword_list in coach agent."""
-import pytest
-from app.agents.coach.agent import _classify_intent, _FAST_EXACT, _STANDARD_KEYWORDS, _text_matches_keyword_list, _is_degenerate_response
+
+from app.agents.coach.agent import (
+    _classify_intent,
+    _text_matches_keyword_list,
+    _is_degenerate_response,
+)
 
 
 class TestFastExactWhitelist:
@@ -32,7 +36,10 @@ class TestFastExactWhitelist:
 class TestStandardKeywordRouting:
     def test_lich_trinh_no_diacritics(self):
         """Core bug: 'lich trinh tap luyen' must route to standard."""
-        assert _classify_intent("lich trinh tap luyen cua toi tuan toi chi tiet") == "standard"
+        assert (
+            _classify_intent("lich trinh tap luyen cua toi tuan toi chi tiet")
+            == "standard"
+        )
 
     def test_lich_with_diacritics(self):
         assert _classify_intent("lịch trình tập luyện tuần tới") == "standard"

@@ -9,7 +9,6 @@ Memory is stored as key-value pairs in news_agent_state (SQLite):
 """
 
 import json
-import logging
 import threading
 from typing import Optional
 
@@ -103,11 +102,15 @@ def extract_and_save_signals(user_id: str, chat_text: str, model: str) -> None:
 
         if signals.get("liked"):
             updated = _merge_topics(mem["liked_topics"], signals["liked"])
-            save_news_memory(user_id, "liked_topics", json.dumps(updated, ensure_ascii=False))
+            save_news_memory(
+                user_id, "liked_topics", json.dumps(updated, ensure_ascii=False)
+            )
 
         if signals.get("disliked"):
             updated = _merge_topics(mem["disliked_topics"], signals["disliked"])
-            save_news_memory(user_id, "disliked_topics", json.dumps(updated, ensure_ascii=False))
+            save_news_memory(
+                user_id, "disliked_topics", json.dumps(updated, ensure_ascii=False)
+            )
 
         if signals.get("notes"):
             note = signals["notes"].strip()

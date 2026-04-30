@@ -1,11 +1,11 @@
 """Tests for generate_news_briefing, generate_on_demand_briefing, and _generate_legacy_briefing."""
-import pytest
-from unittest.mock import patch, MagicMock, call
+
+from unittest.mock import patch
 from app.agents.news.agent import (
     generate_news_briefing,
     generate_on_demand_briefing,
 )
-from app.agents.news.telegram_handler import ERR_001, ERR_002, ERR_003
+from app.agents.news.telegram_handler import ERR_001, ERR_002
 
 _ENABLED_CFG = {
     "news_agent": {
@@ -75,7 +75,9 @@ class TestGenerateNewsBriefingHappyPath:
             return_value=({"name": "AI"}, "news block"),
         ):
             with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
-                with patch("app.agents.news.agent._now_date_str", return_value="22/04/2026"):
+                with patch(
+                    "app.agents.news.agent._now_date_str", return_value="22/04/2026"
+                ):
                     generate_news_briefing(_ENABLED_CFG, "morning")
         text = mock_send.call_args[0][1]
         assert "22/04/2026" in text
@@ -134,7 +136,7 @@ class TestGenerateOnDemandBriefingHappyPath:
                 return_value="📎 sources block",
             ):
                 with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
-                    result = generate_on_demand_briefing("query", "123", _ENABLED_CFG)
+                    generate_on_demand_briefing("query", "123", _ENABLED_CFG)
         sent_text = mock_send.call_args[0][1]
         assert "sources block" in sent_text
 
@@ -142,6 +144,7 @@ class TestGenerateOnDemandBriefingHappyPath:
 class TestGenerateLegacyBriefing:
     def test_reply_sends_to_telegram(self):
         from app.agents.news.agent import _generate_legacy_briefing
+
         long_reply = "y" * 200
         with patch("app.agents.news.agent.get_primary_user_id", return_value=1):
             with patch("app.agents.news.agent.load_news_memory", return_value={}):
@@ -151,12 +154,17 @@ class TestGenerateLegacyBriefing:
                 ):
                     with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
                         _generate_legacy_briefing(
-                            _ENABLED_CFG, "morning", "777", "models/gemini-flash", "22/04/2026"
+                            _ENABLED_CFG,
+                            "morning",
+                            "777",
+                            "models/gemini-flash",
+                            "22/04/2026",
                         )
         mock_send.assert_called_once()
 
     def test_grounded_fails_no_send(self):
         from app.agents.news.agent import _generate_legacy_briefing
+
         with patch("app.agents.news.agent.get_primary_user_id", return_value=1):
             with patch("app.agents.news.agent.load_news_memory", return_value={}):
                 with patch(
@@ -165,12 +173,17 @@ class TestGenerateLegacyBriefing:
                 ):
                     with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
                         _generate_legacy_briefing(
-                            _ENABLED_CFG, "morning", "777", "models/gemini-flash", "22/04/2026"
+                            _ENABLED_CFG,
+                            "morning",
+                            "777",
+                            "models/gemini-flash",
+                            "22/04/2026",
                         )
         mock_send.assert_not_called()
 
     def test_sources_block_appended_when_grounding_urls_present(self):
         from app.agents.news.agent import _generate_legacy_briefing
+
         reply = "z" * 200
         sources = [("Source", "https://example.com")]
         with patch("app.agents.news.agent.get_primary_user_id", return_value=1):
@@ -183,9 +196,15 @@ class TestGenerateLegacyBriefing:
                         "app.agents.news.agent._build_sources_block",
                         return_value="📎 Nguồn block",
                     ):
-                        with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
+                        with patch(
+                            "app.agents.news.agent.send_telegram_msg"
+                        ) as mock_send:
                             _generate_legacy_briefing(
-                                _ENABLED_CFG, "morning", "777", "models/gemini-flash", "22/04/2026"
+                                _ENABLED_CFG,
+                                "morning",
+                                "777",
+                                "models/gemini-flash",
+                                "22/04/2026",
                             )
         sent_text = mock_send.call_args[0][1]
         assert "Nguồn block" in sent_text
@@ -205,9 +224,13 @@ class TestOnDemandShortReplyUsesConstant:
 class TestGenerateNewsBriefingStructuredLog:
     def test_all_fail_sends_err001_not_legacy(self):
         """Behavioral: all topics fail → ERR_001 sent, _generate_legacy_briefing NOT called."""
-        with patch("app.agents.news.agent._call_topic", return_value=({"name": "AI"}, None)):
+        with patch(
+            "app.agents.news.agent._call_topic", return_value=({"name": "AI"}, None)
+        ):
             with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
-                with patch("app.agents.news.agent._generate_legacy_briefing") as mock_legacy:
+                with patch(
+                    "app.agents.news.agent._generate_legacy_briefing"
+                ) as mock_legacy:
                     generate_news_briefing(_ENABLED_CFG, "morning")
         mock_send.assert_called_once()
         assert mock_send.call_args[0][1] == ERR_001
@@ -216,7 +239,9 @@ class TestGenerateNewsBriefingStructuredLog:
     def test_empty_topics_sends_err001_not_legacy(self):
         cfg = {"news_agent": {"enabled": True, "telegram_chat_id": "777", "topics": []}}
         with patch("app.agents.news.agent.send_telegram_msg") as mock_send:
-            with patch("app.agents.news.agent._generate_legacy_briefing") as mock_legacy:
+            with patch(
+                "app.agents.news.agent._generate_legacy_briefing"
+            ) as mock_legacy:
                 generate_news_briefing(cfg, "morning")
         mock_send.assert_called_once()
         assert mock_send.call_args[0][1] == ERR_001

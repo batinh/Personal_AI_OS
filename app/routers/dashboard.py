@@ -1,17 +1,21 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
-import os
-from app.core.user_context import get_primary_user_id
 
-from app.core.database import get_db_connection, get_training_loads, get_historical_training_loads
+from app.core.user_context import get_primary_user_id
+from app.core.database import (
+    get_db_connection,
+    get_training_loads,
+    get_historical_training_loads,
+)
 from app.agents.coach.utils import calculate_acwr
 from app.core.config import load_config
+from app.core.logging_conf import get_module_logger
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-from app.core.logging_conf import get_module_logger
 logger = get_module_logger("admin")
+
 
 @router.get("/dashboard", response_class=HTMLResponse)
 async def user_dashboard(request: Request):
@@ -19,30 +23,37 @@ async def user_dashboard(request: Request):
     config = load_config()
     # Get Chat ID from environment (representing the Primary Tenant)
     chat_id = get_primary_user_id()
-    
+
     # 2. Fetch training loads and calculate ACWR
     loads = get_training_loads(chat_id)
-    acwr_results = calculate_acwr(loads['acute_load_7d'], loads['chronic_load_28d'])
+    acwr_results = calculate_acwr(loads["acute_load_7d"], loads["chronic_load_28d"])
 
     # [NEW] Fetch 30-day time series data for Garmin-style chart
     load_history = get_historical_training_loads(chat_id, days=30)
-    
+
     # 3. Fetch the last 20 run activities for charting
     conn = get_db_connection()
     c = conn.cursor()
-    c.execute('''
+    c.execute(
+        """
         SELECT start_date, name, distance_km, trimp_score, gcs_score, avg_hr 
         FROM run_activities 
         WHERE user_id = ?
         ORDER BY start_date DESC LIMIT 20
-    ''', (str(chat_id),))
+    """,
+        (str(chat_id),),
+    )
     activities = [dict(row) for row in c.fetchall()]
     conn.close()
 
-    return templates.TemplateResponse(request, "dashboard.html", {
-        "acwr": acwr_results,
-        "loads": loads,
-        "load_history": load_history,
-        "activities": activities[::-1],
-        "config": config
-    })
+    return templates.TemplateResponse(
+        request,
+        "dashboard.html",
+        {
+            "acwr": acwr_results,
+            "loads": loads,
+            "load_history": load_history,
+            "activities": activities[::-1],
+            "config": config,
+        },
+    )

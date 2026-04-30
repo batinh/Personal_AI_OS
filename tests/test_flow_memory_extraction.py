@@ -10,10 +10,10 @@ Covers extract_implicit_memory():
   - ENABLE_MEMORY_DEBUG flag → extra logging (no crash)
   - Existing memories injected into prompt for deduplication
 """
+
 import json
 import unittest
-from unittest.mock import patch, MagicMock, call
-
+from unittest.mock import patch, MagicMock
 
 _PATCHES = [
     "app.agents.coach.flows.memory_extraction.load_history_for_gemini",
@@ -25,7 +25,9 @@ _PATCHES = [
 ]
 
 
-def _make_item(domain="running", category="injury_status", fact="Right knee pain", status="active"):
+def _make_item(
+    domain="running", category="injury_status", fact="Right knee pain", status="active"
+):
     return {"domain": domain, "category": category, "fact": fact, "status": status}
 
 
@@ -41,9 +43,11 @@ class TestExtractImplicitMemory(unittest.TestCase):
             key = target.split(".")[-1]
             mocks[key] = m
 
-        mocks["load_history_for_gemini"].return_value = history if history is not None else [
-            {"role": "user", "parts": ["My knee hurts."]}
-        ]
+        mocks["load_history_for_gemini"].return_value = (
+            history
+            if history is not None
+            else [{"role": "user", "parts": ["My knee hurts."]}]
+        )
         mocks["get_all_active_memories"].return_value = memories or []
         mocks["build_memory_extraction_prompt"].return_value = "Extract prompt"
 
@@ -55,8 +59,10 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks["send_message_with_retry"].return_value = response
 
         # load_config is a local import inside the function — patch at its source
-        self._config_patcher = patch("app.core.config.load_config",
-                                     return_value={"model_name": "models/gemini-2.0-flash"})
+        self._config_patcher = patch(
+            "app.core.config.load_config",
+            return_value={"model_name": "models/gemini-2.0-flash"},
+        )
         mocks["load_config"] = self._config_patcher.start()
         patchers.append(self._config_patcher)
 
@@ -70,6 +76,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks, patchers = self._start_patches(history=[])
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             result = extract_implicit_memory("123456")
             self.assertIsNone(result)
             mocks["insert_memory"].assert_not_called()
@@ -80,6 +87,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks, patchers = self._start_patches(history=[])
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")
             mocks["client"].chats.create.assert_not_called()
         finally:
@@ -90,6 +98,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks, patchers = self._start_patches(ai_items=items)
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")
             mocks["insert_memory"].assert_called_once_with(
                 "123456", "running", "injury_status", "Right knee pain", "active"
@@ -105,6 +114,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks, patchers = self._start_patches(ai_items=items)
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")
             self.assertEqual(mocks["insert_memory"].call_count, 2)
         finally:
@@ -112,16 +122,23 @@ class TestExtractImplicitMemory(unittest.TestCase):
 
     def test_item_missing_fact_is_skipped(self):
         items = [
-            {"domain": "running", "category": "injury_status", "status": "active"},  # no fact
+            {
+                "domain": "running",
+                "category": "injury_status",
+                "status": "active",
+            },  # no fact
             _make_item(fact="Has achilles pain"),
         ]
         mocks, patchers = self._start_patches(ai_items=items)
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")
             self.assertEqual(mocks["insert_memory"].call_count, 1)
             args = mocks["insert_memory"].call_args[0]
-            self.assertEqual(args[3], "Has achilles pain")  # args: (user_id, domain, category, fact, status)
+            self.assertEqual(
+                args[3], "Has achilles pain"
+            )  # args: (user_id, domain, category, fact, status)
         finally:
             self._stop(patchers)
 
@@ -130,6 +147,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks["send_message_with_retry"].return_value.text = "not valid json {{{"
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")  # should not raise
             mocks["insert_memory"].assert_not_called()
         finally:
@@ -140,6 +158,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks["send_message_with_retry"].side_effect = Exception("API error")
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")  # should not raise
             mocks["insert_memory"].assert_not_called()
         finally:
@@ -150,6 +169,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks, patchers = self._start_patches(memories=existing)
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")
             mocks["get_all_active_memories"].assert_called_once_with("123456")
         finally:
@@ -160,6 +180,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks, patchers = self._start_patches(memories=existing)
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")
             prompt_call_args = mocks["build_memory_extraction_prompt"].call_args[0]
             existing_text_arg = prompt_call_args[1]
@@ -171,6 +192,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks, patchers = self._start_patches(memories=[])
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")
             prompt_call_args = mocks["build_memory_extraction_prompt"].call_args[0]
             existing_text_arg = prompt_call_args[1]
@@ -184,6 +206,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         try:
             from importlib import reload
             import app.agents.coach.flows.memory_extraction as mod
+
             reload(mod)
             # Re-apply patches after reload
             for p in patchers:
@@ -205,6 +228,7 @@ class TestExtractImplicitMemory(unittest.TestCase):
         mocks["insert_memory"].side_effect = [Exception("DB error"), None]
         try:
             from app.agents.coach.flows.memory_extraction import extract_implicit_memory
+
             extract_implicit_memory("123456")  # should not raise
             self.assertEqual(mocks["insert_memory"].call_count, 2)
         finally:

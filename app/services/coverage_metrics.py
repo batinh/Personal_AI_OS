@@ -1,8 +1,9 @@
 """Parse coverage.xml and junit.xml reports into a structured metric report."""
+
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 _BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -40,7 +41,7 @@ class CoverageReport:
 
 
 def _parse_coverage(path: Path) -> tuple[float, int, int, list[PackageCoverage]]:
-    tree = ET.parse(str(path))
+    tree = ET.parse(str(path))  # nosec B314
     root = tree.getroot()
     line_rate = float(root.get("line-rate", 0))
     lines_valid = int(root.get("lines-valid", 0))
@@ -50,27 +51,26 @@ def _parse_coverage(path: Path) -> tuple[float, int, int, list[PackageCoverage]]
         name = pkg.get("name", ".")
         pkg_rate = float(pkg.get("line-rate", 0))
         # Sum lines from child classes
-        valid = sum(
-            len(list(cls.find("lines") or []))
-            for cls in pkg.iter("class")
-        )
+        valid = sum(len(list(cls.find("lines") or [])) for cls in pkg.iter("class"))
         covered = sum(
             sum(1 for ln in (cls.find("lines") or []) if int(ln.get("hits", 0)) > 0)
             for cls in pkg.iter("class")
         )
-        packages.append(PackageCoverage(
-            name=name,
-            line_rate=round(pkg_rate, 4),
-            lines_valid=valid,
-            lines_covered=covered,
-        ))
+        packages.append(
+            PackageCoverage(
+                name=name,
+                line_rate=round(pkg_rate, 4),
+                lines_valid=valid,
+                lines_covered=covered,
+            )
+        )
     return line_rate, lines_valid, lines_covered, packages
 
 
 def _parse_junit(path: Path) -> TestCounts | None:
     if not path.exists():
         return None
-    tree = ET.parse(str(path))
+    tree = ET.parse(str(path))  # nosec B314
     root = tree.getroot()
     # JUnit XML may have <testsuites> → <testsuite> or just <testsuite>
     suite = root if root.tag == "testsuite" else root.find("testsuite")
@@ -100,7 +100,7 @@ def load_coverage_report(
 
     Raises FileNotFoundError if coverage_path does not exist.
     """
-    tree = ET.parse(str(coverage_path))
+    tree = ET.parse(str(coverage_path))  # nosec B314
     root = tree.getroot()
     ts = root.get("timestamp")
     line_rate, lines_valid, lines_covered, packages = _parse_coverage(coverage_path)
@@ -135,13 +135,17 @@ def report_to_dict(report: CoverageReport) -> dict:
             "lines_covered": report.lines_covered,
         },
         "by_package": pkg_list,
-        "test_counts": {
-            "total": tc.total,
-            "passed": tc.passed,
-            "failed": tc.failed,
-            "skipped": tc.skipped,
-            "errors": tc.errors,
-            "duration_seconds": tc.duration_seconds,
-        } if tc else None,
+        "test_counts": (
+            {
+                "total": tc.total,
+                "passed": tc.passed,
+                "failed": tc.failed,
+                "skipped": tc.skipped,
+                "errors": tc.errors,
+                "duration_seconds": tc.duration_seconds,
+            }
+            if tc
+            else None
+        ),
         "coverage_timestamp_ms": report.coverage_timestamp,
     }

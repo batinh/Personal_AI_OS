@@ -23,10 +23,10 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
-from app.core.config import load_config
-from app.core.database import DB_PATH, get_db_connection, init_db, upsert_run_computed_metrics
-from app.agents.coach.metrics_engine import compute_stream_metrics
-from app.services.stream_storage import load_activity_stream_from_file, get_stream_arrays
+from app.core.config import load_config  # noqa: E402
+from app.core.database import get_db_connection, init_db, upsert_run_computed_metrics  # noqa: E402
+from app.agents.coach.metrics_engine import compute_stream_metrics  # noqa: E402
+from app.services.stream_storage import load_activity_stream_from_file, get_stream_arrays  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger("backfill_metrics")

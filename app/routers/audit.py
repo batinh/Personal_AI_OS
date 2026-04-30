@@ -7,6 +7,7 @@ POST /audit/api/entries/{id}/acknowledge → mark as acknowledged
 POST /audit/api/entries/{id}/resolve     → mark as resolved
 POST /audit/api/run  → trigger manual audit scan
 """
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -19,6 +20,7 @@ from app.core.admin_auth import verify_admin
 from app.services.log_auditor import run_audit
 
 from app.core.logging_conf import get_module_logger
+
 logger = get_module_logger("audit")
 router = APIRouter(prefix="/audit", tags=["Audit"])
 templates = Jinja2Templates(directory="templates")

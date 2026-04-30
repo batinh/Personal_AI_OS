@@ -1,24 +1,33 @@
 # app/agents/coach/tools.py
 
 import os
+import pytz
 import json
 from datetime import datetime
 from app.core.database import (
-    get_training_loads, get_recent_runs_log,
+    get_training_loads,
+    get_recent_runs_log,
     get_run_activity_raw,
     update_daily_plan,
-    get_weekly_target, upsert_weekly_target,
-    get_run_metrics_from_db, get_metric_trend_data,
-    get_monthly_volume, get_yearly_volume,
+    get_weekly_target,
+    upsert_weekly_target,
+    get_run_metrics_from_db,
+    get_metric_trend_data,
+    get_monthly_volume,
+    get_yearly_volume,
 )
 from app.services.rag_memory import rag_db
-from app.services.stream_storage import load_activity_stream_from_file, get_stream_arrays
+from app.services.stream_storage import (
+    load_activity_stream_from_file,
+    get_stream_arrays,
+)
 from app.agents.coach.utils import calculate_acwr
 from app.agents.coach.metrics_engine import build_run_metrics_block
-from app.core.timezone_utils import get_local_tz
 
 from app.core.logging_conf import get_module_logger
+
 logger = get_module_logger("coach")
+
 
 def update_todays_plan(user_id: str, workout_title: str, description: str) -> str:
     """
@@ -28,10 +37,13 @@ def update_todays_plan(user_id: str, workout_title: str, description: str) -> st
     To cancel: pass workout_title='Cancel' and description=''.
     ONLY for today. For any future date use set_workout_plan() instead.
     """
-    tz = get_local_tz()
-    now_str = datetime.now(tz).strftime('%Y-%m-%d')
+    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+    now_str = datetime.now(tz).strftime("%Y-%m-%d")
     logger.info(f"[TOOL-USE] 🤖 AI automatically changed today's plan: {workout_title}")
-    return update_daily_plan(str(user_id), now_str, workout_title, description, status="Pending")
+    return update_daily_plan(
+        str(user_id), now_str, workout_title, description, status="Pending"
+    )
+
 
 def check_training_status(user_id: str) -> str:
     """
@@ -43,8 +55,11 @@ def check_training_status(user_id: str) -> str:
     """
     logger.info(f"[TOOL-USE] 🤖 AI checking fitness status for User {user_id}")
     loads = get_training_loads(user_id)
-    acwr_data = calculate_acwr(loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0))
+    acwr_data = calculate_acwr(
+        loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0)
+    )
     return f"ACWR: {acwr_data['acwr']} ({acwr_data['status']}) | Acute Load: {loads.get('acute_load_7d')} | Chronic: {loads.get('chronic_load_28d')}"
+
 
 def get_recent_workouts(user_id: str) -> str:
     """
@@ -64,12 +79,17 @@ def get_run_full_details(activity_id: str) -> str:
     Use when the athlete asks for details of a specific run by ID or when you need
     splits/laps/device info that was saved at sync or webhook time.
     """
-    logger.info(f"[TOOL-USE] 🤖 AI fetching full run details for activity {activity_id}")
+    logger.info(
+        f"[TOOL-USE] 🤖 AI fetching full run details for activity {activity_id}"
+    )
     raw = get_run_activity_raw(str(activity_id))
     if not raw:
         return f"Không tìm thấy dữ liệu đầy đủ cho bài chạy {activity_id}. Chỉ có thể có bản tóm tắt trong danh sách bài chạy gần đây."
     meta = raw.get("full_meta") or {}
-    lines = [f"Bài chạy: {raw.get('activity_name', 'N/A')}", f"Lấy lúc: {raw.get('fetched_at', 'N/A')}"]
+    lines = [
+        f"Bài chạy: {raw.get('activity_name', 'N/A')}",
+        f"Lấy lúc: {raw.get('fetched_at', 'N/A')}",
+    ]
     if meta.get("start_date_local"):
         lines.append(f"Thời gian: {meta['start_date_local']}")
     if meta.get("distance"):
@@ -96,8 +116,11 @@ def get_run_full_details(activity_id: str) -> str:
             lines.append("Laps: " + "; ".join(parts))
     stream_path = raw.get("stream_file_path") or ""
     if stream_path:
-        lines.append(f"(Đã lưu stream raw: data/{stream_path} — có thể load lại để phân tích chi tiết hoặc re-analyze theo đoạn.)")
+        lines.append(
+            f"(Đã lưu stream raw: data/{stream_path} — có thể load lại để phân tích chi tiết hoặc re-analyze theo đoạn.)"
+        )
     return "\n".join(lines)
+
 
 def search_long_term_memory(query: str) -> str:
     """
@@ -112,12 +135,13 @@ def search_long_term_memory(query: str) -> str:
     logger.info(f"[TOOL-USE] 🤖 AI querying RAG memory: '{query}'")
     try:
         results = rag_db.recall(query=query, domain="coach", n_results=3)
-        if not results or not results.get('documents') or not results['documents'][0]:
+        if not results or not results.get("documents") or not results["documents"][0]:
             return "Không tìm thấy ký ức nào liên quan."
-        docs = results['documents'][0]
+        docs = results["documents"][0]
         return "\n".join([f"- Ký ức: {doc}" for doc in docs])
     except Exception as e:
         return f"Lỗi truy xuất ký ức: {e}"
+
 
 def get_total_run_stats(user_id: str) -> str:
     """
@@ -131,10 +155,13 @@ def get_total_run_stats(user_id: str) -> str:
         with open("data/athlete_stats.json", "r") as f:
             stats = json.load(f)
         return f"Volume 4 tuần: {stats.get('recent_run_totals', 0):.1f}km | YTD: {stats.get('ytd_run_totals', 0):.1f}km"
-    except Exception as e:
+    except Exception:
         return "Chưa có dữ liệu thống kê tổng km."
 
-def set_workout_plan(user_id: str, target_date: str, workout_title: str, description: str) -> str:
+
+def set_workout_plan(
+    user_id: str, target_date: str, workout_title: str, description: str
+) -> str:
     """
     [TOOL] Create or overwrite the training plan for a SPECIFIC FUTURE DATE (YYYY-MM-DD).
     Use when the athlete asks to schedule or change a workout for tomorrow, next week, or any
@@ -143,7 +170,10 @@ def set_workout_plan(user_id: str, target_date: str, workout_title: str, descrip
     target_date: ISO date string, e.g. '2026-04-15'. Must not be today's date.
     """
     logger.info(f"[TOOL-USE] 🤖 AI setting Plan for {target_date}: {workout_title}")
-    return update_daily_plan(str(user_id), target_date, workout_title, description, status="Pending")
+    return update_daily_plan(
+        str(user_id), target_date, workout_title, description, status="Pending"
+    )
+
 
 def get_run_stream_csv(activity_id: str) -> str:
     """
@@ -217,7 +247,9 @@ def get_metric_trend(user_id: str, metric_name: str, days: int = 28) -> str:
       pace_variability_cv        — coefficient of variation of pace (consistency)
     days: default 28, pass a different int for shorter/longer windows.
     """
-    logger.info(f"[TOOL-USE] 🤖 AI fetching metric trend: {metric_name} ({days}d) for {user_id}")
+    logger.info(
+        f"[TOOL-USE] 🤖 AI fetching metric trend: {metric_name} ({days}d) for {user_id}"
+    )
     rows = get_metric_trend_data(str(user_id), metric_name, days)
     if not rows:
         return f"Không có dữ liệu cho metric '{metric_name}' trong {days} ngày qua."
@@ -238,14 +270,21 @@ def get_volume_for_week(user_id: str, year: int, week_number: int) -> str:
     """
     logger.info(f"[TOOL-USE] 🤖 AI fetching volume for {year} W{week_number}")
     from datetime import date, timedelta
+
     # ISO week: find the Monday of the given week
     jan4 = date(year, 1, 4)
-    week_start = jan4 + timedelta(weeks=week_number - 1) - timedelta(days=jan4.weekday())
+    week_start = (
+        jan4 + timedelta(weeks=week_number - 1) - timedelta(days=jan4.weekday())
+    )
     week_end = week_start + timedelta(days=7)
     data = get_monthly_volume(str(user_id), week_start.year, week_start.month)
     # Filter to exact week range from raw data
     rows = data.get("runs", [])
-    week_runs = [r for r in rows if week_start.isoformat() <= r.get("date", "") < week_end.isoformat()]
+    week_runs = [
+        r
+        for r in rows
+        if week_start.isoformat() <= r.get("date", "") < week_end.isoformat()
+    ]
     if not week_runs:
         # Fallback: use monthly data as approximation
         return (
@@ -272,7 +311,9 @@ def get_volume_summary(user_id: str, period: str, year: int, month: int = 0) -> 
               period='year', year=2025 → full 2025 breakdown by month.
     For a single named week (e.g. "week 15") use get_volume_for_week() instead.
     """
-    logger.info(f"[TOOL-USE] 🤖 AI fetching volume summary: {period} {year}/{month or ''} for {user_id}")
+    logger.info(
+        f"[TOOL-USE] 🤖 AI fetching volume summary: {period} {year}/{month or ''} for {user_id}"
+    )
     if period == "month" and month:
         data = get_monthly_volume(str(user_id), year, month)
         return (
@@ -287,11 +328,15 @@ def get_volume_summary(user_id: str, period: str, year: int, month: int = 0) -> 
     breakdown = data.get("monthly_breakdown", {})
     for m_num in sorted(breakdown.keys()):
         v = breakdown[m_num]
-        lines.append(f"  Tháng {m_num}: {v.get('distance_km', 0):.1f} km / {v.get('runs', 0)} bài")
+        lines.append(
+            f"  Tháng {m_num}: {v.get('distance_km', 0):.1f} km / {v.get('runs', 0)} bài"
+        )
     return "\n".join(lines)
 
 
-def set_actual_weekly_target(user_id: str, week_start_date: str, actual_target_km: float, reasoning: str) -> str:
+def set_actual_weekly_target(
+    user_id: str, week_start_date: str, actual_target_km: float, reasoning: str
+) -> str:
     """
     [TOOL] Confirm and save the AI-recommended weekly volume target (in km) for a given week.
     Call AFTER analyzing all 4 inputs: historical volume, safe volume ceiling, safe TRIMP ceiling,
@@ -301,13 +346,21 @@ def set_actual_weekly_target(user_id: str, week_start_date: str, actual_target_k
     reasoning: short explanation of why this target was chosen (stored for athlete review).
     Returns success confirmation or an error string if the date is not a Monday or DB write fails.
     """
-    logger.info(f"[TOOL-USE] 🤖 AI setting weekly target {week_start_date} for {user_id}: {actual_target_km}km. Reason: {reasoning}")
-    
+    logger.info(
+        f"[TOOL-USE] 🤖 AI setting weekly target {week_start_date} for {user_id}: {actual_target_km}km. Reason: {reasoning}"
+    )
+
     # Retrieve existing standard_target (if any) to prevent overwriting with 0
     current_data = get_weekly_target(user_id, week_start_date)
-    standard_target = current_data["standard_target_km"] if current_data and current_data["standard_target_km"] else actual_target_km
-    
-    success = upsert_weekly_target(user_id, week_start_date, standard_target, actual_target_km, reasoning)
+    standard_target = (
+        current_data["standard_target_km"]
+        if current_data and current_data["standard_target_km"]
+        else actual_target_km
+    )
+
+    success = upsert_weekly_target(
+        user_id, week_start_date, standard_target, actual_target_km, reasoning
+    )
     if success:
         return f"Thành công: Đã chốt target tuần {week_start_date} là {actual_target_km}km."
     return "Thất bại: Lỗi hệ thống khi lưu target."

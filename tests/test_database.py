@@ -5,6 +5,7 @@ Mỗi test class dùng một temporary SQLite file riêng → hoàn toàn isolat
 Không cần network, không cần Gemini API.
 Covers: Users, RunActivities, ChatHistory, TrainingPlans, WeeklyTargets, CoreMemory.
 """
+
 import os
 import tempfile
 import unittest
@@ -85,7 +86,7 @@ class TestRunActivities(_TempDbMixin, unittest.TestCase):
         database.save_run_activity("u1", self._BASE_ACTIVITY)
         database.save_run_activity("u1", self._BASE_ACTIVITY)  # second upsert
         log = database.get_recent_runs_log("u1", limit=10)
-        self.assertEqual(log.count("act1"), 0)   # activity_id not in display
+        self.assertEqual(log.count("act1"), 0)  # activity_id not in display
         self.assertEqual(log.count("Morning Run"), 1)  # exactly 1 row
 
     def test_gcs_score_update(self):
@@ -118,17 +119,29 @@ class TestRunActivities(_TempDbMixin, unittest.TestCase):
 
     def test_get_training_loads_calculates_correctly(self):
         # Insert a run 3 days ago (acute) and a run 20 days ago (chronic only)
-        recent = {**self._BASE_ACTIVITY, "activity_id": "act_recent",
-                  "start_date": (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%dT06:00:00"),
-                  "trimp_score": 60.0, "distance_km": 10.0}
-        old = {**self._BASE_ACTIVITY, "activity_id": "act_old",
-               "start_date": (datetime.now() - timedelta(days=20)).strftime("%Y-%m-%dT06:00:00"),
-               "trimp_score": 80.0, "distance_km": 12.0}
+        recent = {
+            **self._BASE_ACTIVITY,
+            "activity_id": "act_recent",
+            "start_date": (datetime.now() - timedelta(days=3)).strftime(
+                "%Y-%m-%dT06:00:00"
+            ),
+            "trimp_score": 60.0,
+            "distance_km": 10.0,
+        }
+        old = {
+            **self._BASE_ACTIVITY,
+            "activity_id": "act_old",
+            "start_date": (datetime.now() - timedelta(days=20)).strftime(
+                "%Y-%m-%dT06:00:00"
+            ),
+            "trimp_score": 80.0,
+            "distance_km": 12.0,
+        }
         database.save_run_activity("u1", recent)
         database.save_run_activity("u1", old)
 
         loads = database.get_training_loads("u1")
-        self.assertEqual(loads["acute_load_7d"], 60.0)   # Only recent run
+        self.assertEqual(loads["acute_load_7d"], 60.0)  # Only recent run
         self.assertEqual(loads["chronic_load_28d"], 140.0)  # Both runs
         self.assertAlmostEqual(loads["avg_weekly_mileage"], (10.0 + 12.0) / 4, places=1)
 
@@ -136,20 +149,29 @@ class TestRunActivities(_TempDbMixin, unittest.TestCase):
         tz = pytz.timezone("Asia/Ho_Chi_Minh")
         now = datetime.now(tz)
         monday = now - timedelta(days=now.weekday())
-        in_week = {**self._BASE_ACTIVITY, "activity_id": "in_week",
-                   "start_date": monday.strftime("%Y-%m-%dT08:00:00"),
-                   "distance_km": 8.0}
-        last_week = {**self._BASE_ACTIVITY, "activity_id": "last_week",
-                     "start_date": (monday - timedelta(days=2)).strftime("%Y-%m-%dT08:00:00"),
-                     "distance_km": 15.0}
+        in_week = {
+            **self._BASE_ACTIVITY,
+            "activity_id": "in_week",
+            "start_date": monday.strftime("%Y-%m-%dT08:00:00"),
+            "distance_km": 8.0,
+        }
+        last_week = {
+            **self._BASE_ACTIVITY,
+            "activity_id": "last_week",
+            "start_date": (monday - timedelta(days=2)).strftime("%Y-%m-%dT08:00:00"),
+            "distance_km": 15.0,
+        }
         database.save_run_activity("u1", in_week)
         database.save_run_activity("u1", last_week)
         vol = database.get_weekly_volume("u1")
         self.assertEqual(vol, 8.0)
 
     def test_get_runs_in_last_days_format(self):
-        recent = {**self._BASE_ACTIVITY, "activity_id": "act_today",
-                  "start_date": datetime.now().strftime("%Y-%m-%dT07:00:00")}
+        recent = {
+            **self._BASE_ACTIVITY,
+            "activity_id": "act_today",
+            "start_date": datetime.now().strftime("%Y-%m-%dT07:00:00"),
+        }
         database.save_run_activity("u1", recent)
         log = database.get_runs_in_last_days("u1", days=7)
         self.assertIn("Morning Run", log)
@@ -208,7 +230,9 @@ class TestChatHistory(_TempDbMixin, unittest.TestCase):
 class TestTrainingPlans(_TempDbMixin, unittest.TestCase):
 
     def test_create_and_get_plan(self):
-        database.update_daily_plan("u1", "2026-03-25", "Easy Run", "30 min Z2", "Pending")
+        database.update_daily_plan(
+            "u1", "2026-03-25", "Easy Run", "30 min Z2", "Pending"
+        )
         plan = database.get_plan_for_date("u1", "2026-03-25")
         self.assertIsNotNone(plan)
         self.assertEqual(plan["workout_title"], "Easy Run")
@@ -216,7 +240,9 @@ class TestTrainingPlans(_TempDbMixin, unittest.TestCase):
 
     def test_upsert_plan_updates_existing(self):
         database.update_daily_plan("u1", "2026-03-25", "Easy Run", "30 min", "Pending")
-        database.update_daily_plan("u1", "2026-03-25", "Rest Day", "Recovery", "Pending")
+        database.update_daily_plan(
+            "u1", "2026-03-25", "Rest Day", "Recovery", "Pending"
+        )
         plan = database.get_plan_for_date("u1", "2026-03-25")
         self.assertEqual(plan["workout_title"], "Rest Day")
 
@@ -246,7 +272,9 @@ class TestTrainingPlans(_TempDbMixin, unittest.TestCase):
 class TestWeeklyTargets(_TempDbMixin, unittest.TestCase):
 
     def test_upsert_and_get_weekly_target(self):
-        success = database.upsert_weekly_target("u1", "2026-03-16", 50.0, 45.0, "Cutback week")
+        success = database.upsert_weekly_target(
+            "u1", "2026-03-16", 50.0, 45.0, "Cutback week"
+        )
         self.assertTrue(success)
         target = database.get_weekly_target("u1", "2026-03-16")
         self.assertIsNotNone(target)
@@ -275,21 +303,29 @@ class TestWeeklyTargets(_TempDbMixin, unittest.TestCase):
 class TestCoreMemory(_TempDbMixin, unittest.TestCase):
 
     def test_insert_and_get_active_memory(self):
-        database.insert_memory("u1", "health", "injury_status", "Right knee pain", "active")
+        database.insert_memory(
+            "u1", "health", "injury_status", "Right knee pain", "active"
+        )
         memories = database.get_all_active_memories("u1")
         self.assertEqual(len(memories), 1)
         self.assertEqual(memories[0]["category"], "injury_status")
         self.assertIn("knee", memories[0]["fact"])
 
     def test_inactive_memory_not_returned(self):
-        database.insert_memory("u1", "health", "injury_status", "Old injury", "inactive")
+        database.insert_memory(
+            "u1", "health", "injury_status", "Old injury", "inactive"
+        )
         memories = database.get_all_active_memories("u1")
         self.assertEqual(len(memories), 0)
 
     def test_global_deduplication_latest_wins(self):
         """Only the most recently inserted active memory per category should appear."""
-        database.insert_memory("u1", "health", "injury_status", "Left knee pain", "active")
-        database.insert_memory("u1", "health", "injury_status", "Right knee pain - updated", "active")
+        database.insert_memory(
+            "u1", "health", "injury_status", "Left knee pain", "active"
+        )
+        database.insert_memory(
+            "u1", "health", "injury_status", "Right knee pain - updated", "active"
+        )
         memories = database.get_all_active_memories("u1")
         # Deduplication: only 1 row per category
         self.assertEqual(len(memories), 1)
@@ -297,15 +333,21 @@ class TestCoreMemory(_TempDbMixin, unittest.TestCase):
 
     def test_inactive_overrides_active_for_same_category(self):
         """If latest entry for a category is 'inactive', it should NOT appear."""
-        database.insert_memory("u1", "health", "injury_status", "Had knee pain", "active")
-        database.insert_memory("u1", "health", "injury_status", "Knee healed", "inactive")
+        database.insert_memory(
+            "u1", "health", "injury_status", "Had knee pain", "active"
+        )
+        database.insert_memory(
+            "u1", "health", "injury_status", "Knee healed", "inactive"
+        )
         memories = database.get_all_active_memories("u1")
         self.assertEqual(len(memories), 0)
 
     def test_multiple_categories_all_returned(self):
         database.insert_memory("u1", "sports", "main_goal", "Run 42km in 4h", "active")
         database.insert_memory("u1", "health", "injury_status", "Healthy", "active")
-        database.insert_memory("u1", "sports", "gear_preference", "Loves Vaporfly", "active")
+        database.insert_memory(
+            "u1", "sports", "gear_preference", "Loves Vaporfly", "active"
+        )
         memories = database.get_all_active_memories("u1")
         categories = [m["category"] for m in memories]
         self.assertIn("main_goal", categories)
@@ -371,16 +413,27 @@ class TestHistoricalTrainingLoads(_TempDbMixin, unittest.TestCase):
         # Insert a run 3 days ago
         run = {
             "activity_id": "hist1",
-            "name": "Test", "start_date": (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%dT06:00:00"),
-            "distance_km": 10.0, "moving_time_min": 60.0, "avg_hr": 148,
-            "max_hr": 168, "suffer_score": 80, "trimp_score": 60.0,
+            "name": "Test",
+            "start_date": (datetime.now() - timedelta(days=3)).strftime(
+                "%Y-%m-%dT06:00:00"
+            ),
+            "distance_km": 10.0,
+            "moving_time_min": 60.0,
+            "avg_hr": 148,
+            "max_hr": 168,
+            "suffer_score": 80,
+            "trimp_score": 60.0,
         }
         database.save_run_activity("u1", run)
         result = database.get_historical_training_loads("u1", days=7)
         for i, chronic in enumerate(result["chronic"]):
             if chronic > 0:
-                self.assertAlmostEqual(result["optimal_min"][i], round(chronic * 0.8, 2), places=1)
-                self.assertAlmostEqual(result["optimal_max"][i], round(chronic * 1.3, 2), places=1)
+                self.assertAlmostEqual(
+                    result["optimal_min"][i], round(chronic * 0.8, 2), places=1
+                )
+                self.assertAlmostEqual(
+                    result["optimal_max"][i], round(chronic * 1.3, 2), places=1
+                )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -391,6 +444,7 @@ class TestMultiTenantRunActivityIsolation(_TempDbMixin, unittest.TestCase):
 
     def _make_run(self, activity_id: str, distance_km: float, trimp: float):
         from datetime import datetime
+
         return {
             "activity_id": activity_id,
             "name": f"Run {activity_id}",
@@ -448,7 +502,6 @@ class TestMultiTenantRunActivityIsolation(_TempDbMixin, unittest.TestCase):
 
         self.assertAlmostEqual(loads_b["acute_load_7d"], 0.0, places=0)
         self.assertAlmostEqual(loads_b["avg_weekly_mileage"], 0.0, places=0)
-
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -509,7 +562,9 @@ class TestComputedMetrics(_TempDbMixin, unittest.TestCase):
         database.save_run_activity("u1", self._BASE_RUN)
 
     def test_upsert_returns_true(self):
-        ok = database.upsert_run_computed_metrics("met1", "u1", {"avg_cadence_spm": 172.0})
+        ok = database.upsert_run_computed_metrics(
+            "met1", "u1", {"avg_cadence_spm": 172.0}
+        )
         self.assertTrue(ok)
 
     def test_empty_metrics_returns_false(self):
@@ -521,7 +576,9 @@ class TestComputedMetrics(_TempDbMixin, unittest.TestCase):
         self.assertFalse(ok)
 
     def test_get_metrics_after_upsert(self):
-        database.upsert_run_computed_metrics("met1", "u1", {"avg_cadence_spm": 172.0, "training_stress_score": 58.5})
+        database.upsert_run_computed_metrics(
+            "met1", "u1", {"avg_cadence_spm": 172.0, "training_stress_score": 58.5}
+        )
         result = database.get_run_metrics_from_db("met1", "u1")
         self.assertAlmostEqual(result["avg_cadence_spm"], 172.0)
         self.assertAlmostEqual(result["training_stress_score"], 58.5)
@@ -542,18 +599,23 @@ class TestComputedMetrics(_TempDbMixin, unittest.TestCase):
 class TestMetricTrendData(_TempDbMixin, unittest.TestCase):
 
     def _insert_run_with_metric(self, activity_id, start_date, cadence):
-        database.save_run_activity("u1", {
-            "activity_id": activity_id,
-            "name": f"Run {activity_id}",
-            "start_date": start_date,
-            "distance_km": 10.0,
-            "moving_time_min": 55.0,
-            "avg_hr": 148,
-            "max_hr": 165,
-            "suffer_score": 70,
-            "trimp_score": 60.0,
-        })
-        database.upsert_run_computed_metrics(activity_id, "u1", {"avg_cadence_spm": cadence})
+        database.save_run_activity(
+            "u1",
+            {
+                "activity_id": activity_id,
+                "name": f"Run {activity_id}",
+                "start_date": start_date,
+                "distance_km": 10.0,
+                "moving_time_min": 55.0,
+                "avg_hr": 148,
+                "max_hr": 165,
+                "suffer_score": 70,
+                "trimp_score": 60.0,
+            },
+        )
+        database.upsert_run_computed_metrics(
+            activity_id, "u1", {"avg_cadence_spm": cadence}
+        )
 
     def test_unknown_metric_returns_empty(self):
         rows = database.get_metric_trend_data("u1", "nonexistent_metric")
@@ -587,17 +649,20 @@ class TestMetricTrendData(_TempDbMixin, unittest.TestCase):
 class TestVolumeStats(_TempDbMixin, unittest.TestCase):
 
     def _insert_run(self, activity_id, start_date, distance_km, user_id="u1"):
-        database.save_run_activity(user_id, {
-            "activity_id": activity_id,
-            "name": f"Run {activity_id}",
-            "start_date": start_date,
-            "distance_km": distance_km,
-            "moving_time_min": 60.0,
-            "avg_hr": 148,
-            "max_hr": 165,
-            "suffer_score": 70,
-            "trimp_score": 60.0,
-        })
+        database.save_run_activity(
+            user_id,
+            {
+                "activity_id": activity_id,
+                "name": f"Run {activity_id}",
+                "start_date": start_date,
+                "distance_km": distance_km,
+                "moving_time_min": 60.0,
+                "avg_hr": 148,
+                "max_hr": 165,
+                "suffer_score": 70,
+                "trimp_score": 60.0,
+            },
+        )
 
     def test_monthly_volume_empty_user(self):
         result = database.get_monthly_volume("nobody", 2026, 4)
@@ -647,7 +712,7 @@ class TestVolumeStats(_TempDbMixin, unittest.TestCase):
 # ══════════════════════════════════════════════════════════════════════════════
 # 9. CORE MEMORY — insert, dedup, get_all_active, archive
 # ══════════════════════════════════════════════════════════════════════════════
-class TestCoreMemory(_TempDbMixin, unittest.TestCase):
+class TestCoreMemoryExtended(_TempDbMixin, unittest.TestCase):
     UID = "mem_user"
 
     def test_insert_new_memory(self):

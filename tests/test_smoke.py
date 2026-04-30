@@ -6,6 +6,7 @@ AttributeError here means the app will crash on startup or on first real request
 
 Run first: python -m pytest tests/test_smoke.py -v
 """
+
 import unittest
 
 
@@ -33,7 +34,8 @@ class TestCoreImports(unittest.TestCase):
         from app.core.timezone_utils import get_local_tz  # noqa: F401
 
     def test_gemini_utils_importable(self):
-        from app.core.gemini_utils import extract_text, strip_thought_preamble  # noqa: F401
+        from app.core.gemini_utils import extract_text  # noqa: F401
+        from app.core.gemini_utils import strip_thought_preamble  # noqa: F401
 
 
 class TestRouterImports(unittest.TestCase):
@@ -65,7 +67,10 @@ class TestServiceImports(unittest.TestCase):
         from app.services.telegram_router import route_message  # noqa: F401
 
     def test_coverage_metrics_importable(self):
-        from app.services.coverage_metrics import load_coverage_report, report_to_dict  # noqa: F401
+        from app.services.coverage_metrics import (  # noqa: F401
+            load_coverage_report,
+            report_to_dict,
+        )
 
 
 class TestCoachAgentImports(unittest.TestCase):
@@ -140,8 +145,10 @@ class TestNewsAgentImports(unittest.TestCase):
         from app.agents.news.prompts import build_topic_prompt  # noqa: F401
 
     def test_news_on_demand_prompt_importable(self):
-        from app.agents.news.prompts import build_on_demand_system_instruction  # noqa: F401
-        from app.agents.news.prompts import build_on_demand_prompt  # noqa: F401
+        from app.agents.news.prompts import (  # noqa: F401
+            build_on_demand_system_instruction,
+            build_on_demand_prompt,
+        )
 
     def test_generate_on_demand_briefing_importable(self):
         from app.agents.news.agent import generate_on_demand_briefing  # noqa: F401
@@ -151,14 +158,98 @@ class TestNewsAgentImports(unittest.TestCase):
 
     def test_news_error_constants_importable(self):
         from app.agents.news.telegram_handler import (  # noqa: F401
-            ERR_001, ERR_002, ERR_003, ERR_004, ERR_005, ERR_006, ERR_007,
+            ERR_001,
+            ERR_002,
+            ERR_003,
+            ERR_004,
+            ERR_005,
+            ERR_006,
+            ERR_007,
         )
 
     def test_rate_limit_importable(self):
-        from app.agents.news.telegram_handler import _check_rate_limit, RATE_LIMIT, RATE_WINDOW  # noqa: F401
+        from app.agents.news.telegram_handler import (  # noqa: F401
+            _check_rate_limit,
+            RATE_LIMIT,
+            RATE_WINDOW,
+        )
 
     def test_scheduler_late_trigger_importable(self):
         from app.services.scheduler import _is_late_trigger  # noqa: F401
+
+
+class TestGarminCoachPlanningImports(unittest.TestCase):
+    """Garmin + coach planning symbols — all new modules from feat/garmin-coach-planning."""
+
+    def test_setup_validators_importable(self):
+        from app.agents.coach.setup_validators import (  # noqa: F401
+            validate_distance,
+            validate_date,
+            validate_time,
+            validate_kmweek,
+            validate_days,
+            validate_rest_days,
+            validate_hr,
+        )
+
+    def test_setup_flow_importable(self):
+        from app.agents.coach.setup_flow import (  # noqa: F401
+            start_setup,
+            advance_setup,
+            finalize_setup,
+            is_setup_in_progress,
+            cleanup_stale_setup_sessions,
+        )
+
+    def test_garmin_client_importable(self):
+        from app.agents.coach.garmin_client import (  # noqa: F401
+            GarminClient,
+            get_garmin_client,
+        )
+
+    def test_schemas_importable(self):
+        from app.agents.coach.schemas import WorkoutDay, WeeklyPlanResult  # noqa: F401
+
+    def test_daily_suggestion_importable(self):
+        from app.agents.coach.daily_suggestion import (  # noqa: F401
+            compute_daily_suggestion,
+            format_daily_suggestion_for_briefing,
+        )
+
+    def test_weekly_plan_generation_importable(self):
+        from app.agents.coach.flows.weekly_plan_generation import (  # noqa: F401
+            generate_weekly_plan,
+            accept_weekly_plan,
+            reject_weekly_plan,
+        )
+
+    def test_database_garmin_functions_importable(self):
+        from app.core.database import (  # noqa: F401
+            upsert_garmin_daily_metrics,
+            get_garmin_daily_metrics,
+            get_athlete_state,
+            set_athlete_state,
+            upsert_weekly_plan,
+            get_pending_weekly_plan,
+            update_weekly_plan_status,
+            has_active_plan_this_week,
+            get_setup_session,
+            upsert_setup_session,
+            complete_setup_session,
+        )
+
+    def test_agent_command_aliases_importable(self):
+        from app.agents.coach.agent import (  # noqa: F401
+            COMMAND_ALIASES,
+            resolve_command,
+        )
+
+    def test_scheduler_new_tasks_importable(self):
+        from app.services.scheduler import (  # noqa: F401
+            task_garmin_sync,
+            task_weekly_plan_generation,
+            task_cleanup_stale_setup,
+        )
 
 
 class TestSDKContracts(unittest.TestCase):
@@ -168,7 +259,9 @@ class TestSDKContracts(unittest.TestCase):
         """Regression: HttpOptions.timeout is MILLISECONDS not seconds.
         If SDK upgrades change the unit, this fails immediately.
         Incident: timeout=30 → 30ms → X-Server-Timeout:1 → 400 rejected (2026-04-21)."""
-        import pathlib, sys as _sys
+        import pathlib
+        import sys as _sys
+
         types_path = None
         for p in _sys.path:
             candidate = pathlib.Path(p) / "google" / "genai" / "types.py"
@@ -178,8 +271,9 @@ class TestSDKContracts(unittest.TestCase):
         self.assertIsNotNone(types_path, "google-genai not installed")
         src = types_path.read_text(encoding="utf-8")
         self.assertIn(
-            "milliseconds", src,
-            "HttpOptions.timeout unit changed in SDK — audit all genai.Client() usages."
+            "milliseconds",
+            src,
+            "HttpOptions.timeout unit changed in SDK — audit all genai.Client() usages.",
         )
 
 
@@ -197,6 +291,7 @@ class TestLoggingConfImports(unittest.TestCase):
 
     def test_known_domains_importable(self):
         from app.core.logging_conf import KNOWN_DOMAINS  # noqa: F401
+
         assert isinstance(KNOWN_DOMAINS, list)
         assert len(KNOWN_DOMAINS) > 0
 

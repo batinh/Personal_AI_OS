@@ -9,6 +9,7 @@ Usage:
     from app.services.log_auditor import run_audit
     count = run_audit(user_id="123456")   # returns number of new entries inserted
 """
+
 import re
 from pathlib import Path
 from typing import Tuple
@@ -16,6 +17,7 @@ from typing import Tuple
 from app.core.database import insert_audit_entry
 
 from app.core.logging_conf import get_module_logger
+
 logger = get_module_logger("audit")
 
 # Absolute path to log file — must match logging_conf.LOG_FILE_PATH.
@@ -29,32 +31,83 @@ LOG_FILE_PATH = _BASE_DIR / "logs" / "app.log"
 # ---------------------------------------------------------------------------
 _PATTERNS: list[tuple[re.Pattern, str, str, str]] = [
     # Tracebacks / unhandled exceptions
-    (re.compile(r"Traceback \(most recent call last\)", re.IGNORECASE), "error", "crash", "Unhandled exception (Traceback)"),
-    (re.compile(r"\bException\b.*:", re.IGNORECASE), "error", "crash", "Exception raised"),
-
+    (
+        re.compile(r"Traceback \(most recent call last\)", re.IGNORECASE),
+        "error",
+        "crash",
+        "Unhandled exception (Traceback)",
+    ),
+    (
+        re.compile(r"\bException\b.*:", re.IGNORECASE),
+        "error",
+        "crash",
+        "Exception raised",
+    ),
     # Network / DNS errors
-    (re.compile(r"NameResolutionError|getaddrinfo failed|Name or service not known", re.IGNORECASE), "error", "network", "DNS resolution failure"),
-    (re.compile(r"ConnectionError|ConnectTimeout|ReadTimeout|RemoteDisconnected", re.IGNORECASE), "error", "network", "Network connection error"),
-
+    (
+        re.compile(
+            r"NameResolutionError|getaddrinfo failed|Name or service not known",
+            re.IGNORECASE,
+        ),
+        "error",
+        "network",
+        "DNS resolution failure",
+    ),
+    (
+        re.compile(
+            r"ConnectionError|ConnectTimeout|ReadTimeout|RemoteDisconnected",
+            re.IGNORECASE,
+        ),
+        "error",
+        "network",
+        "Network connection error",
+    ),
     # News scorer JSON parse failures
-    (re.compile(r"\[NEWS-SCORER\].*(?:JSONDecodeError|Could not extract JSON|json)", re.IGNORECASE), "warning", "news_scoring", "News scorer JSON parse failure"),
-    (re.compile(r"\[NEWS.*\].*(?:Error|error|fail|Fail)", re.IGNORECASE), "warning", "news_agent", "News agent error"),
-
+    (
+        re.compile(
+            r"\[NEWS-SCORER\].*(?:JSONDecodeError|Could not extract JSON|json)",
+            re.IGNORECASE,
+        ),
+        "warning",
+        "news_scoring",
+        "News scorer JSON parse failure",
+    ),
+    (
+        re.compile(r"\[NEWS.*\].*(?:Error|error|fail|Fail)", re.IGNORECASE),
+        "warning",
+        "news_agent",
+        "News agent error",
+    ),
     # Performance issues
-    (re.compile(r"timeout|timed out|took \d+\.?\d* seconds|slow", re.IGNORECASE), "warning", "performance", "Performance or timeout issue"),
-
+    (
+        re.compile(r"timeout|timed out|took \d+\.?\d* seconds|slow", re.IGNORECASE),
+        "warning",
+        "performance",
+        "Performance or timeout issue",
+    ),
     # Scheduler / task errors
-    (re.compile(r"\[SCHEDULER\].*(?:Error|error|fail|exception)", re.IGNORECASE), "error", "scheduler", "Scheduler task error"),
-
+    (
+        re.compile(r"\[SCHEDULER\].*(?:Error|error|fail|exception)", re.IGNORECASE),
+        "error",
+        "scheduler",
+        "Scheduler task error",
+    ),
     # Database errors
-    (re.compile(r"\[DB_ERROR\]|\[DATABASE\].*(?:Error|fail)", re.IGNORECASE), "error", "database", "Database error"),
-
+    (
+        re.compile(r"\[DB_ERROR\]|\[DATABASE\].*(?:Error|fail)", re.IGNORECASE),
+        "error",
+        "database",
+        "Database error",
+    ),
     # Generic improvement hints (info-level suggestions in code)
-    (re.compile(r"\[IMPROVEMENT\]|\bTODO\b|\bFIXME\b", re.IGNORECASE), "info", "improvement", "Improvement hint in logs"),
-
+    (
+        re.compile(r"\[IMPROVEMENT\]|\bTODO\b|\bFIXME\b", re.IGNORECASE),
+        "info",
+        "improvement",
+        "Improvement hint in logs",
+    ),
     # Generic WARNING lines (catch-all after specific checks)
     (re.compile(r"\[WARNING\]"), "warning", "general", "Warning"),
-
     # Generic ERROR / CRITICAL lines (catch-all last)
     (re.compile(r"\[ERROR\]|\[CRITICAL\]"), "error", "general", "Error"),
 ]

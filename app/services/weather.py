@@ -5,6 +5,7 @@ from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("weather")
 
+
 def get_today_weather():
     """
     Fetch current weather and today's forecast from OpenWeatherMap.
@@ -13,7 +14,7 @@ def get_today_weather():
     api_key = os.getenv("OPENWEATHER_API_KEY")
     lat = os.getenv("USER_LAT", "10.7626")
     lon = os.getenv("USER_LON", "106.6601")
-    
+
     if not api_key:
         logger.error("[WEATHER] Missing OPENWEATHER_API_KEY in environment.")
         return "Weather data unavailable (Missing API Key)."
@@ -25,11 +26,11 @@ def get_today_weather():
         data = response.json()
 
         if response.status_code == 200:
-            temp = data['main']['temp']
-            humidity = data['main']['humidity']
-            description = data['weather'][0]['description']
-            wind = data['wind']['speed']
-            
+            temp = data["main"]["temp"]
+            humidity = data["main"]["humidity"]
+            description = data["weather"][0]["description"]
+            wind = data["wind"]["speed"]
+
             report = f"Nhiệt độ: {temp}°C, Độ ẩm: {humidity}%, Trạng thái: {description}, Gió: {wind}m/s"
             logger.info(f"[WEATHER] Successfully fetched: {report}")
             return report

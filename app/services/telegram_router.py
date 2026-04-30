@@ -27,7 +27,7 @@ def route_message(text: str) -> tuple[str, str]:
 
     for prefix in _NEWS_PREFIXES:
         if lower.startswith(prefix):
-            cleaned = stripped[len(prefix):].strip()
+            cleaned = stripped[len(prefix) :].strip()
             return "news", cleaned
 
     return "coach", stripped

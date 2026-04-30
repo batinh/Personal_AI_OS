@@ -44,6 +44,21 @@
         "audit": "INFO",
         "admin": "INFO"
     },
+    "garmin": {
+        "enabled": false,
+        "sync_time": "05:45"
+    },
+    "setup": {
+        "current_weekly_km": 40,
+        "training_days_per_week": 5,
+        "preferred_rest_days": [0, 4]
+    },
+    "weekly_plan": {
+        "generation_day": "sunday",
+        "generation_time": "20:30",
+        "max_km_increase_pct": 10
+    },
+    "race_target_time_min": 240,
     "news_agent": {
         "enabled": true,
         "news_model": "models/gemini-2.5-flash",

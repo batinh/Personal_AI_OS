@@ -1,6 +1,8 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+import pytz
+import os
 from datetime import datetime
 
 from app.core.user_context import get_primary_user_id
@@ -10,15 +12,50 @@ from app.core.notification import send_telegram_msg
 from app.agents.coach.harvest import harvest_data
 from app.agents.coach.utils import calculate_training_phase
 from app.services.backup import perform_backup
-from app.agents.coach.agent import generate_weekly_reflection, generate_morning_briefing, extract_implicit_memory
+from app.agents.coach.agent import (
+    generate_weekly_reflection,
+    generate_morning_briefing,
+    extract_implicit_memory,
+)
 from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
 from app.services.log_auditor import run_audit
-from app.core.timezone_utils import get_local_tz
+from app.agents.coach.garmin_client import get_garmin_client
+from app.agents.coach.setup_flow import cleanup_stale_setup_sessions
+from app.agents.coach.flows.weekly_plan_generation import generate_weekly_plan
 
 from app.core.logging_conf import get_module_logger
+
 logger = get_module_logger("scheduler")
-TZ_VN = get_local_tz()
+TZ_VN = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
+
+
+_SESSION_DEFAULTS = {
+    "morning": "06:30",
+    "afternoon": "17:30",
+    "evening": "20:00",
+}
+
+
+def _is_late_trigger(session: str, config: dict) -> bool:
+    """Return True if now is more than skip_minutes past the scheduled session time.
+
+    Fails open (returns False) on invalid config so jobs still run.
+    """
+    news_cfg = config.get("news_agent", {})
+    time_str = news_cfg.get(f"{session}_time", _SESSION_DEFAULTS.get(session, "06:30"))
+    skip_minutes = int(news_cfg.get("late_trigger_skip_minutes", 30))
+
+    try:
+        h, m = map(int, time_str.split(":"))
+    except (ValueError, AttributeError):
+        return False
+
+    now = datetime.now(TZ_VN)
+    diff = (now.hour * 60 + now.minute) - (h * 60 + m)
+    return diff > skip_minutes
+
+
 # BackgroundScheduler runs jobs in a thread pool — all task functions must be regular def.
 scheduler = BackgroundScheduler()
 
@@ -84,51 +121,11 @@ def task_weekly_reflection():
 # ==========================================
 # 📰 NEWS BRIEFINGS
 # ==========================================
-
-_NEWS_SESSION_TIMES = {
-    "morning": "morning_time",
-    "afternoon": "afternoon_time",
-    "evening": "evening_time",
-}
-
-_NEWS_SESSION_DEFAULTS = {
-    "morning": "06:30",
-    "afternoon": "17:30",
-    "evening": "20:00",
-}
-
-
-def _is_late_trigger(session: str, config: dict) -> bool:
-    """
-    Returns True if the task fired more than late_trigger_skip_minutes after its scheduled time.
-    Used to skip stale triggers — e.g., a reboot at 07:15 would fire the 06:30 job immediately.
-    """
-    news_cfg = config.get("news_agent", {})
-    skip_minutes = int(news_cfg.get("late_trigger_skip_minutes", 30))
-    time_key = _NEWS_SESSION_TIMES.get(session, "morning_time")
-    scheduled_time_str = news_cfg.get(time_key, _NEWS_SESSION_DEFAULTS[session])
-    try:
-        sh, sm = map(int, scheduled_time_str.split(":"))
-    except (ValueError, AttributeError):
-        return False
-    now = datetime.now(TZ_VN)
-    scheduled_minutes = sh * 60 + sm
-    current_minutes = now.hour * 60 + now.minute
-    diff = current_minutes - scheduled_minutes
-    # Wrap midnight crossing
-    if diff < -720:
-        diff += 1440
-    return diff > skip_minutes
-
-
 def task_morning_news():
     """Morning news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        config = load_config()
-        if _is_late_trigger("morning", config):
-            logger.warning("[SCHEDULER] Briefing skipped — trigger late for morning session.")
-            return
         logger.info("[SCHEDULER] Triggering morning news briefing...")
+        config = load_config()
         generate_news_briefing(config, session="morning")
     except Exception as e:
         logger.error("[SCHEDULER] task_morning_news failed: %s", e, exc_info=True)
@@ -137,11 +134,8 @@ def task_morning_news():
 def task_afternoon_news():
     """Afternoon news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        config = load_config()
-        if _is_late_trigger("afternoon", config):
-            logger.warning("[SCHEDULER] Briefing skipped — trigger late for afternoon session.")
-            return
         logger.info("[SCHEDULER] Triggering afternoon news briefing...")
+        config = load_config()
         generate_news_briefing(config, session="afternoon")
     except Exception as e:
         logger.error("[SCHEDULER] task_afternoon_news failed: %s", e, exc_info=True)
@@ -150,11 +144,8 @@ def task_afternoon_news():
 def task_evening_news():
     """Evening news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        config = load_config()
-        if _is_late_trigger("evening", config):
-            logger.warning("[SCHEDULER] Briefing skipped — trigger late for evening session.")
-            return
         logger.info("[SCHEDULER] Triggering evening news briefing...")
+        config = load_config()
         generate_news_briefing(config, session="evening")
     except Exception as e:
         logger.error("[SCHEDULER] task_evening_news failed: %s", e, exc_info=True)
@@ -177,7 +168,9 @@ def task_proactive_coach_check():
         loads = get_training_loads(str(chat_id))
         acwr = loads.get("acwr", 0.0)
         race_distance_km = float(config.get("race_distance_km", 21.1))
-        phase_info = calculate_training_phase(config.get("race_date", ""), race_distance_km)
+        phase_info = calculate_training_phase(
+            config.get("race_date", ""), race_distance_km
+        )
         weeks_left = phase_info.get("weeks_left", 99)
 
         alerts = []
@@ -196,7 +189,9 @@ def task_proactive_coach_check():
             )
 
         if 1 <= weeks_left <= 3:
-            taper_label = {1: "Race Week", 2: "Tuần −2", 3: "Tuần −3"}.get(weeks_left, "")
+            taper_label = {1: "Race Week", 2: "Tuần −2", 3: "Tuần −3"}.get(
+                weeks_left, ""
+            )
             taper_pct = {1: "25%", 2: "50%", 3: "75%"}.get(weeks_left, "")
             alerts.append(
                 f"🏁 <b>Nhắc nhở Taper — {taper_label}</b>\n"
@@ -205,9 +200,13 @@ def task_proactive_coach_check():
 
         for msg in alerts:
             send_telegram_msg(str(chat_id), msg)
-            logger.info(f"[SCHEDULER] Proactive alert sent: ACWR={acwr:.2f}, weeks_left={weeks_left}")
+            logger.info(
+                f"[SCHEDULER] Proactive alert sent: ACWR={acwr:.2f}, weeks_left={weeks_left}"
+            )
     except Exception as e:
-        logger.error("[SCHEDULER] task_proactive_coach_check failed: %s", e, exc_info=True)
+        logger.error(
+            "[SCHEDULER] task_proactive_coach_check failed: %s", e, exc_info=True
+        )
 
 
 # ==========================================
@@ -223,9 +222,65 @@ def task_log_audit():
         logger.info("[SCHEDULER] Running log audit...")
         count = run_audit(user_id)
         if count:
-            logger.info(f"[SCHEDULER] Log audit complete: {count} new entries inserted.")
+            logger.info(
+                f"[SCHEDULER] Log audit complete: {count} new entries inserted."
+            )
     except Exception as e:
         logger.error("[SCHEDULER] task_log_audit failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# ⌚ GARMIN SYNC
+# ==========================================
+def task_garmin_sync():
+    """Sync Garmin daily metrics. Runs in BackgroundScheduler thread pool."""
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping Garmin sync.")
+            return
+        logger.info("[SCHEDULER] Syncing Garmin daily metrics...")
+        garmin = get_garmin_client()
+        garmin.fetch_and_store_daily_metrics(user_id)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_garmin_sync failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 📋 WEEKLY PLAN GENERATION
+# ==========================================
+def task_weekly_plan_generation():
+    """Generate weekly training plan on Sunday evening. Runs in BackgroundScheduler thread pool."""
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning(
+                "[SCHEDULER] No primary user ID. Skipping weekly plan generation."
+            )
+            return
+        logger.info("[SCHEDULER] Generating weekly training plan...")
+        config = load_config()
+        generate_weekly_plan(user_id, config)
+    except Exception as e:
+        logger.error(
+            "[SCHEDULER] task_weekly_plan_generation failed: %s", e, exc_info=True
+        )
+
+
+# ==========================================
+# 🧹 CLEANUP STALE SETUP SESSIONS
+# ==========================================
+def task_cleanup_stale_setup():
+    """Abandon setup sessions stale for >24h. Runs in BackgroundScheduler thread pool."""
+    try:
+        logger.info("[SCHEDULER] Cleaning up stale setup sessions...")
+        count = cleanup_stale_setup_sessions(timeout_hours=24)
+        if count:
+            logger.info(f"[SCHEDULER] Cleaned up {count} stale setup sessions.")
+    except Exception as e:
+        logger.error(
+            "[SCHEDULER] task_cleanup_stale_setup failed: %s", e, exc_info=True
+        )
 
 
 # ==========================================
@@ -238,27 +293,79 @@ def setup_jobs():
 
     brief_time = sched_cfg.get("briefing_time", "06:00")
     try:
-        bh, bm = map(int, brief_time.split(':'))
+        bh, bm = map(int, brief_time.split(":"))
     except (ValueError, AttributeError):
-        logger.warning("[SCHEDULER] Invalid briefing_time '%s'; defaulting to 06:00", brief_time)
+        logger.warning(
+            "[SCHEDULER] Invalid briefing_time '%s'; defaulting to 06:00", brief_time
+        )
         bh, bm = 6, 0
 
     backup_time = sched_cfg.get("backup_time", "02:00")
     try:
-        bkh, bkm = map(int, backup_time.split(':'))
+        bkh, bkm = map(int, backup_time.split(":"))
     except (ValueError, AttributeError):
-        logger.warning("[SCHEDULER] Invalid backup_time '%s'; defaulting to 02:00", backup_time)
+        logger.warning(
+            "[SCHEDULER] Invalid backup_time '%s'; defaulting to 02:00", backup_time
+        )
         bkh, bkm = 2, 0
 
     harv_hours = sched_cfg.get("harvest_hours", "0,6,12,18")
     harv_min = str(sched_cfg.get("harvest_minute", "15"))
 
-    scheduler.add_job(task_morning_briefing, CronTrigger(hour=bh, minute=bm, timezone=TZ_VN), id='briefing', replace_existing=True)
-    scheduler.add_job(perform_backup, CronTrigger(hour=bkh, minute=bkm, timezone=TZ_VN), id='backup', replace_existing=True)
-    scheduler.add_job(task_auto_harvest, CronTrigger(hour=harv_hours, minute=harv_min, timezone=TZ_VN), id='harvest', replace_existing=True)
-    scheduler.add_job(task_weekly_reflection, CronTrigger(day_of_week='sun', hour=20, minute=0, timezone=TZ_VN), id='weekly_reflection', replace_existing=True)
-    scheduler.add_job(task_proactive_coach_check, CronTrigger(hour=12, minute=0, timezone=TZ_VN), id='proactive_check', replace_existing=True)
-    scheduler.add_job(task_log_audit, IntervalTrigger(hours=6, timezone=TZ_VN), id='log_audit', replace_existing=True)
+    scheduler.add_job(
+        task_morning_briefing,
+        CronTrigger(hour=bh, minute=bm, timezone=TZ_VN),
+        id="briefing",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        perform_backup,
+        CronTrigger(hour=bkh, minute=bkm, timezone=TZ_VN),
+        id="backup",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_auto_harvest,
+        CronTrigger(hour=harv_hours, minute=harv_min, timezone=TZ_VN),
+        id="harvest",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_weekly_reflection,
+        CronTrigger(day_of_week="sun", hour=20, minute=0, timezone=TZ_VN),
+        id="weekly_reflection",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_proactive_coach_check,
+        CronTrigger(hour=12, minute=0, timezone=TZ_VN),
+        id="proactive_check",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_log_audit,
+        IntervalTrigger(hours=6, timezone=TZ_VN),
+        id="log_audit",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_garmin_sync,
+        CronTrigger(hour=5, minute=45, timezone=TZ_VN),
+        id="garmin_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_weekly_plan_generation,
+        CronTrigger(day_of_week="sun", hour=20, minute=30, timezone=TZ_VN),
+        id="weekly_plan_gen",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_cleanup_stale_setup,
+        CronTrigger(hour=3, minute=0, timezone=TZ_VN),
+        id="cleanup_stale_setup",
+        replace_existing=True,
+    )
 
     # News Agent jobs (only if enabled in config)
     news_cfg = config.get("news_agent", {})
@@ -268,21 +375,41 @@ def setup_jobs():
             ah, am = map(int, news_cfg.get("afternoon_time", "17:30").split(":"))
             eh, em = map(int, news_cfg.get("evening_time", "20:00").split(":"))
         except (ValueError, AttributeError) as e:
-            logger.warning("[SCHEDULER] Invalid news time config: %s; using defaults 06:30/17:30/20:00", e)
+            logger.warning(
+                "[SCHEDULER] Invalid news time config: %s; using defaults 06:30/17:30/20:00",
+                e,
+            )
             nh, nm = 6, 30
             ah, am = 17, 30
             eh, em = 20, 0
 
-        scheduler.add_job(task_morning_news, CronTrigger(hour=nh, minute=nm, timezone=TZ_VN), id='news_morning', replace_existing=True)
-        scheduler.add_job(task_afternoon_news, CronTrigger(hour=ah, minute=am, timezone=TZ_VN), id='news_afternoon', replace_existing=True)
-        scheduler.add_job(task_evening_news, CronTrigger(hour=eh, minute=em, timezone=TZ_VN), id='news_evening', replace_existing=True)
+        scheduler.add_job(
+            task_morning_news,
+            CronTrigger(hour=nh, minute=nm, timezone=TZ_VN),
+            id="news_morning",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            task_afternoon_news,
+            CronTrigger(hour=ah, minute=am, timezone=TZ_VN),
+            id="news_afternoon",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            task_evening_news,
+            CronTrigger(hour=eh, minute=em, timezone=TZ_VN),
+            id="news_evening",
+            replace_existing=True,
+        )
 
         logger.info(
             f"[SCHEDULER] News jobs loaded: Morning({nh}:{nm:02d}), "
             f"Afternoon({ah}:{am:02d}), Evening({eh}:{em:02d})"
         )
 
-    logger.info(f"[SCHEDULER] Jobs loaded: Briefing({bh}:{bm}), Backup({bkh}:{bkm}), Harvest({harv_hours}h:{harv_min}m), Reflection(Sun 20:00)")
+    logger.info(
+        f"[SCHEDULER] Jobs loaded: Briefing({bh}:{bm}), Backup({bkh}:{bkm}), Harvest({harv_hours}h:{harv_min}m), Reflection(Sun 20:00)"
+    )
 
 
 def start_scheduler():

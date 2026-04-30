@@ -1,7 +1,6 @@
 """Tests for pure helper functions in app/agents/news/agent.py."""
-import pytest
-from unittest.mock import patch, MagicMock, call
-from google.genai import types
+
+from unittest.mock import patch, MagicMock
 from app.agents.news.agent import (
     _resolve_chat_id,
     _get_model,
@@ -13,7 +12,6 @@ from app.agents.news.agent import (
     _call_gemini_with_search,
     _DOC_THEM_RE,
 )
-
 
 _DEFAULT_MODEL = "models/gemini-2.5-flash"
 
@@ -74,7 +72,9 @@ class TestResolveTopics:
         assert _resolve_topics(config) == topics
 
     def test_falls_back_to_interest_profile_keys(self):
-        config = {"news_agent": {"interest_profile": {"technology": 8, "sports_running": 6}}}
+        config = {
+            "news_agent": {"interest_profile": {"technology": 8, "sports_running": 6}}
+        }
         result = _resolve_topics(config)
         names = [t["name"] for t in result]
         assert "Technology" in names
@@ -160,7 +160,7 @@ class TestBuildSourcesBlock:
     def test_capped_at_max_sources(self):
         urls = [(f"Title{i}", f"https://example.com/{i}") for i in range(5)]
         result = _build_sources_block(urls, max_sources=3)
-        lines = [l for l in result.splitlines() if l.startswith("•")]
+        lines = [ln for ln in result.splitlines() if ln.startswith("•")]
         assert len(lines) == 3
 
     def test_fourth_url_not_included(self):
@@ -177,7 +177,8 @@ class TestBuildSourcesBlock:
         result = _build_sources_block(urls)
         # The displayed label should be ≤60 chars
         import re
-        match = re.search(r'>([^<]+)</a>', result)
+
+        match = re.search(r">([^<]+)</a>", result)
         assert match and len(match.group(1)) <= 60
 
 
@@ -237,15 +238,21 @@ class TestCallGeminiWithSearchGroundingGate:
     def test_grounding_used_false_returns_none(self):
         """DEF-005: non-grounded response must be rejected."""
         with patch("app.agents.news.agent.client") as mock_client:
-            mock_client.models.generate_content.return_value = self._make_response(grounded=False)
+            mock_client.models.generate_content.return_value = self._make_response(
+                grounded=False
+            )
             text, urls = _call_gemini_with_search("model", "sys", "prompt")
         assert text is None
         assert urls == []
 
     def test_grounding_used_true_returns_text(self):
         with patch("app.agents.news.agent.client") as mock_client:
-            with patch("app.agents.news.agent._extract_text", return_value="news content"):
-                mock_client.models.generate_content.return_value = self._make_response(grounded=True)
+            with patch(
+                "app.agents.news.agent._extract_text", return_value="news content"
+            ):
+                mock_client.models.generate_content.return_value = self._make_response(
+                    grounded=True
+                )
                 text, urls = _call_gemini_with_search("model", "sys", "prompt")
         assert text is not None
 
@@ -253,8 +260,12 @@ class TestCallGeminiWithSearchGroundingGate:
         """DEF-001: thinking_budget=0 must be configured to prevent thought leakage."""
         with patch("app.agents.news.agent.client") as mock_client:
             with patch("app.agents.news.agent.types") as mock_types:
-                mock_client.models.generate_content.return_value = self._make_response(grounded=True)
-                with patch("app.agents.news.agent._extract_text", return_value="content"):
+                mock_client.models.generate_content.return_value = self._make_response(
+                    grounded=True
+                )
+                with patch(
+                    "app.agents.news.agent._extract_text", return_value="content"
+                ):
                     _call_gemini_with_search("model", "sys", "prompt")
         mock_types.ThinkingConfig.assert_called_once_with(thinking_budget=0)
 
@@ -268,8 +279,11 @@ class TestCallGeminiWithSearchGroundingGate:
 
     def test_grounding_used_false_logs_reject_message(self, caplog):
         import logging
+
         with patch("app.agents.news.agent.client") as mock_client:
-            mock_client.models.generate_content.return_value = self._make_response(grounded=False)
+            mock_client.models.generate_content.return_value = self._make_response(
+                grounded=False
+            )
             with caplog.at_level(logging.WARNING, logger="news"):
                 _call_gemini_with_search("model", "sys", "prompt")
         assert any("REJECTING" in r.message for r in caplog.records)

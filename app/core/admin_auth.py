@@ -1,4 +1,5 @@
 """Shared admin credential loading and validation."""
+
 import os
 import secrets
 
@@ -24,7 +25,9 @@ def verify_admin(credentials: HTTPBasicCredentials = Depends(_security)) -> str:
     admin_user, admin_pass = _get_admin_creds()
 
     if not admin_user or not admin_pass:
-        logger.warning("[ADMIN_AUTH] ADMIN_USERNAME and ADMIN_PASSWORD must be set in environment.")
+        logger.warning(
+            "[ADMIN_AUTH] ADMIN_USERNAME and ADMIN_PASSWORD must be set in environment."
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Admin credentials not configured on server.",

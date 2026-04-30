@@ -10,6 +10,7 @@ Covers generate_weekly_reflection():
   - Gemini exception: handled gracefully
   - Memory data injected into prompt
 """
+
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -60,11 +61,17 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
             mocks[key] = m
 
         mocks["get_primary_user_id"].return_value = chat_id
-        mocks["get_training_loads"].return_value = {"acute_load_7d": 140, "chronic_load_28d": 130}
+        mocks["get_training_loads"].return_value = {
+            "acute_load_7d": 140,
+            "chronic_load_28d": 130,
+        }
         mocks["calculate_acwr"].return_value = {"acwr": 1.08, "status": "Optimal"}
         mocks["get_weekly_volume"].return_value = 40.0
         mocks["calculate_training_phase"].return_value = {
-            "phase": "Build", "microcycle": "Week 4", "weeks_left": 6, "taper_factor": 1.0
+            "phase": "Build",
+            "microcycle": "Week 4",
+            "weeks_left": 6,
+            "taper_factor": 1.0,
         }
         mocks["get_formatted_weekly_context"].return_value = "Week context"
         mocks["get_recent_runs_log"].return_value = "Run log"
@@ -89,7 +96,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
     def test_rag_memorize_called_with_correct_doc_id(self):
         mocks, patchers = self._start_patches(reply_text="Tuần tốt!")
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             mocks["rag_db"].memorize.assert_called_once()
             call_kwargs = mocks["rag_db"].memorize.call_args[1]
@@ -102,7 +112,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
     def test_rag_memorize_domain_is_coach(self):
         mocks, patchers = self._start_patches()
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             kwargs = mocks["rag_db"].memorize.call_args[1]
             self.assertEqual(kwargs["domain"], "coach")
@@ -112,7 +125,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
     def test_rag_memorize_content_contains_reflection_text(self):
         mocks, patchers = self._start_patches(reply_text="Tuần tuyệt vời!")
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             kwargs = mocks["rag_db"].memorize.call_args[1]
             self.assertIn("Tuần tuyệt vời!", kwargs["content"])
@@ -123,7 +139,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
         mocks, patchers = self._start_patches(reply_text="Tuần tốt!")
         mocks["rag_db"].memorize.side_effect = Exception("ChromaDB error")
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             mocks["send_telegram_msg"].assert_called_once_with("123456", "Tuần tốt!")
         finally:
@@ -133,7 +152,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
         mocks, patchers = self._start_patches(reply_text="Tuần tốt!")
         mocks["rag_db"].memorize.side_effect = Exception("ChromaDB error")
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             mocks["save_message"].assert_called_once()
         finally:
@@ -142,16 +164,24 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
     def test_telegram_called_with_reflection_text(self):
         mocks, patchers = self._start_patches(reply_text="Phản ánh tuần này...")
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
-            mocks["send_telegram_msg"].assert_called_once_with("123456", "Phản ánh tuần này...")
+            mocks["send_telegram_msg"].assert_called_once_with(
+                "123456", "Phản ánh tuần này..."
+            )
         finally:
             self._stop(patchers)
 
     def test_save_message_called(self):
         mocks, patchers = self._start_patches(reply_text="Tuần tốt!")
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             mocks["save_message"].assert_called_once()
             args = mocks["save_message"].call_args[0]
@@ -164,7 +194,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
     def test_no_chat_id_skips_telegram(self):
         mocks, patchers = self._start_patches(chat_id=None)
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             mocks["send_telegram_msg"].assert_not_called()
         finally:
@@ -173,7 +206,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
     def test_no_chat_id_still_calls_rag_memorize(self):
         mocks, patchers = self._start_patches(chat_id=None)
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             mocks["rag_db"].memorize.assert_called_once()
         finally:
@@ -183,7 +219,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
         mocks, patchers = self._start_patches()
         mocks["send_message_with_retry"].side_effect = Exception("API error")
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())  # should not raise
             mocks["send_telegram_msg"].assert_not_called()
         finally:
@@ -193,7 +232,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
         memories = [{"category": "goal", "fact": "Sub-2h half marathon"}]
         mocks, patchers = self._start_patches(memories=memories)
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             kwargs = mocks["build_weekly_reflection_prompt"].call_args[1]
             active_memories = kwargs.get("active_memories", "")
@@ -204,7 +246,10 @@ class TestGenerateWeeklyReflection(unittest.TestCase):
     def test_no_memories_uses_default_text(self):
         mocks, patchers = self._start_patches(memories=[])
         try:
-            from app.agents.coach.flows.weekly_reflection import generate_weekly_reflection
+            from app.agents.coach.flows.weekly_reflection import (
+                generate_weekly_reflection,
+            )
+
             generate_weekly_reflection(_make_config())
             kwargs = mocks["build_weekly_reflection_prompt"].call_args[1]
             active_memories = kwargs.get("active_memories", "")

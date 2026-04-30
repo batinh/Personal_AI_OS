@@ -36,6 +36,7 @@ _VALID_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 class ListHandler(logging.Handler):
     """Custom Handler to push log records into a deque buffer."""
+
     def emit(self, record):
         try:
             msg = self.format(record)
@@ -106,7 +107,9 @@ def apply_log_levels(log_levels: dict) -> None:
         level_str = str(level_str).upper()
         if level_str not in _VALID_LEVELS:
             root_logger.warning(
-                "[LOGGING] Unknown log level '%s' for domain '%s' — skipping.", level_str, domain
+                "[LOGGING] Unknown log level '%s' for domain '%s' — skipping.",
+                level_str,
+                domain,
             )
             continue
         child = logging.getLogger(f"AI_COACH.{domain}")

@@ -25,6 +25,7 @@ import pytest
 # Helpers: build fake Gemini response objects
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_part(text: str, is_thought: bool = False) -> MagicMock:
     """Create a fake google.genai Part with .text and .thought attributes."""
     p = MagicMock()
@@ -55,12 +56,12 @@ def _make_response(*candidates: MagicMock, fallback_text: str = "") -> MagicMock
 # (conftest.py stubs google.genai before any import, so these are safe)
 # ─────────────────────────────────────────────────────────────────────────────
 
-from app.agents.news.agent import _extract_text, _strip_thought_preamble
-
+from app.agents.news.agent import _extract_text, _strip_thought_preamble  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Unit tests: _extract_text
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestExtractText(unittest.TestCase):
     def test_returns_none_for_empty_candidates(self):
@@ -122,6 +123,7 @@ class TestExtractText(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 # Unit tests: _strip_thought_preamble
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestStripThoughtPreamble(unittest.TestCase):
     def test_no_preamble_passes_through(self):
@@ -185,12 +187,14 @@ class TestStripThoughtPreamble(unittest.TestCase):
             "🏃 Running & Sports.\nApril 21, 2026, evening.\n"
             "Search for actual news in the last 24-48 hours...\n"
             "    • Self-Correction: Today is actually May 2024...\n"
-            "Let's search for \"chạy bộ thể thao news\".\n"
+            'Let\'s search for "chạy bộ thể thao news".\n'
         )
         answer = "📊 Phân tích: Thị trường chạy bộ đang bùng nổ."
         result = _strip_thought_preamble(preamble + answer)
         self.assertIsNotNone(result)
-        self.assertTrue(result.startswith("📊"), f"Expected 📊 anchor, got: {result[:80]!r}")
+        self.assertTrue(
+            result.startswith("📊"), f"Expected 📊 anchor, got: {result[:80]!r}"
+        )
         self.assertNotIn("thoughtful", result)
         self.assertNotIn("Self-Correction", result)
 
@@ -218,19 +222,25 @@ class TestStripThoughtPreamble(unittest.TestCase):
 # Unit tests: _call_gemini_with_search — end-to-end unit with mocked client
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestCallGeminiWithSearch(unittest.TestCase):
     """Verify that thinking parts never reach the return value of _call_gemini_with_search."""
 
-    def _invoke(self, response: MagicMock, model: str = "models/gemini-1.5-pro") -> str | None:
+    def _invoke(
+        self, response: MagicMock, model: str = "models/gemini-1.5-pro"
+    ) -> str | None:
         """Returns only the text portion of the (text, urls) tuple for backward-compat assertions."""
         with patch("app.agents.news.agent.client") as mock_client:
             mock_client.models.generate_content.return_value = response
             from app.agents.news.agent import _call_gemini_with_search
+
             text, _urls = _call_gemini_with_search(model, "system", "user prompt")
             return text
 
     def test_clean_response_returned(self):
-        part = _make_part("<b>NEWS</b> Real grounded content here with 200+ chars " + "x" * 160)
+        part = _make_part(
+            "<b>NEWS</b> Real grounded content here with 200+ chars " + "x" * 160
+        )
         resp = _make_response(_make_candidate(part, grounding=True))
         result = self._invoke(resp)
         self.assertIsNotNone(result)
@@ -246,7 +256,9 @@ class TestCallGeminiWithSearch(unittest.TestCase):
         self.assertIn("Real content", result)
 
     def test_returns_none_when_only_thinking_and_no_anchor(self):
-        thinking = _make_part("thought\nOnly reasoning, no real answer.", is_thought=True)
+        thinking = _make_part(
+            "thought\nOnly reasoning, no real answer.", is_thought=True
+        )
         resp = _make_response(_make_candidate(thinking))
         result = self._invoke(resp)
         self.assertIsNone(result)
@@ -256,7 +268,10 @@ class TestCallGeminiWithSearch(unittest.TestCase):
         Defence-in-depth: when SDK sets thought=False but emits the preamble as plain text,
         _strip_thought_preamble should still clean it up.
         """
-        raw = "thought\nI must search for today's news.\n<b>HEADLINE</b> real content " + "z" * 150
+        raw = (
+            "thought\nI must search for today's news.\n<b>HEADLINE</b> real content "
+            + "z" * 150
+        )
         part = _make_part(raw, is_thought=False)  # SDK did NOT set thought=True
         resp = _make_response(_make_candidate(part, grounding=True))
         result = self._invoke(resp)
@@ -266,9 +281,14 @@ class TestCallGeminiWithSearch(unittest.TestCase):
 
     def test_returns_none_on_gemini_exception(self):
         with patch("app.agents.news.agent.client") as mock_client:
-            mock_client.models.generate_content.side_effect = RuntimeError("quota exceeded")
+            mock_client.models.generate_content.side_effect = RuntimeError(
+                "quota exceeded"
+            )
             from app.agents.news.agent import _call_gemini_with_search
-            text, urls = _call_gemini_with_search("models/gemini-1.5-pro", "sys", "prompt")
+
+            text, urls = _call_gemini_with_search(
+                "models/gemini-1.5-pro", "sys", "prompt"
+            )
         self.assertIsNone(text)
         self.assertEqual(urls, [])
 
@@ -286,7 +306,9 @@ _DOCKER_AUTH = (
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not _INTEGRATION, reason="set INTEGRATION_TEST=1 to run against live Docker")
+@pytest.mark.skipif(
+    not _INTEGRATION, reason="set INTEGRATION_TEST=1 to run against live Docker"
+)
 class TestDockerIntegration(unittest.TestCase):
     """
     Optional integration tests that talk to the live Docker container.
@@ -308,13 +330,17 @@ class TestDockerIntegration(unittest.TestCase):
 
     def _get(self, path: str, **kwargs):
         import requests
+
         url = f"{_DOCKER_BASE}{path}"
         return requests.get(url, auth=_DOCKER_AUTH, timeout=10, **kwargs)
 
     def _post(self, path: str, json_body: dict, **kwargs):
         import requests
+
         url = f"{_DOCKER_BASE}{path}"
-        return requests.post(url, json=json_body, auth=_DOCKER_AUTH, timeout=30, **kwargs)
+        return requests.post(
+            url, json=json_body, auth=_DOCKER_AUTH, timeout=30, **kwargs
+        )
 
     def test_health_endpoint_responds(self):
         resp = self._get("/health")
@@ -325,11 +351,16 @@ class TestDockerIntegration(unittest.TestCase):
     def test_webhook_endpoint_reachable(self):
         """Verify the Telegram webhook endpoint exists and accepts POST."""
         import requests
+
         # Send an empty-ish body — it will fail validation but must not 404
         url = f"{_DOCKER_BASE}/webhook"
         resp = requests.post(url, json={}, timeout=10)
         # 422 (validation error) is expected; 404 would mean the route is missing
-        self.assertIn(resp.status_code, (200, 400, 422), msg=f"Unexpected status: {resp.status_code}")
+        self.assertIn(
+            resp.status_code,
+            (200, 400, 422),
+            msg=f"Unexpected status: {resp.status_code}",
+        )
 
     def test_no_error_lines_in_recent_logs(self):
         """
@@ -337,6 +368,7 @@ class TestDockerIntegration(unittest.TestCase):
         Runs 'docker logs airunningcoach --tail 50' via subprocess.
         """
         import subprocess
+
         result = subprocess.run(
             ["docker", "logs", "airunningcoach", "--tail", "50"],
             capture_output=True,
@@ -344,7 +376,9 @@ class TestDockerIntegration(unittest.TestCase):
             timeout=15,
         )
         combined = result.stdout + result.stderr
-        error_lines = [ln for ln in combined.splitlines() if " ERROR " in ln or " [ERROR]" in ln]
+        error_lines = [
+            ln for ln in combined.splitlines() if " ERROR " in ln or " [ERROR]" in ln
+        ]
         if error_lines:
             self.fail(
                 f"Found {len(error_lines)} ERROR line(s) in recent logs:\n"
@@ -357,6 +391,7 @@ class TestDockerIntegration(unittest.TestCase):
         This detects a regression where thinking preamble leaks back.
         """
         import subprocess
+
         result = subprocess.run(
             ["docker", "logs", "airunningcoach", "--tail", "200"],
             capture_output=True,
@@ -365,8 +400,11 @@ class TestDockerIntegration(unittest.TestCase):
         )
         combined = result.stdout + result.stderr
         leak_lines = [
-            ln for ln in combined.splitlines()
-            if "extracted text" in ln and "thought" in ln.lower() and "[NEWS-DEBUG]" in ln
+            ln
+            for ln in combined.splitlines()
+            if "extracted text" in ln
+            and "thought" in ln.lower()
+            and "[NEWS-DEBUG]" in ln
         ]
         if leak_lines:
             self.fail(
@@ -383,36 +421,41 @@ class TestDockerIntegration(unittest.TestCase):
         Requires a valid Telegram-style payload; skipped if TELEGRAM_BOT_TOKEN
         is not configured in the container (query will be rejected by auth).
         """
-        import subprocess, time
+        import subprocess
+        import time
 
-        # Record log position before triggering
-        before = subprocess.run(
+        # Record log position before triggering (result discarded intentionally)
+        subprocess.run(
             ["docker", "logs", "airunningcoach", "--tail", "1"],
-            capture_output=True, text=True, timeout=10,
-        ).stderr + subprocess.run(
-            ["docker", "logs", "airunningcoach", "--tail", "1"],
-            capture_output=True, text=True, timeout=10,
-        ).stdout
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
 
         # We don't have a real Telegram token here, so the webhook will
         # reject the request. What we verify is that the endpoint is alive
         # and no thought-preamble appears in ANY new log lines after calling.
-        self._post("/webhook", {
-            "update_id": 1,
-            "message": {
-                "message_id": 1,
-                "chat": {"id": 0, "type": "private"},
-                "from": {"id": 0, "is_bot": False, "first_name": "Test"},
-                "text": "@news tin tức hôm nay",
-                "date": 0,
-            }
-        })
+        self._post(
+            "/webhook",
+            {
+                "update_id": 1,
+                "message": {
+                    "message_id": 1,
+                    "chat": {"id": 0, "type": "private"},
+                    "from": {"id": 0, "is_bot": False, "first_name": "Test"},
+                    "text": "@news tin tức hôm nay",
+                    "date": 0,
+                },
+            },
+        )
 
         time.sleep(2)  # give async handler a moment to log
 
         after = subprocess.run(
             ["docker", "logs", "airunningcoach", "--tail", "20"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         combined = after.stdout + after.stderr
         # Only fail if we see the regression pattern

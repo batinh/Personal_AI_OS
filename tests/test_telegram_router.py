@@ -9,6 +9,7 @@ Covers route_message():
   - Empty text → routed to coach
   - @news with no query → news agent, empty cleaned text
 """
+
 import unittest
 
 from app.services.telegram_router import route_message

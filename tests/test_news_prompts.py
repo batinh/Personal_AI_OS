@@ -1,5 +1,5 @@
 """Tests for app/agents/news/prompts.py — all pure functions, no mocks needed."""
-import pytest
+
 from app.agents.news.prompts import (
     _build_interest_section,
     _build_memory_section,

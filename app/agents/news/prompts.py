@@ -159,7 +159,9 @@ def _build_interest_section(interest_profile: dict) -> str:
             return 5
 
     lines = ["Chủ đề và mức độ quan tâm (1-10):"]
-    for domain, raw_weight in sorted(interest_profile.items(), key=lambda x: -_extract_weight(x[1])):
+    for domain, raw_weight in sorted(
+        interest_profile.items(), key=lambda x: -_extract_weight(x[1])
+    ):
         weight = _extract_weight(raw_weight)
         lines.append(f"  • {domain}: {weight}/10")
     return "\n".join(lines) + "\n"
@@ -239,7 +241,9 @@ def build_on_demand_prompt(query: str, date_str: str) -> str:
     )
 
 
-def build_session_prompt(session: str, interest_profile: dict, date_str: str, memory: dict) -> str:
+def build_session_prompt(
+    session: str, interest_profile: dict, date_str: str, memory: dict
+) -> str:
     """
     Build the user-turn prompt for a scheduled news briefing.
 
@@ -257,8 +261,7 @@ def build_session_prompt(session: str, interest_profile: dict, date_str: str, me
     memory_section = _build_memory_section(memory)
 
     return (
-        template
-        .replace("{date_str}", date_str)
+        template.replace("{date_str}", date_str)
         .replace("{interest_section}", interest_section)
         .replace("{memory_section}", memory_section)
     )
@@ -297,6 +300,7 @@ def build_memory_extraction_prompt(chat_text: str) -> str:
 # ==========================================
 # PUBLIC API (kept for smoke test compatibility)
 # ==========================================
+
 
 def build_news_system_instruction() -> str:
     """Return the system instruction for the News Agent Gemini persona."""

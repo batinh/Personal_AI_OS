@@ -4,10 +4,16 @@ Layer 3 – Notification Service Tests: app/core/notification.py
 Không cần Telegram token thật. Network calls được mock.
 Covers: sanitize_md_to_tg_html, send_telegram_msg (fallback), send_typing_action.
 """
+
 import unittest
 from unittest.mock import MagicMock, patch
 
-from app.core.notification import sanitize_md_to_tg_html, send_telegram_msg, send_typing_action, _strip_html
+from app.core.notification import (
+    sanitize_md_to_tg_html,
+    send_telegram_msg,
+    send_typing_action,
+    _strip_html,
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -82,8 +88,8 @@ class TestSanitizeMdToTgHtml(unittest.TestCase):
         text = 'Xem chi tiết <a href="https://vnexpress.net/abc">Đọc thêm</a>'
         result = sanitize_md_to_tg_html(text)
         self.assertIn('<a href="https://vnexpress.net/abc">', result)
-        self.assertIn('</a>', result)
-        self.assertIn('Đọc thêm', result)
+        self.assertIn("</a>", result)
+        self.assertIn("Đọc thêm", result)
 
     def test_unclosed_b_tag_is_balanced(self):
         # Gemini sometimes generates <b>title without closing </b>
@@ -93,7 +99,7 @@ class TestSanitizeMdToTgHtml(unittest.TestCase):
 
     def test_special_chars_in_text_outside_tags_are_escaped(self):
         # < and > in plain text must be escaped; tags must be kept
-        text = 'HR < 150 bpm và <b>cảnh báo</b>'
+        text = "HR < 150 bpm và <b>cảnh báo</b>"
         result = sanitize_md_to_tg_html(text)
         self.assertIn("&lt;", result)
         self.assertIn("<b>cảnh báo</b>", result)
@@ -176,11 +182,14 @@ class TestSendTelegramMsg(unittest.TestCase):
         with patch.dict("os.environ", {}, clear=True):
             # Ensure TELEGRAM_BOT_TOKEN is absent
             import os
+
             os.environ.pop("TELEGRAM_BOT_TOKEN", None)
             send_telegram_msg("123456", "test")
         mock_post.assert_not_called()
 
-    @patch("app.core.notification.requests.post", side_effect=Exception("Network error"))
+    @patch(
+        "app.core.notification.requests.post", side_effect=Exception("Network error")
+    )
     @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token"})
     def test_network_exception_does_not_raise(self, mock_post):
         """Connection errors must be swallowed – never crash the agent."""
@@ -215,12 +224,12 @@ class TestSendTypingAction(unittest.TestCase):
 
     def test_no_token_returns_without_crash(self):
         import os
+
         os.environ.pop("TELEGRAM_BOT_TOKEN", None)
         try:
             send_typing_action("123456")
         except Exception:
             self.fail("send_typing_action raised when no token")
-
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -230,6 +239,7 @@ class TestSplitHtmlPreservingTags(unittest.TestCase):
 
     def _split(self, text, limit):
         from app.core.notification import split_html_preserving_tags
+
         return split_html_preserving_tags(text, limit)
 
     def test_short_text_returns_single_chunk(self):
@@ -246,6 +256,7 @@ class TestSplitHtmlPreservingTags(unittest.TestCase):
 
     def test_all_chunks_reassemble_to_original_text(self):
         from app.core.notification import _strip_html
+
         text = "Word " * 30
         chunks = self._split(text.strip(), 50)
         combined = _strip_html("".join(chunks))
@@ -295,14 +306,18 @@ class TestSendTelegramMsgChunking(unittest.TestCase):
         return "A " * n  # clearly > 4000 chars default limit
 
     @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_LIMIT": "100"})
+    @patch.dict(
+        "os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_LIMIT": "100"}
+    )
     def test_chunked_message_calls_post_multiple_times(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200, text="OK")
         send_telegram_msg("123", self._make_long_text())
         self.assertGreater(mock_post.call_count, 1)
 
     @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_LIMIT": "100"})
+    @patch.dict(
+        "os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_LIMIT": "100"}
+    )
     def test_each_chunk_has_html_parse_mode(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200, text="OK")
         send_telegram_msg("123", self._make_long_text())
@@ -311,7 +326,9 @@ class TestSendTelegramMsgChunking(unittest.TestCase):
             self.assertEqual(payload.get("parse_mode"), "HTML")
 
     @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_LIMIT": "100"})
+    @patch.dict(
+        "os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_LIMIT": "100"}
+    )
     def test_chunk_parse_error_falls_back_to_plain(self, mock_post):
         bad = MagicMock(status_code=400, text="can't parse entities")
         good = MagicMock(status_code=200, text="OK")
@@ -329,10 +346,13 @@ class TestSendTelegramMsgChunking(unittest.TestCase):
 class TestSendTelegramMsgAttachment(unittest.TestCase):
 
     @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {
-        "TELEGRAM_BOT_TOKEN": "fake-token",
-        "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "TELEGRAM_BOT_TOKEN": "fake-token",
+            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
+        },
+    )
     def test_huge_message_uses_send_document(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200, text="OK")
         send_telegram_msg("123", "X " * 100)  # > 50 chars threshold
@@ -343,10 +363,13 @@ class TestSendTelegramMsgAttachment(unittest.TestCase):
         self.assertNotIn("json", call_kwargs)
 
     @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {
-        "TELEGRAM_BOT_TOKEN": "fake-token",
-        "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "TELEGRAM_BOT_TOKEN": "fake-token",
+            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
+        },
+    )
     def test_attachment_caption_is_set(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200, text="OK")
         send_telegram_msg("123", "X " * 100)
@@ -355,10 +378,13 @@ class TestSendTelegramMsgAttachment(unittest.TestCase):
         self.assertIn("chat_id", data_kwarg)
 
     @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {
-        "TELEGRAM_BOT_TOKEN": "fake-token",
-        "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "TELEGRAM_BOT_TOKEN": "fake-token",
+            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
+        },
+    )
     def test_attachment_sends_plain_text_file(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200, text="OK")
         send_telegram_msg("123", "<b>Bold content</b> " * 10)
@@ -372,12 +398,18 @@ class TestSendTelegramMsgChunkingFallback(unittest.TestCase):
     """When split_html_preserving_tags raises, fall back to plain-text paragraph chunking."""
 
     @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {
-        "TELEGRAM_BOT_TOKEN": "test_token",
-        "TELEGRAM_LIMIT": "50",
-        "TELEGRAM_ATTACHMENT_THRESHOLD": "1000000",
-    })
-    @patch("app.core.notification.split_html_preserving_tags", side_effect=ValueError("broken"))
+    @patch.dict(
+        "os.environ",
+        {
+            "TELEGRAM_BOT_TOKEN": "test_token",
+            "TELEGRAM_LIMIT": "50",
+            "TELEGRAM_ATTACHMENT_THRESHOLD": "1000000",
+        },
+    )
+    @patch(
+        "app.core.notification.split_html_preserving_tags",
+        side_effect=ValueError("broken"),
+    )
     def test_fallback_chunking_sends_multiple_posts(self, _mock_split, mock_post):
         mock_post.return_value = MagicMock(status_code=200, text="OK")
         # Message > 50 chars so chunking path is triggered
@@ -387,12 +419,18 @@ class TestSendTelegramMsgChunkingFallback(unittest.TestCase):
         self.assertGreater(mock_post.call_count, 0)
 
     @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {
-        "TELEGRAM_BOT_TOKEN": "test_token",
-        "TELEGRAM_LIMIT": "50",
-        "TELEGRAM_ATTACHMENT_THRESHOLD": "1000000",
-    })
-    @patch("app.core.notification.split_html_preserving_tags", side_effect=RuntimeError("fail"))
+    @patch.dict(
+        "os.environ",
+        {
+            "TELEGRAM_BOT_TOKEN": "test_token",
+            "TELEGRAM_LIMIT": "50",
+            "TELEGRAM_ATTACHMENT_THRESHOLD": "1000000",
+        },
+    )
+    @patch(
+        "app.core.notification.split_html_preserving_tags",
+        side_effect=RuntimeError("fail"),
+    )
     def test_fallback_strips_html_tags(self, _mock_split, mock_post):
         mock_post.return_value = MagicMock(status_code=200, text="OK")
         html_text = "<b>Bold</b> " * 30
@@ -409,6 +447,7 @@ class TestSendHtmlEmail(unittest.TestCase):
 
     def test_disabled_config_returns_early(self):
         from app.core.notification import send_html_email
+
         config = {"email_config": {"enabled": False}}
         # Should return without raising or calling smtplib
         send_html_email("Subject", "<p>body</p>", config)
@@ -416,21 +455,32 @@ class TestSendHtmlEmail(unittest.TestCase):
     @patch.dict("os.environ", {}, clear=True)
     def test_missing_env_vars_returns_early(self):
         from app.core.notification import send_html_email
+
         config = {"email_config": {"enabled": True}}
         # No EMAIL_SENDER / PASSWORD / RECEIVER — should return without crashing
         send_html_email("Subject", "<p>body</p>", config)
 
     @patch("smtplib.SMTP")
-    @patch.dict("os.environ", {
-        "EMAIL_SENDER": "sender@example.com",
-        "EMAIL_PASSWORD": "secret",
-        "EMAIL_RECEIVER": "receiver@example.com",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "EMAIL_SENDER": "sender@example.com",
+            "EMAIL_PASSWORD": "secret",
+            "EMAIL_RECEIVER": "receiver@example.com",
+        },
+    )
     def test_happy_path_calls_smtp(self, mock_smtp_cls):
         from app.core.notification import send_html_email
+
         mock_server = MagicMock()
         mock_smtp_cls.return_value = mock_server
-        config = {"email_config": {"enabled": True, "smtp_server": "smtp.example.com", "smtp_port": "587"}}
+        config = {
+            "email_config": {
+                "enabled": True,
+                "smtp_server": "smtp.example.com",
+                "smtp_port": "587",
+            }
+        }
         send_html_email("Test Subject", "<p>Hello</p>", config)
         mock_smtp_cls.assert_called_once_with("smtp.example.com", 587)
         mock_server.starttls.assert_called_once()
@@ -439,13 +489,17 @@ class TestSendHtmlEmail(unittest.TestCase):
         mock_server.quit.assert_called_once()
 
     @patch("smtplib.SMTP", side_effect=Exception("connection refused"))
-    @patch.dict("os.environ", {
-        "EMAIL_SENDER": "sender@example.com",
-        "EMAIL_PASSWORD": "secret",
-        "EMAIL_RECEIVER": "receiver@example.com",
-    })
+    @patch.dict(
+        "os.environ",
+        {
+            "EMAIL_SENDER": "sender@example.com",
+            "EMAIL_PASSWORD": "secret",
+            "EMAIL_RECEIVER": "receiver@example.com",
+        },
+    )
     def test_smtp_error_does_not_raise(self, _mock_smtp):
         from app.core.notification import send_html_email
+
         config = {"email_config": {"enabled": True}}
         # Should log error but not propagate exception
         send_html_email("Subject", "<p>body</p>", config)

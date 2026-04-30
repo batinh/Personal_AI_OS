@@ -16,6 +16,7 @@ from app.core.logging_conf import (
     apply_log_levels,
     get_effective_log_levels,
     KNOWN_DOMAINS,
+    get_module_logger,
 )
 from app.core.state import state
 from app.core.user_context import get_primary_user_id
@@ -31,7 +32,6 @@ from app.services.scheduler import reload_scheduler
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
-from app.core.logging_conf import get_module_logger
 logger = get_module_logger("admin")
 
 
@@ -39,7 +39,9 @@ logger = get_module_logger("admin")
 # 🖥️ UNIFIED CONSOLE — GET
 # ==========================================
 @router.get("/console", response_class=HTMLResponse)
-async def console_page(request: Request, tab: str = "overview", username: str = Depends(verify_admin)):
+async def console_page(
+    request: Request, tab: str = "overview", username: str = Depends(verify_admin)
+):
     """Render the TinhN AI OS unified control console."""
     config = load_config()
     chat_id = get_primary_user_id()
@@ -80,7 +82,7 @@ async def console_page(request: Request, tab: str = "overview", username: str = 
             "loads": loads,
             "load_history": load_history,
             "activities": activities[::-1],  # oldest first for charts
-            "activities_desc": activities,   # newest first for table
+            "activities_desc": activities,  # newest first for table
             # Memory
             "memories": memories,
             # Settings / System
@@ -176,16 +178,25 @@ async def console_save_news(
 
     # --- Basic toggles & scalars ---
     news_cfg["enabled"] = form.get("news_enabled") == "on"
-    news_cfg["news_model"] = form.get("news_model", "models/gemini-flash-latest").strip() or "models/gemini-flash-latest"
+    news_cfg["news_model"] = (
+        form.get("news_model", "models/gemini-flash-latest").strip()
+        or "models/gemini-flash-latest"
+    )
     news_cfg["morning_time"] = form.get("morning_time", "06:30").strip()
     news_cfg["afternoon_time"] = form.get("afternoon_time", "17:30").strip()
     news_cfg["evening_time"] = form.get("evening_time", "20:00").strip()
     news_cfg["telegram_chat_id"] = form.get("news_telegram_chat_id", "").strip()
 
     # Remove deprecated RSS-era keys if present
-    for old_key in ("watch_interval_minutes", "alert_threshold", "digest_threshold",
-                    "topic_cooldown_hours", "max_articles_per_feed", "feeds",
-                    "shock_threshold"):
+    for old_key in (
+        "watch_interval_minutes",
+        "alert_threshold",
+        "digest_threshold",
+        "topic_cooldown_hours",
+        "max_articles_per_feed",
+        "feeds",
+        "shock_threshold",
+    ):
         news_cfg.pop(old_key, None)
 
     # --- Interest profile (serialized as JSON by client-side JS) ---
@@ -195,7 +206,9 @@ async def console_save_news(
         if isinstance(profile, dict):
             news_cfg["interest_profile"] = profile
     except (json.JSONDecodeError, ValueError):
-        logger.warning("[CONSOLE] Invalid interest_profile_json — keeping existing profile.")
+        logger.warning(
+            "[CONSOLE] Invalid interest_profile_json — keeping existing profile."
+        )
 
     config["news_agent"] = news_cfg
     save_config(config)
