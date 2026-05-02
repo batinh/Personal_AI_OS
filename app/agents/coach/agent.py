@@ -779,7 +779,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         )
         send_telegram_msg(
             chat_id,
-            "🤒 Đã ghi nhận trạng thái <b>ốm</b>. Hôm nay nghỉ hoàn toàn nhé. Uống nhiều nước, ngủ đủ giấc!",
+            "🤒 Đã ghi nhận trạng thái ốm. Hôm nay nghỉ hoàn toàn nhé. Uống nhiều nước, ngủ đủ giấc!",
         )
         return
 
@@ -790,7 +790,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         )
         send_telegram_msg(
             chat_id,
-            "💪 Tuyệt vời! Đã ghi nhận trạng thái <b>hồi phục</b>. Bắt đầu lại nhẹ nhàng nhé!",
+            "💪 Tuyệt vời! Đã ghi nhận trạng thái hồi phục. Bắt đầu lại nhẹ nhàng nhé!",
         )
         return
 
@@ -812,7 +812,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         send_telegram_msg(chat_id, "⏳ Đang tải kế hoạch...")
         upcoming = get_upcoming_plans(chat_id, limit_days=7)
         if upcoming:
-            send_telegram_msg(chat_id, f"📅 <b>Lịch tập tuần này:</b>\n{upcoming}")
+            send_telegram_msg(chat_id, f"📅 Lịch tập tuần này:\n{upcoming}")
         else:
             loads = get_training_loads(chat_id)
             from app.agents.coach.utils import calculate_acwr
