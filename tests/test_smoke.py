@@ -23,6 +23,7 @@ class TestCoreImports(unittest.TestCase):
         from app.core.notification import (  # noqa: F401
             sanitize_md_to_tg_html,
             send_telegram_msg,
+            send_telegram_html,
             send_typing_action,
             _strip_html,
         )

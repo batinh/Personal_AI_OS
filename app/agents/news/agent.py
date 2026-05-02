@@ -31,7 +31,7 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 
-from app.core.notification import send_telegram_msg
+from app.core.notification import send_telegram_msg, send_telegram_html
 from app.core.user_context import get_primary_user_id
 from app.core.timezone_utils import get_local_tz
 from app.agents.news.prompts import (
@@ -53,8 +53,8 @@ from app.core.logging_conf import get_module_logger
 logger = get_module_logger("news")
 client = genai.Client(http_options=types.HttpOptions(timeout=30000))  # 30s in ms
 
-# Chunking is handled by send_telegram_msg() in notification.py (HTML-balanced, multi-message).
-# Do NOT truncate here — truncation would cut mid-tag and lose content.
+# Briefings with links use send_telegram_html(); plain notifications use send_telegram_msg().
+# Do NOT truncate here — chunking is handled inside notification.py.
 
 # Max parallel topic workers — overridable via config["news_agent"]["max_topic_workers"]
 _MAX_TOPIC_WORKERS = 4
@@ -432,7 +432,7 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     logger.info(
         f"[TELEGRAM] Prepared message length={len(message)}; head={message[:80]!r}; tail={message[-60:]!r}"
     )
-    send_telegram_msg(chat_id, message)
+    send_telegram_html(chat_id, message)
     logger.info(f"[NEWS] Sent {session} briefing to chat_id={chat_id}")
 
 
@@ -489,7 +489,7 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     logger.info(
         f"[NEWS-ONDEMAND] Reply length={len(reply)}, sources={len(grounding_urls)}"
     )
-    send_telegram_msg(chat_id, reply)
+    send_telegram_html(chat_id, reply)
     logger.info(f"[NEWS-ONDEMAND] Sent reply to chat_id={chat_id}")
     return reply
 
@@ -524,5 +524,5 @@ def _generate_legacy_briefing(
     if sources:
         reply = reply.rstrip() + "\n\n" + sources
 
-    send_telegram_msg(chat_id, reply)
+    send_telegram_html(chat_id, reply)
     logger.info(f"[NEWS] Sent legacy {session} briefing to chat_id={chat_id}")

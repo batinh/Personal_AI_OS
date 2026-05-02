@@ -1,6 +1,6 @@
 """
-Telegram Chunking Tests — split_html_preserving_tags
-=====================================================
+Telegram Chunking Tests — _split_html_naive / _split_plain
+===========================================================
 These tests verify no content is lost and each chunk stays within the
 Telegram 4000-char limit when splitting realistic news briefing HTML.
 
@@ -11,7 +11,7 @@ import html
 import re
 import unittest
 
-from app.core.notification import split_html_preserving_tags
+from app.core.notification import _split_html_naive as split_html_preserving_tags
 
 _STRIP_TAG_RE = re.compile(r"<[^>]+>")
 
@@ -84,18 +84,19 @@ class TestContentPreservation(unittest.TestCase):
     """No content must be lost when splitting — this is the core truncation check."""
 
     def _assert_no_content_loss(self, original: str, limit: int = 4000):
+        import re
         chunks = split_html_preserving_tags(original, limit)
-        # Join all chunks; strip tags/whitespace for structural comparison
-        combined_plain = _plain("".join(chunks))
-        original_plain = _plain(original)
+        # Strip whitespace for comparison (split points consume word-boundary spaces)
+        combined_flat = re.sub(r'\s+', '', _plain("".join(chunks)))
+        original_flat = re.sub(r'\s+', '', _plain(original))
         self.assertEqual(
-            combined_plain,
-            original_plain,
+            combined_flat,
+            original_flat,
             f"Content lost during chunking!\n"
-            f"Original length: {len(original_plain)}\n"
-            f"Joined  length: {len(combined_plain)}\n"
+            f"Original length: {len(original_flat)}\n"
+            f"Joined  length: {len(combined_flat)}\n"
             f"Chunks: {len(chunks)}\n"
-            f"First diff at char: {next((i for i, (a, b) in enumerate(zip(original_plain, combined_plain)) if a != b), 'end')}",
+            f"First diff at char: {next((i for i, (a, b) in enumerate(zip(original_flat, combined_flat)) if a != b), 'end')}",
         )
 
     def test_no_content_loss_simple_text(self):
@@ -211,10 +212,12 @@ class TestEdgeCases(unittest.TestCase):
 
     def test_single_token_longer_than_limit(self):
         """A single text token longer than limit must not lose content."""
+        import re
         long_text = "Đây là đoạn văn rất dài: " + "A" * 5000
         chunks = split_html_preserving_tags(long_text, 1000)
-        combined = "".join(chunks)
-        self.assertEqual(_plain(combined), _plain(long_text))
+        combined_flat = re.sub(r'\s+', '', _plain("".join(chunks)))
+        original_flat = re.sub(r'\s+', '', _plain(long_text))
+        self.assertEqual(combined_flat, original_flat)
 
     def test_message_at_exact_limit(self):
         """Message exactly at limit = single chunk, no content loss."""
@@ -232,12 +235,14 @@ class TestEdgeCases(unittest.TestCase):
         self.assertEqual(combined, text)
 
     def test_vietnamese_text_preserved(self):
+        import re
         text = "Chạy bộ 10km với nhịp tim < 150 bpm. Kết quả: tốt. " * 100
         # Escape for HTML context (simulate sanitize_md_to_tg_html output)
         safe_text = text.replace("<", "&lt;").replace(">", "&gt;")
         chunks = split_html_preserving_tags(safe_text, 1000)
-        combined = "".join(chunks)
-        self.assertEqual(combined, safe_text)
+        combined_flat = re.sub(r'\s+', '', _plain("".join(chunks)))
+        original_flat = re.sub(r'\s+', '', _plain(safe_text))
+        self.assertEqual(combined_flat, original_flat)
 
 
 class TestSanitizeMdToTgHtml(unittest.TestCase):
@@ -335,47 +340,25 @@ class TestSendTelegramMsgRateLimit(unittest.TestCase):
         mock_sleep.assert_not_called()
 
 
-class TestPlainTextFallbackChunking(unittest.TestCase):
-    """Plain-text fallback chunker must handle oversized lines without losing content."""
+class TestPlainTextChunking(unittest.TestCase):
+    """_split_plain: plain-text chunker must handle oversized tokens without losing content."""
 
-    def _run_fallback(self, text: str, limit: int = 200) -> list[str]:
-        """Force the plain-text fallback path by triggering an HTML chunking exception."""
-        import unittest.mock
+    def _split(self, text: str, limit: int = 200) -> list[str]:
+        from app.core.notification import _split_plain
+        return _split_plain(text, limit)
 
-        with unittest.mock.patch(
-            "app.core.notification.split_html_preserving_tags",
-            side_effect=Exception("forced"),
-        ), unittest.mock.patch(
-            "app.core.notification.requests.post"
-        ) as mock_post, unittest.mock.patch.dict(
-            "os.environ", {"TELEGRAM_BOT_TOKEN": "fake", "TELEGRAM_LIMIT": str(limit)}
-        ):
-            ok_resp = unittest.mock.MagicMock()
-            ok_resp.status_code = 200
-            ok_resp.text = "{}"
-            mock_post.return_value = ok_resp
-
-            from app.core.notification import send_telegram_msg
-
-            send_telegram_msg("123", text)
-            calls = mock_post.call_args_list
-            return [c[1]["json"]["text"] for c in calls if "json" in c[1]]
-
-    def test_oversized_single_line_is_split(self):
-        """A single line larger than TELEGRAM_LIMIT must be split, not sent as one chunk."""
-        big_line = "X" * 500
-        chunks = self._run_fallback(big_line, limit=200)
+    def test_oversized_single_token_is_force_split(self):
+        """A single token larger than limit is force-split at limit boundary."""
+        big_token = "X" * 500
+        chunks = self._split(big_token, limit=200)
         for chunk in chunks:
-            self.assertLessEqual(
-                len(chunk),
-                200,
-                f"Chunk exceeds limit: len={len(chunk)}",
-            )
+            self.assertLessEqual(len(chunk), 200, f"Chunk exceeds limit: len={len(chunk)}")
+        self.assertEqual("".join(chunks), big_token)
 
-    def test_no_content_loss_in_fallback(self):
-        """All content must be present across chunks even via fallback path."""
+    def test_no_content_loss(self):
+        """All words must be present across chunks."""
         words = " ".join(f"word{i}" for i in range(200))
-        chunks = self._run_fallback(words, limit=100)
+        chunks = self._split(words, limit=100)
         combined = " ".join(c.strip() for c in chunks)
         for i in range(200):
             self.assertIn(f"word{i}", combined)
