@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import smtplib
 from email.mime.text import MIMEText
@@ -55,10 +56,13 @@ def sanitize_md_to_tg_html(text: str) -> str:
             result.append(part)  # valid tag — pass through unchanged
     text = "".join(result)
 
-    # Step 3: Balance unclosed <b> tags (most common Gemini formatting error)
-    open_b = text.count("<b>") - text.count("</b>")
-    if open_b > 0:
-        text += "</b>" * open_b
+    # Step 3: Balance unclosed inline tags to prevent Telegram 400 errors.
+    # Telegram supports: <b>, <i>, <u>, <s>, <code> (inline), <pre> (block).
+    # Gemini commonly leaves these unclosed; Telegram rejects the message entirely.
+    for tag in ("b", "i", "u", "s", "code", "pre"):
+        unmatched = text.count(f"<{tag}>") - text.count(f"</{tag}>")
+        if unmatched > 0:
+            text += f"</{tag}>" * unmatched
 
     return text
 
@@ -257,22 +261,40 @@ def send_telegram_msg(chat_id, text):
             logger.error(f"[TELEGRAM] Connection error while sending document: {e}")
         return
 
+    def _send_one(payload: dict, label: str) -> None:
+        """Send a single payload with 429-retry and HTML→plain fallback."""
+        try:
+            resp = post_json(send_url, payload)
+            if resp.status_code == 429:
+                try:
+                    retry_after = int(
+                        resp.json().get("parameters", {}).get("retry_after", 5)
+                    )
+                except Exception:
+                    retry_after = 5
+                logger.warning(
+                    f"[TELEGRAM] Rate-limited on {label}; retrying after {retry_after}s"
+                )
+                time.sleep(retry_after)
+                resp = post_json(send_url, payload)
+            if resp.status_code == 400 and "parse entities" in resp.text:
+                logger.warning(
+                    f"[TELEGRAM] HTML parse failed on {label}; falling back to plain text. Error: {resp.text}"
+                )
+                plain_payload = {**payload, "text": _strip_html(payload["text"])}
+                plain_payload.pop("parse_mode", None)
+                resp = post_json(send_url, plain_payload)
+            if resp.status_code != 200:
+                logger.error(f"[TELEGRAM] Failed to send {label}: {resp.text}")
+        except Exception as e:
+            logger.error(f"[TELEGRAM] Connection error on {label}: {e}")
+
     # Short message: send as HTML with existing fallback
     if len(safe_text) <= TELEGRAM_LIMIT:
-        payload = {"chat_id": chat_id, "text": safe_text, "parse_mode": "HTML"}
-        try:
-            response = post_json(send_url, payload)
-            if response.status_code == 400 and "parse entities" in response.text:
-                logger.warning(
-                    f"[TELEGRAM] HTML parse failed. Fallback to raw text. Error: {response.text}"
-                )
-                payload["text"] = _strip_html(safe_text)
-                payload.pop("parse_mode", None)
-                response = post_json(send_url, payload)
-            if response.status_code != 200:
-                logger.error(f"[TELEGRAM] Failed to send message: {response.text}")
-        except Exception as e:
-            logger.error(f"[TELEGRAM] Connection error: {e}")
+        _send_one(
+            {"chat_id": chat_id, "text": safe_text, "parse_mode": "HTML"},
+            "message",
+        )
         return
 
     # Medium-length message: attempt HTML-balanced chunking so formatting is preserved
@@ -287,13 +309,32 @@ def send_telegram_msg(chat_id, text):
         paragraphs = plain.split("\n\n")
         chunks = []
         current = ""
+        def _hard_split(s: str, limit: int) -> list[str]:
+            """Split string into chunks of at most `limit` chars at word boundaries."""
+            result = []
+            while len(s) > limit:
+                cut = s.rfind(" ", 0, limit)
+                if cut <= 0:
+                    cut = limit
+                result.append(s[:cut])
+                s = s[cut:].lstrip()
+            if s:
+                result.append(s)
+            return result
+
         for p in paragraphs:
             if not p:
                 p = "\n"
             if len(p) > TELEGRAM_LIMIT:
                 lines = p.split("\n")
                 for line in lines:
-                    if len(current) + len(line) + 1 > TELEGRAM_LIMIT:
+                    if len(line) > TELEGRAM_LIMIT:
+                        # Single oversized line: flush current chunk, hard-split line
+                        if current:
+                            chunks.append(current)
+                            current = ""
+                        chunks.extend(_hard_split(line, TELEGRAM_LIMIT))
+                    elif len(current) + len(line) + 1 > TELEGRAM_LIMIT:
                         if current:
                             chunks.append(current)
                         current = line
@@ -324,22 +365,10 @@ def send_telegram_msg(chat_id, text):
 
     # Send chunks (prefer HTML where possible)
     for i, chunk in enumerate(chunks):
-        payload = {"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"}
-        try:
-            resp = post_json(send_url, payload)
-            # If parse error occurs on a chunk, fallback to plain text for that chunk
-            if resp.status_code == 400 and "parse entities" in resp.text:
-                logger.warning(
-                    f"[TELEGRAM] Chunk HTML parse failed; sending plain text chunk. Error: {resp.text}"
-                )
-                plain_chunk = _strip_html(chunk)
-                resp = post_json(send_url, {"chat_id": chat_id, "text": plain_chunk})
-            if resp.status_code != 200:
-                logger.error(
-                    f"[TELEGRAM] Failed to send chunk {i+1}/{len(chunks)}: {resp.text}"
-                )
-        except Exception as e:
-            logger.error(f"[TELEGRAM] Connection error while sending chunk {i+1}: {e}")
+        _send_one(
+            {"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"},
+            f"chunk {i + 1}/{len(chunks)}",
+        )
 
 
 def send_typing_action(chat_id):

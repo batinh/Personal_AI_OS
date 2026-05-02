@@ -129,7 +129,6 @@ def _session_header(session: str, date_str: str) -> str:
 _DEBUG_NEWS = os.getenv("DEBUG_NEWS", "").lower() in ("1", "true", "yes")
 
 _DEFAULT_MODEL = "models/gemini-2.5-flash"
-_MAX_TELEGRAM_CHARS = 3500
 
 _SEARCH_TOOL = [types.Tool(google_search=types.GoogleSearch())]
 
@@ -524,9 +523,6 @@ def _generate_legacy_briefing(
     sources = _build_sources_block(grounding_urls)
     if sources:
         reply = reply.rstrip() + "\n\n" + sources
-
-    if len(reply) > _MAX_TELEGRAM_CHARS:
-        reply = reply[:_MAX_TELEGRAM_CHARS] + "..."
 
     send_telegram_msg(chat_id, reply)
     logger.info(f"[NEWS] Sent legacy {session} briefing to chat_id={chat_id}")

@@ -240,5 +240,146 @@ class TestEdgeCases(unittest.TestCase):
         self.assertEqual(combined, safe_text)
 
 
+class TestSanitizeMdToTgHtml(unittest.TestCase):
+    """sanitize_md_to_tg_html must balance all inline tags, not just <b>."""
+
+    def setUp(self):
+        from app.core.notification import sanitize_md_to_tg_html
+
+        self.sanitize = sanitize_md_to_tg_html
+
+    def test_balances_b_tag(self):
+        result = self.sanitize("<b>unclosed bold")
+        self.assertIn("</b>", result)
+
+    def test_balances_i_tag(self):
+        result = self.sanitize("<i>unclosed italic")
+        self.assertIn("</i>", result)
+
+    def test_balances_u_tag(self):
+        result = self.sanitize("<u>unclosed underline")
+        self.assertIn("</u>", result)
+
+    def test_balances_s_tag(self):
+        result = self.sanitize("<s>unclosed strike")
+        self.assertIn("</s>", result)
+
+    def test_balances_code_tag(self):
+        result = self.sanitize("<code>unclosed code")
+        self.assertIn("</code>", result)
+
+    def test_balances_pre_tag(self):
+        result = self.sanitize("<pre>unclosed pre block")
+        self.assertIn("</pre>", result)
+
+    def test_already_balanced_not_doubled(self):
+        result = self.sanitize("<b>bold</b> and <i>italic</i>")
+        self.assertEqual(result.count("</b>"), 1)
+        self.assertEqual(result.count("</i>"), 1)
+
+    def test_empty_string_passthrough(self):
+        result = self.sanitize("")
+        self.assertEqual(result, "")
+
+    def test_none_passthrough(self):
+        result = self.sanitize(None)
+        self.assertIsNone(result)
+
+
+class TestSendTelegramMsgRateLimit(unittest.TestCase):
+    """send_telegram_msg must retry once on 429 and honour retry_after."""
+
+    def setUp(self):
+        import importlib
+
+        self.notification = importlib.import_module("app.core.notification")
+
+    @unittest.mock.patch("app.core.notification.time.sleep")
+    @unittest.mock.patch("app.core.notification.requests.post")
+    def test_retries_on_429(self, mock_post, mock_sleep):
+        import os
+        import unittest.mock
+
+        rate_limit_resp = unittest.mock.MagicMock()
+        rate_limit_resp.status_code = 429
+        rate_limit_resp.json.return_value = {"parameters": {"retry_after": 3}}
+        rate_limit_resp.text = '{"ok":false,"error_code":429}'
+
+        ok_resp = unittest.mock.MagicMock()
+        ok_resp.status_code = 200
+        ok_resp.text = '{"ok":true}'
+        ok_resp.json.return_value = {"ok": True}
+
+        mock_post.side_effect = [rate_limit_resp, ok_resp]
+
+        with unittest.mock.patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake"}):
+            self.notification.send_telegram_msg("123", "hello")
+
+        mock_sleep.assert_called_once_with(3)
+        self.assertEqual(mock_post.call_count, 2)
+
+    @unittest.mock.patch("app.core.notification.time.sleep")
+    @unittest.mock.patch("app.core.notification.requests.post")
+    def test_no_sleep_on_200(self, mock_post, mock_sleep):
+        import unittest.mock
+
+        ok_resp = unittest.mock.MagicMock()
+        ok_resp.status_code = 200
+        ok_resp.text = '{"ok":true}'
+
+        mock_post.return_value = ok_resp
+
+        with unittest.mock.patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake"}):
+            self.notification.send_telegram_msg("123", "hello")
+
+        mock_sleep.assert_not_called()
+
+
+class TestPlainTextFallbackChunking(unittest.TestCase):
+    """Plain-text fallback chunker must handle oversized lines without losing content."""
+
+    def _run_fallback(self, text: str, limit: int = 200) -> list[str]:
+        """Force the plain-text fallback path by triggering an HTML chunking exception."""
+        import unittest.mock
+
+        with unittest.mock.patch(
+            "app.core.notification.split_html_preserving_tags",
+            side_effect=Exception("forced"),
+        ), unittest.mock.patch(
+            "app.core.notification.requests.post"
+        ) as mock_post, unittest.mock.patch.dict(
+            "os.environ", {"TELEGRAM_BOT_TOKEN": "fake", "TELEGRAM_LIMIT": str(limit)}
+        ):
+            ok_resp = unittest.mock.MagicMock()
+            ok_resp.status_code = 200
+            ok_resp.text = "{}"
+            mock_post.return_value = ok_resp
+
+            from app.core.notification import send_telegram_msg
+
+            send_telegram_msg("123", text)
+            calls = mock_post.call_args_list
+            return [c[1]["json"]["text"] for c in calls if "json" in c[1]]
+
+    def test_oversized_single_line_is_split(self):
+        """A single line larger than TELEGRAM_LIMIT must be split, not sent as one chunk."""
+        big_line = "X" * 500
+        chunks = self._run_fallback(big_line, limit=200)
+        for chunk in chunks:
+            self.assertLessEqual(
+                len(chunk),
+                200,
+                f"Chunk exceeds limit: len={len(chunk)}",
+            )
+
+    def test_no_content_loss_in_fallback(self):
+        """All content must be present across chunks even via fallback path."""
+        words = " ".join(f"word{i}" for i in range(200))
+        chunks = self._run_fallback(words, limit=100)
+        combined = " ".join(c.strip() for c in chunks)
+        for i in range(200):
+            self.assertIn(f"word{i}", combined)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
