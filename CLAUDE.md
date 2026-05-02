@@ -72,19 +72,26 @@ Every code change must pass this gate before deploying to T440:
           Catches ImportError and missing symbols before any logic runs.
           Run this first — fastest feedback (< 2s).
 
-2. E2E    python -m pytest tests/test_e2e_local.py -v
+2. SANITY python -m pytest tests/test_sanity_flows.py -v
+          58 flow-level regression tests: morning briefing guards, daily suggestion
+          all branches, scheduler wrappers, Telegram command routing, news briefing,
+          Strava webhooks, health endpoint, notification pipeline, agentic loop.
+          Run after any agent/flow change to catch real user-facing regressions.
+          No Docker required — mocks all I/O (Gemini, DB, Telegram). ~5s.
+
+3. E2E    python -m pytest tests/test_e2e_local.py -v
           28 HTTP-level tests: health, Strava webhook flow, Telegram routing,
           scheduler startup, timezone utils, config concurrency.
           Run after any refactor to prove end-to-end paths still work.
           No Docker required — uses FastAPI TestClient.
 
-3. UNIT   python -m pytest tests/ -q
+4. UNIT   python -m pytest tests/ -q
           Full suite: unit + integration tests. 0 failures required.
 
-4. DEPLOY bash scripts/pre-deploy-check.sh
+5. DEPLOY bash scripts/pre-deploy-check.sh
           Runs: pytest suite + config loads + docker compose syntax.
 
-5. T440   bash scripts/deploy-t440.sh
+6. T440   bash scripts/deploy-t440.sh
           git pull + docker rebuild + health check (90s timeout) +
           E2E curl smoke tests (/health, /console, /admin, /webhook,
           scheduler running, no errors in last 50 log lines).

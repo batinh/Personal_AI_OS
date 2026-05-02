@@ -30,6 +30,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
 |----|------|-------|----------|----------|------------|--------|--------|--------|
+| [ISS-015](#iss-015--morning-briefing-guard-2-crashes-type-mismatch) | bug | Morning briefing Guard 2 crashes — type mismatch `str` vs `list` | Critical | U+AI | 2026-05-02 | 2026-05-02 | TBD | `app/agents/coach/agent.py` |
 | [ISS-001](#iss-001--alert-prompt-leaks-raw-template-to-telegram) | bug | Alert prompt leaks raw template to Telegram | Critical | U+AI | 2026-04-11 | 2026-04-11 | `47c63c7` | `alert_engine.py` |
 | [ISS-002](#iss-002--alert-engine-sends-one-message-per-article-spam) | bug | Alert engine sends one message per article (spam) | High | U+AI | 2026-04-11 | 2026-04-11 | `47c63c7` | `alert_engine.py` |
 | [ISS-003](#iss-003--digest-messages-have-no-embedded-links) | enhancement | Digest messages have no embedded links | High | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `prompts.py`, `agent.py` |
@@ -352,3 +353,40 @@ Noted in Coach Agent PRD v1.0 PO review: "most users won't configure them". Defe
 - `docs/features/onboarding-physiology.md` explains how to derive LTHR (race result or Garmin estimate), rFTP (Stryd test), and threshold pace (5 km race result formula)
 - `config.example.json` inline comments reference the guide
 - Console admin UI shows field help text when value = 0
+
+---
+
+### ISS-015 — Morning briefing Guard 2 crashes — type mismatch `str` vs `list`
+
+**Type:** bug · **Priority:** Critical · **Reporter:** U+AI · **Date:** 2026-05-02
+**Module:** `app/agents/coach/agent.py` (Guard 2 in `generate_morning_briefing`)
+
+**Symptom:**
+No morning briefing delivered on 2026-05-02. `/brief` and `/standup` commands silently failed. Scheduler caught the exception and logged it as ERROR without re-raising.
+
+**Root cause:**
+`generate_morning_briefing` Guard 2 (no active weekly plan) calls:
+```python
+recent = get_runs_in_last_days(user_id_str, days=7)  # returns formatted str
+compute_daily_suggestion(..., recent_runs=recent, ...)  # expects list[dict]
+```
+`compute_daily_suggestion` iterates `recent_runs` and calls `.get()` on each element. When passed a string, it iterates characters → `AttributeError: 'str' object has no attribute 'get'`.
+
+**Fix (agent.py Guard 2):**
+```python
+# Before
+state = get_athlete_state(user_id_str) or {}
+recent = get_runs_in_last_days(user_id_str, days=7)
+suggestion = compute_daily_suggestion(recent_runs=recent, athlete_state=state, ...)
+
+# After
+state = get_athlete_state(user_id_str) or "healthy"
+suggestion = compute_daily_suggestion(
+    recent_runs=[],
+    athlete_state=state,
+    day_of_week=now.weekday(),
+    ...
+)
+```
+
+**Regression test:** `tests/test_sanity_flows.py::TestMorningBriefingGuard2` (9 tests).

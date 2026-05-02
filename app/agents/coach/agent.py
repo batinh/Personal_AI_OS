@@ -606,13 +606,13 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         acwr_data = _calc_acwr(
             loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0)
         )
-        state = get_athlete_state(user_id_str) or {}
-        recent = get_runs_in_last_days(user_id_str, days=7)
+        state = get_athlete_state(user_id_str) or "healthy"
         suggestion = compute_daily_suggestion(
             readiness_score=70,
             acwr=float(acwr_data.get("acwr", 0)),
-            recent_runs=recent,
+            recent_runs=[],
             athlete_state=state,
+            day_of_week=now.weekday(),
         )
         reply = format_daily_suggestion_for_briefing(suggestion)
         if chat_id:
