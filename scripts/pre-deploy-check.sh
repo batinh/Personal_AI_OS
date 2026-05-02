@@ -50,7 +50,7 @@ echo "  ================================================"
 # --- 1. Unit tests ---
 log "Running test suite..."
 TOTAL=$((TOTAL + 1))
-if python -m pytest tests/ -q --tb=short 2>&1 | tail -3; then
+if python -m pytest tests/ -q --tb=short --cov=app --cov-report=xml:reports/coverage.xml --junitxml=reports/junit.xml 2>&1 | tail -3; then
     PASS=$((PASS + 1))
     echo -e "  ${GREEN}PASS${NC} Test suite"
 else

@@ -263,6 +263,14 @@
         <span style="margin-left:auto;background:#4299e1;color:#fff;border-radius:10px;font-size:0.65rem;padding:1px 7px;">{{ memories|length }}</span>
         {% endif %}
       </a>
+      <a class="nav-item-link {{ 'active' if active_tab == 'testing' else '' }}"
+         onclick="switchTab('testing')" href="/console?tab=testing">
+        <i class="nav-icon fas fa-flask"></i>
+        <span>Testing</span>
+        {% if coverage_data and coverage_data.test_counts and coverage_data.test_counts.failed > 0 %}
+        <span style="margin-left:auto;background:#e53e3e;color:#fff;border-radius:10px;font-size:0.65rem;padding:1px 7px;">{{ coverage_data.test_counts.failed }} fail</span>
+        {% endif %}
+      </a>
 
       <div class="nav-section-label" style="margin-top:8px;">Configure</div>
       <a class="nav-item-link {{ 'active' if active_tab == 'settings' else '' }}"
@@ -301,6 +309,7 @@
         {% if active_tab == 'overview' %}📊 Overview
         {% elif active_tab == 'training' %}🏃‍♂️ Training Log
         {% elif active_tab == 'memory' %}🧠 AI Memory
+        {% elif active_tab == 'testing' %}🧪 Testing
         {% elif active_tab == 'settings' %}⚙️ Settings
         {% elif active_tab == 'news' %}📰 News Agent
         {% elif active_tab == 'logging' %}📋 Log Levels
@@ -480,6 +489,134 @@
             <i class="fas fa-brain fa-2x mb-3 d-block opacity-25"></i>
             No memories yet. Chat with Coach Dyno to build up AI memory.
           </div>
+        {% endif %}
+      </div>
+
+      <!-- ====== TAB: TESTING ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'testing' else '' }}" id="tab-testing">
+
+        {% if not coverage_data %}
+          <div class="stat-card text-center py-5 text-muted">
+            <i class="fas fa-flask fa-2x mb-3 d-block opacity-25"></i>
+            <div>No coverage data yet.</div>
+            <div class="small mt-1">Run: <code>make test</code> or <code>python -m pytest tests/ --cov=app --cov-report=xml --junitxml=reports/junit.xml</code></div>
+          </div>
+        {% else %}
+          {% set tc = coverage_data.test_counts %}
+          {% set summary = coverage_data.summary %}
+          {% set cov_pct = summary.line_rate_pct %}
+          {% set junit_ts = coverage_data.junit_timestamp %}
+
+          <!-- Summary stat cards -->
+          <div class="row g-3 mb-3">
+            <div class="col-6 col-md-3">
+              <div class="stat-card text-center">
+                <div class="stat-label mb-1">Coverage</div>
+                <div class="stat-value" style="font-size:1.8rem;color:{% if cov_pct >= 80 %}#38a169{% elif cov_pct >= 60 %}#ed8936{% else %}#e53e3e{% endif %};">{{ cov_pct }}%</div>
+                <div class="small text-muted">{{ summary.lines_covered }}/{{ summary.lines_valid }} lines</div>
+              </div>
+            </div>
+            {% if tc %}
+            <div class="col-6 col-md-3">
+              <div class="stat-card text-center">
+                <div class="stat-label mb-1">Total Tests</div>
+                <div class="stat-value" style="font-size:1.8rem;color:#2d3748;">{{ tc.total }}</div>
+                <div class="small text-muted">{{ "%.1f"|format(tc.duration_seconds) }}s</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="stat-card text-center">
+                <div class="stat-label mb-1">Passed</div>
+                <div class="stat-value" style="font-size:1.8rem;color:#38a169;">{{ tc.passed }}</div>
+                <div class="small text-muted">{{ "%.0f"|format(tc.passed / tc.total * 100 if tc.total else 0) }}% pass rate</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="stat-card text-center">
+                <div class="stat-label mb-1">Failed</div>
+                <div class="stat-value" style="font-size:1.8rem;color:{% if tc.failed > 0 %}#e53e3e{% else %}#38a169{% endif %};">{{ tc.failed }}</div>
+                <div class="small text-muted">{{ tc.skipped }} skipped · {{ tc.errors }} errors</div>
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Last run timestamp -->
+          {% if junit_ts %}
+          <div class="text-muted small mb-3">
+            <i class="fas fa-clock me-1"></i>Last run: <strong>{{ junit_ts }}</strong>
+          </div>
+          {% endif %}
+
+          <!-- Test level breakdown -->
+          {% if coverage_data.by_level %}
+          <div class="stat-card mb-3">
+            <div class="section-title mb-2">Test Level Breakdown</div>
+            <table class="os-table w-100">
+              <thead>
+                <tr>
+                  <th>Level</th>
+                  <th class="text-end">Total</th>
+                  <th class="text-end">Passed</th>
+                  <th class="text-end">Failed</th>
+                  <th class="text-end">Skipped</th>
+                  <th class="text-end">Duration</th>
+                  <th class="text-end">Pass Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% set level_icons = {'smoke': '💨', 'sanity': '🩺', 'e2e': '🔗', 'unit': '🔬'} %}
+                {% for lv in coverage_data.by_level %}
+                {% set pass_rate = (lv.passed / lv.total * 100) if lv.total else 0 %}
+                <tr>
+                  <td><span class="me-1">{{ level_icons.get(lv.level, '🧪') }}</span><strong>{{ lv.level | upper }}</strong></td>
+                  <td class="text-end">{{ lv.total }}</td>
+                  <td class="text-end" style="color:#38a169;">{{ lv.passed }}</td>
+                  <td class="text-end" style="color:{% if lv.failed > 0 %}#e53e3e{% else %}#718096{% endif %};">{{ lv.failed }}</td>
+                  <td class="text-end text-muted">{{ lv.skipped }}</td>
+                  <td class="text-end text-muted">{{ "%.2f"|format(lv.duration_seconds) }}s</td>
+                  <td class="text-end">
+                    <span style="color:{% if pass_rate >= 100 %}#38a169{% elif pass_rate >= 90 %}#ed8936{% else %}#e53e3e{% endif %};">{{ "%.0f"|format(pass_rate) }}%</span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+
+          <!-- Coverage by package -->
+          <div class="stat-card">
+            <div class="section-title mb-2">Coverage by Package</div>
+            <table class="os-table w-100">
+              <thead>
+                <tr>
+                  <th>Package / Module</th>
+                  <th class="text-end">Covered</th>
+                  <th class="text-end">Lines</th>
+                  <th class="text-end">Coverage</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for pkg in coverage_data.by_package | sort(attribute='line_rate_pct') %}
+                <tr>
+                  <td style="font-family:monospace;font-size:0.82rem;">{{ pkg.name }}</td>
+                  <td class="text-end">{{ pkg.lines_covered }}</td>
+                  <td class="text-end text-muted">{{ pkg.lines_valid }}</td>
+                  <td class="text-end">
+                    <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">
+                      <div style="width:60px;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;">
+                        <div style="width:{{ pkg.line_rate_pct }}%;height:100%;background:{% if pkg.line_rate_pct >= 80 %}#38a169{% elif pkg.line_rate_pct >= 60 %}#ed8936{% else %}#e53e3e{% endif %};"></div>
+                      </div>
+                      <span style="color:{% if pkg.line_rate_pct >= 80 %}#38a169{% elif pkg.line_rate_pct >= 60 %}#ed8936{% else %}#e53e3e{% endif %};">{{ pkg.line_rate_pct }}%</span>
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
         {% endif %}
       </div>
 
@@ -827,6 +964,7 @@
       overview: '📊 Overview',
       training: '🏃‍♂️ Training Log',
       memory:   '🧠 AI Memory',
+      testing:  '🧪 Testing',
       settings: '⚙️ Settings',
       news:     '📰 News Agent',
       logging:  '📋 Log Levels',

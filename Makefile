@@ -1,7 +1,7 @@
 .PHONY: test test-smoke test-fast test-cov test-integration check lint format security run deploy rollback
 
 test:
-	python -m pytest tests/ --cov=app --cov-report=xml:reports/coverage.xml --cov-fail-under=60
+	python -m pytest tests/ --cov=app --cov-report=xml:reports/coverage.xml --junitxml=reports/junit.xml --cov-fail-under=60
 
 test-smoke:
 	python -m pytest tests/test_smoke.py -v
@@ -10,7 +10,7 @@ test-fast:
 	python -m pytest tests/ --tb=no
 
 test-cov:
-	python -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=xml:reports/coverage.xml
+	python -m pytest tests/ --cov=app --cov-report=term-missing --cov-report=xml:reports/coverage.xml --junitxml=reports/junit.xml
 
 test-integration:
 	INTEGRATION_TEST=1 python -m pytest tests/ -m integration -v

@@ -29,6 +29,7 @@ from app.core.database import (
 )
 from app.agents.coach.utils import calculate_acwr
 from app.services.scheduler import reload_scheduler
+from app.services.coverage_metrics import load_coverage_report, report_to_dict
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -66,6 +67,14 @@ async def console_page(
     # --- Memory tab ---
     memories = get_all_active_memories(chat_id)
 
+    # --- Testing tab: coverage + test metrics ---
+    try:
+        coverage_data = report_to_dict(load_coverage_report())
+    except FileNotFoundError:
+        coverage_data = None
+    except Exception:
+        coverage_data = None
+
     # --- System tab ---
     logs_text = "\n".join(list(log_capture_string))
 
@@ -94,6 +103,8 @@ async def console_page(
             # Logging settings
             "log_levels": log_levels,
             "log_domains": KNOWN_DOMAINS,
+            # Testing tab
+            "coverage_data": coverage_data,
         },
     )
 

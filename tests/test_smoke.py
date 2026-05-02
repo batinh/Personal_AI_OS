@@ -71,6 +71,7 @@ class TestServiceImports(unittest.TestCase):
         from app.services.coverage_metrics import (  # noqa: F401
             load_coverage_report,
             report_to_dict,
+            TestLevelSummary,
         )
 
 
