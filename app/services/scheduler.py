@@ -284,6 +284,232 @@ def task_cleanup_stale_setup():
 
 
 # ==========================================
+# 🔄 AUTO-RESCHEDULE (INCOMPLETE HARD SESSIONS)
+# ==========================================
+def task_auto_reschedule():
+    """23:00 daily — defer incomplete hard sessions if readiness low.
+
+    If today's training_plans entry is Hard AND not completed AND readiness < 30,
+    defer to next available day. Runs in BackgroundScheduler thread pool.
+    """
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping auto-reschedule.")
+            return
+
+        from datetime import date
+        from app.core.database import get_db
+
+        logger.info("[SCHEDULER] Running auto-reschedule check...")
+
+        with get_db() as conn:
+            c = conn.cursor()
+
+            # Get today's training plan
+            today_str = date.today().isoformat()
+            c.execute(
+                """SELECT id, workout_type, status FROM training_plans
+                   WHERE user_id = ? AND date = ?""",
+                (user_id, today_str),
+            )
+            plan_row = c.fetchone()
+
+            if not plan_row:
+                logger.info("[SCHEDULER] No training plan for today. Skipping reschedule.")
+                return
+
+            workout_type = plan_row.get("workout_type", "Easy")
+            status = plan_row.get("status", "pending")
+
+            # Only reschedule Hard workouts that are not completed
+            if not (workout_type in ("Interval", "Tempo", "Race Pace") and status != "Completed"):
+                logger.info(f"[SCHEDULER] Today's {workout_type} ({status}) - no reschedule needed.")
+                return
+
+            # Check readiness from garmin_daily_metrics
+            c.execute(
+                """SELECT training_readiness_score FROM garmin_daily_metrics
+                   WHERE user_id = ? AND date = ? ORDER BY date DESC LIMIT 1""",
+                (user_id, today_str),
+            )
+            readiness_row = c.fetchone()
+            readiness_score = readiness_row.get("training_readiness_score") if readiness_row else None
+
+            if readiness_score is None or readiness_score >= 30:
+                logger.info(
+                    f"[SCHEDULER] Readiness {readiness_score} >= 30. No reschedule needed."
+                )
+                return
+
+            logger.info(f"[SCHEDULER] Readiness {readiness_score} < 30. Deferring {workout_type}...")
+
+            # Find next available day (no plan AND not a rest day if possible)
+            from datetime import timedelta
+
+            for offset in range(1, 8):
+                future_date = (date.today() + timedelta(days=offset)).isoformat()
+                c.execute(
+                    """SELECT id FROM training_plans WHERE user_id = ? AND date = ?""",
+                    (user_id, future_date),
+                )
+                future_plan = c.fetchone()
+
+                if not future_plan:
+                    # Move today's plan to future_date, mark today as skipped
+                    c.execute(
+                        """UPDATE training_plans SET date = ?, skipped_reason = ?
+                           WHERE user_id = ? AND date = ?""",
+                        (future_date, "Deferred due to low readiness", user_id, today_str),
+                    )
+                    conn.commit()
+
+                    chat_id = get_primary_user_id()
+                    send_telegram_msg(
+                        str(chat_id),
+                        f"📅 Giáo án điều chỉnh: Thể trạng hôm nay thấp (readiness {readiness_score}%). "
+                        f"Bài {workout_type} đã dời sang {future_date}. Hôm nay tập Easy hoặc nghỉ.",
+                    )
+                    logger.info(f"[SCHEDULER] Deferred {workout_type} from {today_str} to {future_date}.")
+                    return
+
+            # No available day found — reduce weekly target
+            logger.warning(
+                "[SCHEDULER] No available day to reschedule. Reducing weekly target by 5%."
+            )
+            c.execute(
+                """SELECT weekly_target_km FROM weekly_targets WHERE user_id = ? ORDER BY week DESC LIMIT 1""",
+                (user_id,),
+            )
+            target_row = c.fetchone()
+            if target_row:
+                old_target = target_row.get("weekly_target_km", 0)
+                new_target = old_target * 0.95
+                c.execute(
+                    """INSERT INTO weekly_targets (user_id, week, weekly_target_km)
+                       VALUES (?, ?, ?)""",
+                    (user_id, date.today().isocalendar()[1], new_target),
+                )
+                conn.commit()
+
+            chat_id = get_primary_user_id()
+            send_telegram_msg(
+                str(chat_id),
+                f"⚠️ Không tìm được ngày phù hợp để dời bài tập. Giảm mục tiêu tuần này -5%.",
+            )
+
+    except Exception as e:
+        logger.error("[SCHEDULER] task_auto_reschedule failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 🥗 NUTRITION ALERT (LONG RUN PREP)
+# ==========================================
+def task_nutrition_alert():
+    """20:00 daily — if tomorrow has LongRun > 15km, send nutrition prep alert.
+
+    Runs in BackgroundScheduler thread pool.
+    """
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping nutrition alert.")
+            return
+
+        from datetime import date, timedelta
+        from app.core.database import get_db
+
+        logger.info("[SCHEDULER] Running nutrition alert check...")
+
+        tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
+
+        with get_db() as conn:
+            c = conn.cursor()
+
+            # Check tomorrow's training plan
+            c.execute(
+                """SELECT target_distance_km FROM training_plans
+                   WHERE user_id = ? AND date = ?""",
+                (user_id, tomorrow_str),
+            )
+            plan_row = c.fetchone()
+
+            if not plan_row:
+                logger.info("[SCHEDULER] No training plan for tomorrow. Skipping nutrition alert.")
+                return
+
+            distance_km = plan_row.get("target_distance_km")
+
+            # Only alert for LongRun > 15km
+            if distance_km is None or distance_km <= 15:
+                logger.info(f"[SCHEDULER] Tomorrow's distance {distance_km}km <= 15km. No alert.")
+                return
+
+            logger.info(f"[SCHEDULER] Tomorrow has LongRun {distance_km}km. Sending nutrition alert...")
+
+            chat_id = get_primary_user_id()
+            send_telegram_msg(
+                str(chat_id),
+                f"⚡ Ngày mai có Long Run {distance_km:.1f}km. Hãy chuẩn bị: "
+                f"2 gói gel hoặc điểm bổ sung năng lượng, 500ml nước điện giải.",
+            )
+
+    except Exception as e:
+        logger.error("[SCHEDULER] task_nutrition_alert failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 👟 GEAR TRACKER (SHOE MILEAGE CHECK)
+# ==========================================
+def task_gear_check():
+    """Weekly Monday check: alert if shoe mileage exceeds threshold. Runs in BackgroundScheduler thread pool."""
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping gear check.")
+            return
+
+        config = load_config()
+        gear_cfg = config.get("garmin", {})
+        warn_threshold_km = float(gear_cfg.get("gear_warn_km", 550))
+        critical_threshold_km = float(gear_cfg.get("gear_critical_km", 650))
+
+        logger.info("[SCHEDULER] Running gear mileage check...")
+        garmin = get_garmin_client()
+        gear_list = garmin.fetch_gear_stats(user_id)
+
+        if not gear_list:
+            logger.info("[SCHEDULER] No gear data available from Garmin.")
+            return
+
+        chat_id = get_primary_user_id()
+        for gear in gear_list:
+            gear_name = gear.get("name", "Unknown")
+            total_km = gear.get("total_km", 0)
+
+            if total_km >= critical_threshold_km:
+                msg = (
+                    f"🚨 <b>GIÀY CẦN THAY NGAY</b>\n"
+                    f"{gear_name}: {total_km:.1f}km (ngưỡng tới hạn: {critical_threshold_km}km)\n"
+                    f"Khuyến nghị: Thay giày ngay, giày cũ có thể gây chấn thương."
+                )
+                send_telegram_msg(str(chat_id), msg)
+                logger.info(f"[SCHEDULER] Critical gear alert: {gear_name} at {total_km}km")
+
+            elif total_km >= warn_threshold_km:
+                msg = (
+                    f"⚠️ <b>GIÀY SẮP HẾT DÙNG</b>\n"
+                    f"{gear_name}: {total_km:.1f}km (ngưỡng cảnh báo: {warn_threshold_km}km)\n"
+                    f"Khuyến nghị: Chuẩn bị thay giày trong vài tuần tới."
+                )
+                send_telegram_msg(str(chat_id), msg)
+                logger.info(f"[SCHEDULER] Gear warning: {gear_name} at {total_km}km")
+
+    except Exception as e:
+        logger.error("[SCHEDULER] task_gear_check failed: %s", e, exc_info=True)
+
+
+# ==========================================
 # ⚙️ SCHEDULER MANAGEMENT
 # ==========================================
 def setup_jobs():
@@ -364,6 +590,24 @@ def setup_jobs():
         task_cleanup_stale_setup,
         CronTrigger(hour=3, minute=0, timezone=TZ_VN),
         id="cleanup_stale_setup",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_gear_check,
+        CronTrigger(day_of_week="mon", hour=7, minute=0, timezone=TZ_VN),
+        id="gear_check",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_auto_reschedule,
+        CronTrigger(hour=23, minute=0, timezone=TZ_VN),
+        id="auto_reschedule",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_nutrition_alert,
+        CronTrigger(hour=20, minute=0, timezone=TZ_VN),
+        id="nutrition_alert",
         replace_existing=True,
     )
 

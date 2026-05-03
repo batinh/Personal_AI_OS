@@ -239,3 +239,75 @@ def send_html_email(subject, html_content, config) -> None:
         logger.info(f"[EMAIL] Sent report to {env_receiver}")
     except Exception as e:
         logger.error(f"[EMAIL] Failed to send email: {e}")
+
+
+def send_inline_keyboard_menu(
+    chat_id: str,
+    text: str,
+    buttons: list[list[dict]],
+) -> None:
+    """Send Telegram message with inline keyboard for button responses.
+
+    Args:
+        chat_id: Telegram chat ID
+        text: Message text to display
+        buttons: 2D list of button dicts, each with "text" and "callback_data"
+                 Example: [[{"text": "1", "callback_data": "rpe:act123:1"}, ...]]
+    """
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        logger.error("[TELEGRAM] No TELEGRAM_BOT_TOKEN in environment.")
+        return
+
+    send_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "reply_markup": {"inline_keyboard": buttons},
+    }
+
+    try:
+        resp = requests.post(send_url, json=payload, timeout=15)
+
+        if resp.status_code == 429:
+            try:
+                retry_after = int(resp.json().get("parameters", {}).get("retry_after", 5))
+            except Exception:
+                retry_after = 5
+            logger.warning(f"[TELEGRAM] Rate-limited on keyboard menu; retry after {retry_after}s")
+            time.sleep(retry_after)
+            resp = requests.post(send_url, json=payload, timeout=15)
+
+        if resp.status_code != 200:
+            logger.error(f"[TELEGRAM] Failed to send inline keyboard menu: {resp.text}")
+
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Connection error sending inline keyboard: {e}")
+
+
+def answer_callback_query(callback_query_id: str, text: str = "") -> None:
+    """Answer a Telegram callback query to clear the loading spinner.
+
+    Args:
+        callback_query_id: The callback_query.id from Telegram
+        text: Optional toast notification text (shown to user)
+    """
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        logger.error("[TELEGRAM] No TELEGRAM_BOT_TOKEN in environment.")
+        return
+
+    url = f"https://api.telegram.org/bot{token}/answerCallbackQuery"
+    payload = {
+        "callback_query_id": callback_query_id,
+    }
+    if text:
+        payload["text"] = text
+        payload["show_alert"] = False  # Show as toast, not popup
+
+    try:
+        resp = requests.post(url, json=payload, timeout=15)
+        if resp.status_code != 200:
+            logger.warning(f"[TELEGRAM] Failed to answer callback query: {resp.text}")
+    except Exception as e:
+        logger.error(f"[TELEGRAM] Connection error answering callback: {e}")

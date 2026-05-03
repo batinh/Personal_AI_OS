@@ -405,6 +405,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     @patch("app.agents.coach.flows.morning_briefing.send_telegram_msg")
     @patch("app.agents.coach.flows.morning_briefing.save_message")
     @patch(
+        "app.agents.coach.flows.morning_briefing._has_active_plan_this_week",
+        return_value=True,  # Use LLM path, not daily suggestion
+    )
+    @patch(
         "app.agents.coach.flows.morning_briefing.load_history_for_gemini",
         return_value=[],
     )
@@ -454,6 +458,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
 
     @patch("app.agents.coach.flows.morning_briefing.send_telegram_msg")
     @patch("app.agents.coach.flows.morning_briefing.save_message")
+    @patch(
+        "app.agents.coach.flows.morning_briefing._has_active_plan_this_week",
+        return_value=True,  # Use LLM path, not daily suggestion
+    )
     @patch(
         "app.agents.coach.flows.morning_briefing.load_history_for_gemini",
         return_value=[],

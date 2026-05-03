@@ -7,13 +7,19 @@ from pydantic import BaseModel, Field
 
 from app.core.user_context import get_primary_user_id
 from app.core.config import load_config
-from app.core.notification import send_telegram_msg, send_html_email
+from app.core.notification import (
+    send_telegram_msg,
+    send_html_email,
+    send_inline_keyboard_menu,
+    answer_callback_query,
+)
 from app.core.state import state
 from app.core.database import (
     save_run_activity,
     save_run_activity_raw,
     delete_run_activity,
     upsert_run_computed_metrics,
+    get_plan_for_date,
 )
 from app.core.logging_conf import get_module_logger
 from app.agents.coach.agent import analyze_run_with_gemini, handle_telegram_chat
@@ -188,6 +194,24 @@ def run_strava_workflow(activity_id: str):
             send_telegram_msg(chat_id, telegram_msg)
             logger.info(f"[*] Sent Telegram notification for Activity {activity_id}")
 
+            # Send RPE (Rate of Perceived Exertion) keyboard after analysis
+            try:
+                rpe_text = "Cảm giác bài chạy vừa rồi thế nào? (1=rất dễ, 10=kiệt sức)"
+                rpe_buttons = [
+                    [
+                        {"text": str(i), "callback_data": f"rpe:{activity_id}:{i}"}
+                        for i in range(1, 6)
+                    ],
+                    [
+                        {"text": str(i), "callback_data": f"rpe:{activity_id}:{i}"}
+                        for i in range(6, 11)
+                    ],
+                ]
+                send_inline_keyboard_menu(str(chat_id), rpe_text, rpe_buttons)
+                logger.info(f"[*] Sent RPE keyboard for Activity {activity_id}")
+            except Exception as e:
+                logger.error(f"[*] Failed to send RPE keyboard for Activity {activity_id}: {e}")
+
 
 @router.post("/webhook")
 async def strava_event(
@@ -211,6 +235,102 @@ def verify_strava(request: Request):
     return {"error": "Invalid token"}
 
 
+# --- TELEGRAM CALLBACK QUERY HANDLER ---
+def handle_telegram_callback(callback_query: dict) -> None:
+    """Handle callback_query from inline button presses.
+
+    Routes callback data to appropriate handler:
+    - rpe:<activity_id>:<score> → save RPE score to run_activities
+    - plan:accept → accept weekly plan
+    - plan:reject → reject plan and prompt for reason
+    """
+    callback_data = callback_query.get("data", "")
+    user_id = str(callback_query.get("from", {}).get("id", ""))
+    callback_id = callback_query.get("id", "")
+
+    if not all([callback_data, user_id, callback_id]):
+        logger.warning("[TELEGRAM] Malformed callback_query; missing required fields.")
+        return
+
+    logger.info(f"[TELEGRAM] Callback: {callback_data} from {user_id}")
+
+    if callback_data.startswith("rpe:"):
+        # RPE callback: rpe:activity_id:score
+        parts = callback_data.split(":")
+        if len(parts) >= 3:
+            try:
+                activity_id = parts[1]
+                score = int(parts[2])
+
+                # Save RPE to run_activities table
+                config = load_config()
+                from app.core.database import get_db
+
+                with get_db() as conn:
+                    c = conn.cursor()
+                    c.execute(
+                        "UPDATE run_activities SET rpe_score = ? WHERE activity_id = ?",
+                        (score, activity_id),
+                    )
+                    conn.commit()
+
+                logger.info(f"[TELEGRAM] Saved RPE {score} to activity {activity_id}")
+
+                # Get the run plan to check workout type for overtraining alert
+                run_date_str = None
+                with get_db() as conn:
+                    c = conn.cursor()
+                    c.execute(
+                        "SELECT start_date FROM run_activities WHERE activity_id = ?",
+                        (activity_id,),
+                    )
+                    row = c.fetchone()
+                    if row:
+                        start_date_str = row["start_date"]
+                        if start_date_str:
+                            run_date_str = start_date_str[:10]
+
+                # Check for overtraining: RPE > 8 on Easy run
+                if run_date_str:
+                    plan = get_plan_for_date(user_id, run_date_str)
+                    if plan and score > 8:
+                        workout_type = plan.get("workout_title", "").lower()
+                        if "easy" in workout_type or "recovery" in workout_type:
+                            send_telegram_msg(
+                                user_id,
+                                "⚠️ RPE cao trên bài chạy dễ — có thể đang bị quá tải. Hãy nghỉ ngơi hoặc giảm cường độ ngày mai.",
+                            )
+
+                # Answer callback to clear loading spinner
+                answer_callback_query(callback_id, text=f"RPE {score} đã lưu ✓")
+
+            except (ValueError, IndexError) as e:
+                logger.error(f"[TELEGRAM] Invalid RPE callback data: {callback_data} - {e}")
+                answer_callback_query(callback_id, text="Lỗi lưu RPE")
+
+    elif callback_data == "plan:accept":
+        # Plan accept callback
+        send_telegram_msg(
+            user_id,
+            "✅ Đã chấp nhận giáo án. Bắt đầu luyện tập theo kế hoạch ngay hôm nay!",
+        )
+        answer_callback_query(callback_id, text="Đã chấp nhận giáo án ✓")
+        # TODO: implement accept_weekly_plan logic in future phase
+
+    elif callback_data == "plan:reject":
+        # Plan reject callback
+        send_telegram_msg(
+            user_id,
+            "❌ Từ chối giáo án. Gõ /reject <lý do> để cung cấp phản hồi chi tiết.",
+        )
+        answer_callback_query(callback_id, text="Từ chối giáo án")
+        # TODO: implement reject_weekly_plan logic in future phase
+
+    else:
+        logger.warning(f"[TELEGRAM] Unknown callback data: {callback_data}")
+        answer_callback_query(callback_id, text="Lệnh không được nhận dạng")
+
+
 # --- TELEGRAM WORKFLOW ---
 @router.post("/telegram-webhook")
 async def telegram_event(request: Request, background_tasks: BackgroundTasks):
@@ -221,6 +341,12 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
         return {"status": "ok"}
     if not isinstance(data, dict):
         return {"status": "ok"}
+
+    # Route callback_query (inline button presses)
+    if "callback_query" in data:
+        background_tasks.add_task(handle_telegram_callback, data["callback_query"])
+        return {"status": "ok"}
+
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
         text = data["message"].get("text", "")

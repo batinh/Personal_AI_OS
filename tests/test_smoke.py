@@ -26,6 +26,8 @@ class TestCoreImports(unittest.TestCase):
             send_telegram_html,
             send_typing_action,
             _strip_html,
+            send_inline_keyboard_menu,
+            answer_callback_query,
         )
 
     def test_user_context_importable(self):
@@ -225,6 +227,14 @@ class TestGarminCoachPlanningImports(unittest.TestCase):
             format_daily_suggestion_for_briefing,
         )
 
+    def test_morning_briefing_daily_suggestion_integration(self):
+        """Test that morning_briefing imports daily suggestion helpers."""
+        from app.agents.coach.flows.morning_briefing import (  # noqa: F401
+            _has_active_plan_this_week,
+            _get_recent_runs,
+            _days_since_last_run,
+        )
+
     def test_weekly_plan_generation_importable(self):
         from app.agents.coach.flows.weekly_plan_generation import (  # noqa: F401
             generate_weekly_plan,
@@ -258,6 +268,7 @@ class TestGarminCoachPlanningImports(unittest.TestCase):
             task_garmin_sync,
             task_weekly_plan_generation,
             task_cleanup_stale_setup,
+            task_gear_check,
         )
 
 
@@ -306,6 +317,58 @@ class TestLoggingConfImports(unittest.TestCase):
 
     def test_console_save_log_levels_importable(self):
         from app.routers.console import console_save_log_levels  # noqa: F401
+
+
+class TestE2ESchedulerTasksImports(unittest.TestCase):
+    """New E2E test classes for scheduler task coverage."""
+
+    def test_TestBackupTask_importable(self):
+        from tests.test_e2e_scheduler_tasks import TestBackupTask  # noqa: F401
+
+    def test_TestSetupCleanupTask_importable(self):
+        from tests.test_e2e_scheduler_tasks import TestSetupCleanupTask  # noqa: F401
+
+    def test_TestSchedulerStartup_importable(self):
+        from tests.test_e2e_scheduler_tasks import TestSchedulerStartup  # noqa: F401
+
+
+class TestE2EConsoleUIImports(unittest.TestCase):
+    """New E2E test classes for console UI coverage."""
+
+    def test_TestConsoleRoutes_importable(self):
+        from tests.test_e2e_console_ui import TestConsoleRoutes  # noqa: F401
+
+    def test_TestConsoleTestingTab_importable(self):
+        from tests.test_e2e_console_ui import TestConsoleTestingTab  # noqa: F401
+
+
+class TestE2ENewsFlowsImports(unittest.TestCase):
+    """New E2E test classes for news flows coverage."""
+
+    def test_TestNewsPerTopicTimeout_importable(self):
+        from tests.test_e2e_news_flows import TestNewsPerTopicTimeout  # noqa: F401
+
+    def test_TestNewsDedup_importable(self):
+        from tests.test_e2e_news_flows import TestNewsDedup  # noqa: F401
+
+    def test_TestNewsCommandE2E_importable(self):
+        from tests.test_e2e_news_flows import TestNewsCommandE2E  # noqa: F401
+
+
+class TestE2EIntegrationEdgeCasesImports(unittest.TestCase):
+    """New E2E test classes for integration edge cases."""
+
+    def test_TestGeminiTimeout_importable(self):
+        from tests.test_e2e_integration_edge_cases import TestGeminiTimeout  # noqa: F401
+
+    def test_TestConfigReload_importable(self):
+        from tests.test_e2e_integration_edge_cases import TestConfigReload  # noqa: F401
+
+    def test_TestStravaThreeChannelOutput_importable(self):
+        from tests.test_e2e_integration_edge_cases import TestStravaThreeChannelOutput  # noqa: F401
+
+    def test_TestStravaErrorHandling_importable(self):
+        from tests.test_e2e_integration_edge_cases import TestStravaErrorHandling  # noqa: F401
 
 
 if __name__ == "__main__":
