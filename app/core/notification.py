@@ -109,8 +109,12 @@ def _split_html_naive(text: str, limit: int) -> list[str]:
 # Core send logic
 # ---------------------------------------------------------------------------
 
-def _send_chunks(chat_id: str, chunks: list[str], parse_mode: str | None, token: str) -> None:
-    """Send a list of text chunks with 429-retry and HTML→plain fallback."""
+def _send_chunks(chat_id: str, chunks: list[str], parse_mode: str | None, token: str) -> bool:
+    """Send a list of text chunks with 429-retry.
+
+    Returns True if any chunk failed with 400 (HTML parse error) — caller
+    should retry the whole message as plain text.
+    """
     send_url = f"https://api.telegram.org/bot{token}/sendMessage"
     total = len(chunks)
 
@@ -134,13 +138,9 @@ def _send_chunks(chat_id: str, chunks: list[str], parse_mode: str | None, token:
 
             if resp.status_code == 400 and parse_mode == "HTML":
                 logger.warning(
-                    f"[TELEGRAM] HTML parse failed on {label}; retrying as plain. Error: {resp.text}"
+                    f"[TELEGRAM] HTML parse failed on {label}: {resp.text}"
                 )
-                resp = requests.post(
-                    send_url,
-                    json={"chat_id": chat_id, "text": _strip_html(chunk)},
-                    timeout=15,
-                )
+                return True  # signal top-level to retry as plain
 
             if resp.status_code != 200:
                 logger.error(f"[TELEGRAM] Failed to send {label}: {resp.text}")
@@ -148,37 +148,26 @@ def _send_chunks(chat_id: str, chunks: list[str], parse_mode: str | None, token:
         except Exception as e:
             logger.error(f"[TELEGRAM] Connection error on {label}: {e}")
 
+    return False
+
 
 def _send_telegram_impl(chat_id, text: str, parse_mode: str | None) -> None:
-    """Dispatch: attachment for huge texts, chunked send otherwise."""
+    """Dispatch: split into chunks and send. Long messages become multiple messages."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         logger.error("[TELEGRAM] No TELEGRAM_BOT_TOKEN in environment.")
         return
 
     limit = int(os.getenv("TELEGRAM_LIMIT", "4000"))
-    threshold = int(os.getenv("TELEGRAM_ATTACHMENT_THRESHOLD", "100000"))
-
     logger.info(f"[TELEGRAM] len={len(text)} parse_mode={parse_mode}; head={text[:80]!r}")
 
-    if len(text) > threshold:
-        doc_url = f"https://api.telegram.org/bot{token}/sendDocument"
-        logger.info(f"[TELEGRAM] Message too large ({len(text)} chars); sending as attachment")
-        try:
-            resp = requests.post(
-                doc_url,
-                files={"document": ("report.txt", _strip_html(text).encode("utf-8"))},
-                data={"chat_id": chat_id, "caption": "Full report attached."},
-                timeout=30,
-            )
-            if resp.status_code != 200:
-                logger.error(f"[TELEGRAM] Failed to send attachment: {resp.text}")
-        except Exception as e:
-            logger.error(f"[TELEGRAM] Connection error sending attachment: {e}")
-        return
-
     chunks = _split_html_naive(text, limit) if parse_mode == "HTML" else _split_plain(text, limit)
-    _send_chunks(chat_id, chunks, parse_mode, token)
+    had_400 = _send_chunks(chat_id, chunks, parse_mode, token)
+
+    if had_400 and parse_mode == "HTML":
+        logger.warning("[TELEGRAM] HTML parse failed; retrying entire message as plain text")
+        plain_chunks = _split_plain(_strip_html(text), limit)
+        _send_chunks(chat_id, plain_chunks, None, token)
 
 
 # ---------------------------------------------------------------------------

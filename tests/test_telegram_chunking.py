@@ -245,6 +245,56 @@ class TestEdgeCases(unittest.TestCase):
         self.assertEqual(combined_flat, original_flat)
 
 
+class TestContentLossGuarantee(unittest.TestCase):
+    """Invariant: joining all chunks and stripping HTML == stripping HTML from original.
+
+    This is the core anti-truncation guarantee. If ANY refactor breaks this,
+    these tests turn RED immediately.
+    """
+
+    LIMITS = [500, 1000, 2000, 4000, 10000]
+
+    def _assert_no_loss(self, text: str, limit: int) -> None:
+        import re
+        chunks = split_html_preserving_tags(text, limit)
+        combined = re.sub(r"\s+", "", _plain("".join(chunks)))
+        original = re.sub(r"\s+", "", _plain(text))
+        self.assertEqual(
+            combined,
+            original,
+            f"Content lost at limit={limit}: original={len(original)} combined={len(combined)}",
+        )
+
+    def test_guarantee_plain_text_all_limits(self):
+        text = "Chạy bộ 10km hôm nay rất tốt. " * 500  # ~15k chars
+        for limit in self.LIMITS:
+            with self.subTest(limit=limit):
+                self._assert_no_loss(text, limit)
+
+    def test_guarantee_html_briefing_all_limits(self):
+        text = _make_full_briefing(5)
+        for limit in self.LIMITS:
+            with self.subTest(limit=limit):
+                self._assert_no_loss(text, limit)
+
+    def test_guarantee_oversized_single_paragraph_all_limits(self):
+        big_para = "<b>Phân tích chi tiết:</b> " + ("Đây là nội dung phân tích dài. " * 200)
+        for limit in self.LIMITS:
+            with self.subTest(limit=limit):
+                self._assert_no_loss(big_para, limit)
+
+    def test_guarantee_mixed_html_and_plain(self):
+        text = (
+            "## Buổi sáng hôm nay\n\n"
+            + "**Cự ly:** 10km — <b>tốt</b> — HR < 150 bpm\n\n"
+            + "Phân tích: " + "nội dung " * 300 + "\n\n"
+            + '<a href="https://example.com/run">Xem chi tiết</a>'
+        )
+        for limit in self.LIMITS:
+            with self.subTest(limit=limit):
+                self._assert_no_loss(text, limit)
+
+
 class TestSanitizeMdToTgHtml(unittest.TestCase):
     """sanitize_md_to_tg_html must balance all inline tags, not just <b>."""
 

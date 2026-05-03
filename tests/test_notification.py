@@ -315,60 +315,6 @@ class TestSendTelegramMsgChunking(unittest.TestCase):
             self.assertNotIn("parse_mode", payload)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 6. send_telegram_msg – Attachment path (len > ATTACHMENT_THRESHOLD)
-# ══════════════════════════════════════════════════════════════════════════════
-class TestSendTelegramMsgAttachment(unittest.TestCase):
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict(
-        "os.environ",
-        {
-            "TELEGRAM_BOT_TOKEN": "fake-token",
-            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-        },
-    )
-    def test_huge_message_uses_send_document(self, mock_post):
-        mock_post.return_value = MagicMock(status_code=200, text="OK")
-        send_telegram_msg("123", "X " * 100)  # > 50 chars threshold
-        mock_post.assert_called_once()
-        # post is called with files= kwarg (not json=)
-        call_kwargs = mock_post.call_args[1]
-        self.assertIn("files", call_kwargs)
-        self.assertNotIn("json", call_kwargs)
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict(
-        "os.environ",
-        {
-            "TELEGRAM_BOT_TOKEN": "fake-token",
-            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-        },
-    )
-    def test_attachment_caption_is_set(self, mock_post):
-        mock_post.return_value = MagicMock(status_code=200, text="OK")
-        send_telegram_msg("123", "X " * 100)
-        data_kwarg = mock_post.call_args[1]["data"]
-        self.assertIn("caption", data_kwarg)
-        self.assertIn("chat_id", data_kwarg)
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict(
-        "os.environ",
-        {
-            "TELEGRAM_BOT_TOKEN": "fake-token",
-            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-        },
-    )
-    def test_attachment_sends_plain_text_file(self, mock_post):
-        mock_post.return_value = MagicMock(status_code=200, text="OK")
-        send_telegram_msg("123", "<b>Bold content</b> " * 10)
-        files = mock_post.call_args[1]["files"]
-        filename, content = files["document"][0], files["document"][1]
-        self.assertEqual(filename, "report.txt")
-        self.assertNotIn(b"<b>", content)  # plain text, no HTML tags
-
-
 class TestSendTelegramHtml(unittest.TestCase):
     """send_telegram_html sends with parse_mode=HTML; 400 falls back to plain."""
 
