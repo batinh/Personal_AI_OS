@@ -16,6 +16,14 @@ class TestCoreImports(unittest.TestCase):
     def test_config_importable(self):
         from app.core.config import load_config  # noqa: F401
 
+    def test_secrets_importable(self):
+        from app.core.secrets import (  # noqa: F401
+            encrypt_garmin_credentials,
+            decrypt_garmin_credentials,
+            delete_garmin_credentials,
+            has_garmin_credentials,
+        )
+
     def test_database_importable(self):
         from app.core.database import get_db  # noqa: F401
 

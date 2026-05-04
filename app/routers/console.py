@@ -30,6 +30,7 @@ from app.core.database import (
 from app.agents.coach.utils import calculate_acwr
 from app.services.scheduler import reload_scheduler
 from app.services.coverage_metrics import load_coverage_report, report_to_dict
+from app.services.requirements_coverage import load_requirements_matrix
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -75,6 +76,11 @@ async def console_page(
     except Exception:
         coverage_data = None
 
+    try:
+        req_matrix = load_requirements_matrix()
+    except Exception:
+        req_matrix = None
+
     # --- System tab ---
     logs_text = "\n".join(list(log_capture_string))
 
@@ -105,6 +111,7 @@ async def console_page(
             "log_domains": KNOWN_DOMAINS,
             # Testing tab
             "coverage_data": coverage_data,
+            "req_matrix": req_matrix,
         },
     )
 
@@ -234,6 +241,214 @@ def _parse_int(value: Optional[str], default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+# ==========================================
+# 🛠️ SETUP: COACHING PROFILE + GARMIN
+# ==========================================
+def _mask_email(email: str) -> str:
+    """Mask email for display (show only first 3 chars of local part)."""
+    if not email or "@" not in email:
+        return "***"
+    local, domain = email.split("@", 1)
+    return local[:3] + "***@" + domain
+
+
+def _is_circuit_open() -> bool:
+    """Check if Garmin circuit breaker is currently open."""
+    from app.agents.coach.garmin_client import _is_circuit_open as garmin_circuit_open
+    return garmin_circuit_open()
+
+
+@router.get("/console/setup")
+async def get_setup_state(request: Request, _=Depends(verify_admin)):
+    """Return current coaching profile + garmin status for pre-filling the web form."""
+    from app.core.config import load_config
+    from app.agents.coach.garmin_client import GarminClient
+    from app.core.secrets import has_garmin_credentials, decrypt_garmin_credentials
+    from app.core.database import get_garmin_daily_metrics, get_athlete_state
+    from app.core.user_context import get_primary_user_id
+    import datetime
+    import os
+    from fastapi.responses import JSONResponse
+
+    cfg = load_config()
+    user_id = get_primary_user_id()
+
+    # Coaching profile from config
+    coaching = {
+        "race_distance_km": cfg.get("race_distance_km"),
+        "race_date": cfg.get("race_date"),
+        "race_target_time_min": cfg.get("race_target_time_min"),
+        "current_weekly_km": cfg.get("setup", {}).get("current_weekly_km", cfg.get("current_weekly_km")),
+        "training_days_per_week": cfg.get("setup", {}).get("training_days_per_week"),
+        "preferred_rest_days": cfg.get("setup", {}).get("preferred_rest_days", []),
+        "is_complete": bool(cfg.get("race_date") and cfg.get("race_distance_km")),
+    }
+
+    # Garmin status (no plaintext password)
+    garmin_cfg = cfg.get("garmin", {})
+    has_creds = has_garmin_credentials() or bool(os.getenv("GARMIN_EMAIL"))
+
+    # Get last sync from DB
+    today = datetime.date.today().isoformat()
+    metrics = get_garmin_daily_metrics(user_id, today)
+    last_sync = metrics.get("created_at") if metrics else None
+
+    garmin = {
+        "is_enabled": garmin_cfg.get("enabled", False),
+        "has_credentials": has_creds,
+        "email_masked": _mask_email(decrypt_garmin_credentials()[0]) if has_garmin_credentials() else None,
+        "last_sync": last_sync,
+        "sync_time": garmin_cfg.get("sync_time", "05:45"),
+        "circuit_open": _is_circuit_open(),
+    }
+
+    return JSONResponse({"coaching": coaching, "garmin": garmin})
+
+
+@router.post("/console/setup/coaching")
+async def save_coaching_profile(request: Request, _=Depends(verify_admin)):
+    """Validate and save coaching profile from web form."""
+    from app.agents.coach.setup_validators import (
+        validate_distance, validate_date, validate_time,
+        validate_kmweek, validate_days, validate_rest_days,
+    )
+    from app.agents.coach.setup_flow import finalize_setup
+    from app.core.user_context import get_primary_user_id
+    from fastapi.responses import JSONResponse
+
+    body = await request.json()
+    errors = {}
+
+    # Run same validators as Telegram wizard
+    dist_result = validate_distance(str(body.get("race_distance_km", "")))
+    if dist_result is None:
+        errors["race_distance_km"] = "Cự ly không hợp lệ (ví dụ: 10, 21.1, 42.2)"
+
+    date_result = validate_date(str(body.get("race_date", "")))
+    if date_result is None:
+        errors["race_date"] = "Ngày không hợp lệ hoặc chưa đủ 4 tuần từ hôm nay"
+
+    time_result = validate_time(str(body.get("race_target_time_min", "")))
+    if time_result is None:
+        errors["race_target_time_min"] = "Thời gian không hợp lệ (ví dụ: 1:45 hoặc 105)"
+
+    km_result = validate_kmweek(str(body.get("current_weekly_km", "")))
+    if km_result is None:
+        errors["current_weekly_km"] = "Số km không hợp lệ (0–200)"
+
+    days_result = validate_days(str(body.get("training_days_per_week", "")))
+    if days_result is None:
+        errors["training_days_per_week"] = "Số ngày tập phải từ 3–6"
+
+    rest_result = validate_rest_days(str(body.get("preferred_rest_days", "")))
+    if rest_result is None:
+        errors["preferred_rest_days"] = "Ngày nghỉ không hợp lệ"
+
+    if errors:
+        return JSONResponse({"success": False, "errors": errors}, status_code=422)
+
+    # Write to config using same path as Telegram wizard
+    collected_data = {
+        "race_distance_km": dist_result,
+        "race_date": date_result,
+        "race_target_time_min": time_result,
+        "current_weekly_km": km_result,
+        "training_days_per_week": days_result,
+        "preferred_rest_days": rest_result,
+    }
+    user_id = get_primary_user_id()
+    finalize_setup(user_id, collected_data)
+
+    return JSONResponse({"success": True, "message": "Đã lưu hồ sơ tập luyện thành công."})
+
+
+@router.post("/console/setup/garmin")
+async def save_garmin_credentials(request: Request, _=Depends(verify_admin)):
+    """Store Garmin credentials encrypted and test connection."""
+    from app.agents.coach.garmin_client import GarminClient
+    from app.core.secrets import encrypt_garmin_credentials
+    from fastapi.responses import JSONResponse
+
+    body = await request.json()
+    email = body.get("email", "").strip()
+    password = body.get("password", "")
+    enable = bool(body.get("enable", True))
+
+    if not email or not password:
+        return JSONResponse({"success": False, "error": "Email và password là bắt buộc."}, status_code=400)
+
+    # Store encrypted BEFORE testing (so GarminClient can read them)
+    encrypt_garmin_credentials(email, password)
+
+    # Test connection
+    client = GarminClient()
+    success, error = client.test_connection()
+
+    if not success:
+        # Still keep credentials but report failure (user may retry)
+        return JSONResponse({
+            "success": False,
+            "is_connected": False,
+            "error": f"Kết nối thất bại: {error}. Thông tin đã lưu, thử lại sau.",
+        })
+
+    # Update garmin.enabled in config
+    cfg = load_config()
+    cfg.setdefault("garmin", {})["enabled"] = enable
+    save_config(cfg)
+
+    return JSONResponse({
+        "success": True,
+        "is_connected": True,
+        "message": "Kết nối Garmin thành công! Đồng bộ sẽ chạy lúc 05:45 sáng.",
+    })
+
+
+@router.get("/console/setup/garmin/status")
+async def get_garmin_status(request: Request, _=Depends(verify_admin)):
+    """Return Garmin connection status without exposing credentials."""
+    from app.agents.coach.garmin_client import _TOKEN_FILE
+    from app.core.secrets import has_garmin_credentials, decrypt_garmin_credentials
+    from fastapi.responses import JSONResponse
+    from app.core.database import get_garmin_daily_metrics
+    from app.core.user_context import get_primary_user_id
+    import datetime
+    import os
+
+    cfg = load_config()
+    user_id = get_primary_user_id()
+    today = datetime.date.today().isoformat()
+    metrics = get_garmin_daily_metrics(user_id, today)
+
+    has_creds = has_garmin_credentials() or bool(os.getenv("GARMIN_EMAIL"))
+    has_tokens = _TOKEN_FILE.exists()
+    circuit_open = _is_circuit_open()
+    is_connected = has_creds and has_tokens and not circuit_open
+
+    return JSONResponse({
+        "is_enabled": cfg.get("garmin", {}).get("enabled", False),
+        "is_connected": is_connected,
+        "has_credentials": has_creds,
+        "last_sync": metrics.get("created_at") if metrics else None,
+        "sync_time": cfg.get("garmin", {}).get("sync_time", "05:45"),
+        "circuit_open": circuit_open,
+    })
+
+
+@router.post("/console/setup/garmin/reauth")
+async def reauth_garmin(request: Request, _=Depends(verify_admin)):
+    """Clear tokens and credentials to force re-authentication."""
+    from app.core.secrets import delete_garmin_credentials
+    from app.agents.coach.garmin_client import GarminClient
+    from fastapi.responses import JSONResponse
+
+    delete_garmin_credentials()
+    client = GarminClient()
+    client.clear_tokens()
+
+    return JSONResponse({"success": True, "message": "Đã xóa token. Nhập lại thông tin để kết nối."})
 
 
 # ==========================================

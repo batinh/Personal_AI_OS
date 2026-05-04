@@ -273,6 +273,12 @@
       </a>
 
       <div class="nav-section-label" style="margin-top:8px;">Configure</div>
+      <a class="nav-item-link {{ 'active' if active_tab == 'setup' else '' }}"
+         onclick="switchTab('setup')" href="/console?tab=setup">
+        <i class="nav-icon fas fa-cog"></i>
+        <span>Setup</span>
+        <span id="setup-incomplete-dot" class="badge bg-danger ms-1" style="display:none;">!</span>
+      </a>
       <a class="nav-item-link {{ 'active' if active_tab == 'settings' else '' }}"
          onclick="switchTab('settings')" href="/console?tab=settings">
         <i class="nav-icon fas fa-sliders-h"></i>
@@ -310,6 +316,7 @@
         {% elif active_tab == 'training' %}🏃‍♂️ Training Log
         {% elif active_tab == 'memory' %}🧠 AI Memory
         {% elif active_tab == 'testing' %}🧪 Testing
+        {% elif active_tab == 'setup' %}⚙️ Setup
         {% elif active_tab == 'settings' %}⚙️ Settings
         {% elif active_tab == 'news' %}📰 News Agent
         {% elif active_tab == 'logging' %}📋 Log Levels
@@ -548,40 +555,236 @@
           </div>
           {% endif %}
 
-          <!-- Test level breakdown -->
+          <!-- Test level breakdown — accordion drilldown -->
           {% if coverage_data.by_level %}
           <div class="stat-card mb-3">
-            <div class="section-title mb-2">Test Level Breakdown</div>
-            <table class="os-table w-100">
-              <thead>
-                <tr>
-                  <th>Level</th>
-                  <th class="text-end">Total</th>
-                  <th class="text-end">Passed</th>
-                  <th class="text-end">Failed</th>
-                  <th class="text-end">Skipped</th>
-                  <th class="text-end">Duration</th>
-                  <th class="text-end">Pass Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% set level_icons = {'smoke': '💨', 'sanity': '🩺', 'e2e': '🔗', 'unit': '🔬'} %}
-                {% for lv in coverage_data.by_level %}
-                {% set pass_rate = (lv.passed / lv.total * 100) if lv.total else 0 %}
-                <tr>
-                  <td><span class="me-1">{{ level_icons.get(lv.level, '🧪') }}</span><strong>{{ lv.level | upper }}</strong></td>
-                  <td class="text-end">{{ lv.total }}</td>
-                  <td class="text-end" style="color:#38a169;">{{ lv.passed }}</td>
-                  <td class="text-end" style="color:{% if lv.failed > 0 %}#e53e3e{% else %}#718096{% endif %};">{{ lv.failed }}</td>
-                  <td class="text-end text-muted">{{ lv.skipped }}</td>
-                  <td class="text-end text-muted">{{ "%.2f"|format(lv.duration_seconds) }}s</td>
-                  <td class="text-end">
-                    <span style="color:{% if pass_rate >= 100 %}#38a169{% elif pass_rate >= 90 %}#ed8936{% else %}#e53e3e{% endif %};">{{ "%.0f"|format(pass_rate) }}%</span>
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+            <div class="section-title mb-2">Test Level Breakdown <span class="small text-muted fw-normal">(click row to expand)</span></div>
+            {% set level_icons = {'smoke': '💨', 'sanity': '🩺', 'e2e': '🔗', 'unit': '🔬'} %}
+            {% for lv in coverage_data.by_level %}
+            {% set pass_rate = (lv.passed / lv.total * 100) if lv.total else 0 %}
+            {% set dd = lv.drilldown %}
+            <div class="level-accordion" id="accord-{{ lv.level }}">
+              <!-- Summary header row -->
+              <div class="level-accord-header" onclick="toggleAccord('{{ lv.level }}')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;border-bottom:1px solid #e2e8f0;user-select:none;" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background=''">
+                <span style="font-size:1.1rem;">{{ level_icons.get(lv.level, '🧪') }}</span>
+                <span style="font-weight:700;min-width:56px;font-size:0.93rem;letter-spacing:.5px;">{{ lv.level | upper }}</span>
+                <span class="small text-muted" style="flex:1;">{{ lv.total }} tests · {{ "%.2f"|format(lv.duration_seconds) }}s</span>
+                <span style="color:#38a169;font-size:0.85rem;min-width:44px;text-align:right;">✓ {{ lv.passed }}</span>
+                {% if lv.failed > 0 %}
+                <span style="color:#e53e3e;font-size:0.85rem;min-width:44px;text-align:right;">✗ {{ lv.failed }}</span>
+                {% else %}
+                <span style="color:#718096;font-size:0.85rem;min-width:44px;text-align:right;">✗ 0</span>
+                {% endif %}
+                {% if lv.skipped > 0 %}
+                <span style="color:#ed8936;font-size:0.85rem;min-width:44px;text-align:right;">⊘ {{ lv.skipped }}</span>
+                {% endif %}
+                <span style="color:{% if pass_rate >= 100 %}#38a169{% elif pass_rate >= 90 %}#ed8936{% else %}#e53e3e{% endif %};font-weight:700;min-width:44px;text-align:right;">{{ "%.0f"|format(pass_rate) }}%</span>
+                <span class="accord-arrow" id="arrow-{{ lv.level }}" style="color:#a0aec0;font-size:0.75rem;transition:transform .2s;">▶</span>
+              </div>
+
+              <!-- Drilldown panel (hidden by default) -->
+              <div class="level-accord-body" id="body-{{ lv.level }}" style="display:none;background:#fafbfc;border-bottom:1px solid #e2e8f0;padding:12px 14px;">
+                {% if lv.level == 'unit' %}
+                  <!-- Unit: module-level summary -->
+                  {% if dd.modules %}
+                  <table style="width:100%;font-size:0.82rem;border-collapse:collapse;">
+                    <thead>
+                      <tr style="color:#718096;text-transform:uppercase;font-size:0.72rem;border-bottom:1px solid #e2e8f0;">
+                        <th style="text-align:left;padding:4px 6px;">Module</th>
+                        <th style="text-align:right;padding:4px 6px;">Total</th>
+                        <th style="text-align:right;padding:4px 6px;">Pass</th>
+                        <th style="text-align:right;padding:4px 6px;">Fail</th>
+                        <th style="text-align:right;padding:4px 6px;">Skip</th>
+                        <th style="text-align:right;padding:4px 6px;min-width:80px;">Coverage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for mod in dd.modules %}
+                      {% set mod_rate = (mod.passed / mod.total * 100) if mod.total else 0 %}
+                      <tr style="border-bottom:1px solid #edf2f7;">
+                        <td style="padding:5px 6px;font-family:monospace;color:#2d3748;">{{ mod.name }}</td>
+                        <td style="text-align:right;padding:5px 6px;color:#4a5568;">{{ mod.total }}</td>
+                        <td style="text-align:right;padding:5px 6px;color:#38a169;">{{ mod.passed }}</td>
+                        <td style="text-align:right;padding:5px 6px;color:{% if mod.failed > 0 %}#e53e3e{% else %}#718096{% endif %};">{{ mod.failed }}</td>
+                        <td style="text-align:right;padding:5px 6px;color:#ed8936;">{{ mod.skipped }}</td>
+                        <td style="text-align:right;padding:5px 6px;">
+                          <div style="display:flex;align-items:center;justify-content:flex-end;gap:5px;">
+                            <div style="width:50px;height:5px;background:#e2e8f0;border-radius:3px;overflow:hidden;">
+                              <div style="width:{{ mod_rate | int }}%;height:100%;background:{% if mod_rate >= 100 %}#38a169{% elif mod_rate >= 80 %}#68d391{% else %}#e53e3e{% endif %};"></div>
+                            </div>
+                            <span style="color:{% if mod_rate >= 100 %}#38a169{% elif mod_rate >= 80 %}#ed8936{% else %}#e53e3e{% endif %};">{{ "%.0f"|format(mod_rate) }}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  {% else %}
+                  <div class="text-muted small">No unit test data available.</div>
+                  {% endif %}
+
+                {% else %}
+                  <!-- Smoke / Sanity / E2E: class → individual test cases -->
+                  {% if dd.classes %}
+                  {% for cls in dd.classes %}
+                  <div style="margin-bottom:10px;">
+                    <div style="font-size:0.78rem;font-weight:700;color:#4a5568;text-transform:uppercase;letter-spacing:.5px;padding:4px 0 4px 2px;border-bottom:1px solid #e2e8f0;margin-bottom:4px;">
+                      {{ cls.name }}
+                      <span style="font-weight:400;color:#718096;margin-left:6px;">{{ cls.passed }}/{{ cls.total }} passed</span>
+                    </div>
+                    {% for case in cls.cases %}
+                    <div style="display:flex;align-items:flex-start;gap:8px;padding:4px 2px;{% if not loop.last %}border-bottom:1px solid #f0f4f8;{% endif %}">
+                      {% if case.status == 'passed' %}
+                      <span style="min-width:52px;text-align:center;font-size:0.7rem;font-weight:700;background:#c6f6d5;color:#276749;border-radius:4px;padding:1px 5px;">PASS</span>
+                      {% elif case.status == 'failed' %}
+                      <span style="min-width:52px;text-align:center;font-size:0.7rem;font-weight:700;background:#fed7d7;color:#9b2c2c;border-radius:4px;padding:1px 5px;">FAIL</span>
+                      {% elif case.status == 'error' %}
+                      <span style="min-width:52px;text-align:center;font-size:0.7rem;font-weight:700;background:#feebc8;color:#744210;border-radius:4px;padding:1px 5px;">ERROR</span>
+                      {% else %}
+                      <span style="min-width:52px;text-align:center;font-size:0.7rem;font-weight:700;background:#e2e8f0;color:#718096;border-radius:4px;padding:1px 5px;">SKIP</span>
+                      {% endif %}
+                      <div style="flex:1;min-width:0;">
+                        <div style="font-size:0.84rem;color:#2d3748;">{{ case.label }}</div>
+                        {% if case.message %}
+                        <div style="font-size:0.75rem;color:#9b2c2c;background:#fff5f5;border-left:3px solid #fc8181;padding:3px 6px;margin-top:3px;border-radius:2px;white-space:pre-wrap;word-break:break-word;">{{ case.message }}</div>
+                        {% endif %}
+                      </div>
+                      <span style="font-size:0.72rem;color:#a0aec0;white-space:nowrap;">{{ "%.3f"|format(case.duration) }}s</span>
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% endfor %}
+                  {% else %}
+                  <div class="text-muted small">No test case data available.</div>
+                  {% endif %}
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <!-- Requirements Coverage Matrix -->
+          {% if req_matrix %}
+          {% set rs = req_matrix.summary %}
+          {% set req_pct = ((rs.covered + rs.partial * 0.5) / rs.total * 100) | int if rs.total else 0 %}
+          <div class="stat-card mb-3">
+            <div class="section-title mb-2">Requirements Coverage Matrix
+              <span class="small text-muted fw-normal ms-2">{{ req_matrix.generated_at }}</span>
+            </div>
+
+            <!-- Summary cards -->
+            <div class="row g-2 mb-3">
+              <div class="col-6 col-md-3">
+                <div style="background:#f7fafc;border-radius:8px;padding:10px;text-align:center;border:1px solid #e2e8f0;">
+                  <div style="font-size:0.72rem;text-transform:uppercase;color:#718096;letter-spacing:.5px;">Total</div>
+                  <div style="font-size:1.6rem;font-weight:700;color:#2d3748;">{{ rs.total }}</div>
+                  <div style="font-size:0.72rem;color:#a0aec0;">requirements</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div style="background:#f0fff4;border-radius:8px;padding:10px;text-align:center;border:1px solid #c6f6d5;">
+                  <div style="font-size:0.72rem;text-transform:uppercase;color:#276749;letter-spacing:.5px;">Covered</div>
+                  <div style="font-size:1.6rem;font-weight:700;color:#38a169;">{{ rs.covered }}</div>
+                  <div style="font-size:0.72rem;color:#68d391;">{{ ((rs.covered / rs.total * 100) | int) if rs.total else 0 }}%</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div style="background:#fffaf0;border-radius:8px;padding:10px;text-align:center;border:1px solid #fbd38d;">
+                  <div style="font-size:0.72rem;text-transform:uppercase;color:#744210;letter-spacing:.5px;">Partial</div>
+                  <div style="font-size:1.6rem;font-weight:700;color:#ed8936;">{{ rs.partial }}</div>
+                  <div style="font-size:0.72rem;color:#f6ad55;">{{ ((rs.partial / rs.total * 100) | int) if rs.total else 0 }}%</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div style="background:#fff5f5;border-radius:8px;padding:10px;text-align:center;border:1px solid #fed7d7;">
+                  <div style="font-size:0.72rem;text-transform:uppercase;color:#9b2c2c;letter-spacing:.5px;">Missing</div>
+                  <div style="font-size:1.6rem;font-weight:700;color:#e53e3e;">{{ rs.missing }}</div>
+                  <div style="font-size:0.72rem;color:#fc8181;">{{ ((rs.missing / rs.total * 100) | int) if rs.total else 0 }}%</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Progress bar -->
+            <div style="height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;margin-bottom:16px;">
+              <div style="width:{{ ((rs.covered / rs.total * 100) | int) if rs.total else 0 }}%;height:100%;background:#38a169;display:inline-block;"></div><div style="width:{{ ((rs.partial / rs.total * 100) | int) if rs.total else 0 }}%;height:100%;background:#ed8936;display:inline-block;"></div>
+            </div>
+
+            <!-- Module breakdown accordion -->
+            {% for module_name, mod_stats in req_matrix.by_module.items() | sort %}
+            {% set mod_reqs = req_matrix.requirements | selectattr('module', 'eq', module_name) | list %}
+            {% set mod_covered_pct = ((mod_stats.covered / mod_stats.total * 100) | int) if mod_stats.total else 0 %}
+            <div style="border:1px solid #e2e8f0;border-radius:6px;margin-bottom:8px;overflow:hidden;">
+              <!-- Module header -->
+              <div onclick="toggleReqModule('reqmod-{{ module_name }}')" style="display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;background:#f7fafc;user-select:none;" onmouseover="this.style.background='#edf2f7'" onmouseout="this.style.background='#f7fafc'">
+                <span style="font-weight:700;font-size:0.88rem;text-transform:uppercase;letter-spacing:.5px;color:#4a5568;flex:1;">{{ module_name }}</span>
+                <span style="font-size:0.78rem;color:#718096;">{{ mod_stats.total }} reqs</span>
+                <span style="font-size:0.78rem;color:#38a169;min-width:36px;text-align:right;">✓ {{ mod_stats.covered }}</span>
+                <span style="font-size:0.78rem;color:#ed8936;min-width:36px;text-align:right;">~ {{ mod_stats.partial }}</span>
+                <span style="font-size:0.78rem;color:#e53e3e;min-width:36px;text-align:right;">✗ {{ mod_stats.missing }}</span>
+                <div style="width:50px;height:5px;background:#e2e8f0;border-radius:3px;overflow:hidden;margin-left:4px;">
+                  <div style="width:{{ mod_covered_pct }}%;height:100%;background:{% if mod_covered_pct >= 80 %}#38a169{% elif mod_covered_pct >= 50 %}#ed8936{% else %}#e53e3e{% endif %};"></div>
+                </div>
+                <span style="font-size:0.75rem;color:#a0aec0;min-width:28px;text-align:right;" id="reqarrow-{{ module_name }}">▶</span>
+              </div>
+
+              <!-- Module requirement rows -->
+              <div id="reqmod-{{ module_name }}" style="display:none;">
+                <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+                  <thead>
+                    <tr style="color:#718096;font-size:0.7rem;text-transform:uppercase;background:#fafbfc;border-bottom:1px solid #e2e8f0;">
+                      <th style="padding:5px 10px;text-align:left;width:90px;">ID</th>
+                      <th style="padding:5px 10px;text-align:left;">Description</th>
+                      <th style="padding:5px 10px;text-align:center;width:70px;">Priority</th>
+                      <th style="padding:5px 10px;text-align:center;width:80px;">Status</th>
+                      <th style="padding:5px 10px;text-align:center;width:60px;">Level</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for req in mod_reqs | sort(attribute='req_id') %}
+                    <tr style="border-bottom:1px solid #f0f4f8;" onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background=''">
+                      <td style="padding:6px 10px;font-family:monospace;font-weight:600;color:#4a5568;white-space:nowrap;">{{ req.req_id }}</td>
+                      <td style="padding:6px 10px;color:#2d3748;line-height:1.4;">
+                        {{ req.description }}
+                        {% if req.test_cases %}
+                        <div style="margin-top:3px;">
+                          {% for tc in req.test_cases %}
+                          <span style="font-size:0.68rem;font-family:monospace;color:#718096;background:#edf2f7;border-radius:3px;padding:1px 4px;margin-right:3px;display:inline-block;margin-top:2px;">
+                            {% if tc.status == 'passed' %}<span style="color:#38a169;">✓</span>{% elif tc.status == 'failed' %}<span style="color:#e53e3e;">✗</span>{% elif tc.status == 'skipped' %}<span style="color:#ed8936;">⊘</span>{% else %}<span style="color:#a0aec0;">?</span>{% endif %}
+                            {{ tc.class_name }}{% if tc.method %}::{{ tc.method }}{% endif %}
+                          </span>
+                          {% endfor %}
+                        </div>
+                        {% endif %}
+                      </td>
+                      <td style="padding:6px 10px;text-align:center;">
+                        {% if req.priority == 'CRITICAL' %}
+                        <span style="font-size:0.68rem;font-weight:700;background:#fed7d7;color:#9b2c2c;border-radius:4px;padding:2px 5px;">CRIT</span>
+                        {% elif req.priority == 'HIGH' %}
+                        <span style="font-size:0.68rem;font-weight:700;background:#feebc8;color:#744210;border-radius:4px;padding:2px 5px;">HIGH</span>
+                        {% elif req.priority == 'MEDIUM' %}
+                        <span style="font-size:0.68rem;font-weight:700;background:#bee3f8;color:#2a4365;border-radius:4px;padding:2px 5px;">MED</span>
+                        {% else %}
+                        <span style="font-size:0.68rem;font-weight:700;background:#e2e8f0;color:#718096;border-radius:4px;padding:2px 5px;">LOW</span>
+                        {% endif %}
+                      </td>
+                      <td style="padding:6px 10px;text-align:center;">
+                        {% if req.coverage_status == 'covered' %}
+                        <span style="font-size:0.7rem;font-weight:700;background:#c6f6d5;color:#276749;border-radius:4px;padding:2px 6px;">✓ COVERED</span>
+                        {% elif req.coverage_status == 'partial' %}
+                        <span style="font-size:0.7rem;font-weight:700;background:#feebc8;color:#744210;border-radius:4px;padding:2px 6px;">~ PARTIAL</span>
+                        {% else %}
+                        <span style="font-size:0.7rem;font-weight:700;background:#fed7d7;color:#9b2c2c;border-radius:4px;padding:2px 6px;">✗ MISSING</span>
+                        {% endif %}
+                      </td>
+                      <td style="padding:6px 10px;text-align:center;font-size:0.72rem;color:#718096;font-family:monospace;">{{ req.test_level }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {% endfor %}
           </div>
           {% endif %}
 
@@ -618,6 +821,187 @@
           </div>
 
         {% endif %}
+      </div>
+
+      <!-- ====== TAB: SETUP ====== -->
+      <div class="tab-pane {{ 'active' if active_tab == 'setup' else '' }}" id="tab-setup">
+
+        <!-- Section A: Coaching Profile -->
+        <div class="stat-card mb-3">
+          <div class="form-section-header"><i class="fas fa-running me-2"></i>Hồ Sơ Tập Luyện</div>
+
+          <div class="row g-3" id="coachingForm">
+            <!-- Race Distance -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Cự Ly Đua</label>
+              <div class="input-group">
+                <select class="form-select" id="race_distance_select" onchange="handleRaceDistanceChange()">
+                  <option value="">Chọn cự ly...</option>
+                  <option value="5">5K (5km)</option>
+                  <option value="10">10K (10km)</option>
+                  <option value="21.1">Half Marathon (21.1km)</option>
+                  <option value="42.2">Marathon (42.2km)</option>
+                  <option value="custom">Tùy chỉnh...</option>
+                </select>
+              </div>
+              <input type="number" class="form-control mt-2" id="race_distance_custom"
+                     min="1" max="200" step="0.1" placeholder="Nhập km..."
+                     style="display:none;" onchange="validateRaceDistance()">
+              <div class="text-danger small mt-1" id="race_distance_error"></div>
+            </div>
+
+            <!-- Race Date -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Ngày Đua</label>
+              <input type="date" class="form-control" id="race_date" onchange="validateRaceDate()">
+              <div class="text-danger small mt-1" id="race_date_error"></div>
+            </div>
+
+            <!-- Target Finish Time -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Thời Gian Dự Kiến</label>
+              <input type="text" class="form-control" id="race_target_time"
+                     placeholder="H:MM hoặc phút (ví dụ: 1:45 hoặc 105)" onchange="validateTargetTime()">
+              <div class="form-text small text-muted">1:45 = 1 giờ 45 phút, hoặc 105 = 105 phút</div>
+              <div class="text-danger small mt-1" id="race_target_time_error"></div>
+            </div>
+
+            <!-- Current Weekly KM -->
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Km Chạy Hiện Tại/Tuần</label>
+              <input type="number" class="form-control" id="current_weekly_km"
+                     min="0" max="200" step="0.5" onchange="validateWeeklyKm()">
+              <div class="text-danger small mt-1" id="current_weekly_km_error"></div>
+            </div>
+
+            <!-- Training Days Per Week -->
+            <div class="col-md-12">
+              <label class="form-label fw-semibold small">Số Ngày Tập Luyện/Tuần:
+                <span id="trainingDaysValue" style="color:#4299e1;font-weight:700;">3</span>
+              </label>
+              <input type="range" class="form-range" id="training_days_per_week"
+                     min="3" max="6" value="3" onchange="updateTrainingDaysLabel()">
+              <div class="small text-muted">3 = Nhẹ nhàng, 6 = Nâng cao</div>
+            </div>
+
+            <!-- Preferred Rest Days -->
+            <div class="col-md-12">
+              <label class="form-label fw-semibold small">Những Ngày Nghỉ Ưa Thích</label>
+              <div class="row g-2">
+                {% set rest_days_labels = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'] %}
+                {% set rest_days_values = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] %}
+                {% for i in range(7) %}
+                <div class="col-6 col-md-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="rest_day_{{ rest_days_values[i] }}"
+                           value="{{ rest_days_values[i] }}">
+                    <label class="form-check-label small" for="rest_day_{{ rest_days_values[i] }}">
+                      {{ rest_days_labels[i] }}
+                    </label>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              <div class="text-danger small mt-1" id="rest_days_error"></div>
+            </div>
+          </div>
+
+          <!-- Success/Error Messages -->
+          <div id="coachingSuccessAlert" class="alert alert-success mt-3" style="display:none;">
+            <i class="fas fa-check-circle me-2"></i><span id="coachingSuccessMsg">Đã lưu hồ sơ tập luyện!</span>
+          </div>
+          <div id="coachingErrorAlert" class="alert alert-danger mt-3" style="display:none;">
+            <i class="fas fa-exclamation-circle me-2"></i><span id="coachingErrorMsg">Lỗi</span>
+          </div>
+
+          <!-- Save Button -->
+          <button type="button" class="btn btn-primary btn-lg px-5 shadow-sm mt-4" onclick="saveCoachingProfile()">
+            <i class="fas fa-save me-2"></i>Lưu Hồ Sơ Tập Luyện
+          </button>
+        </div>
+
+        <!-- Section B: Garmin Connect -->
+        <div class="stat-card mb-3">
+          <div class="form-section-header"><i class="fas fa-watch me-2"></i>Garmin Connect</div>
+
+          <!-- Status Badge -->
+          <div id="garminStatusBadge" class="mb-3"></div>
+
+          <!-- Email & Password -->
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Email Garmin</label>
+              <input type="email" class="form-control" id="garmin_email"
+                     placeholder="your@email.com">
+              <div class="text-danger small mt-1" id="garmin_email_error"></div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small">Mật Khẩu Garmin</label>
+              <div class="input-group">
+                <input type="password" class="form-control" id="garmin_password"
+                       placeholder="••••••••">
+                <button class="btn btn-outline-secondary" type="button" id="passwordToggle"
+                        onclick="togglePasswordVisibility()">
+                  <i class="fas fa-eye"></i>
+                </button>
+              </div>
+              <div class="text-danger small mt-1" id="garmin_password_error"></div>
+            </div>
+          </div>
+
+          <!-- Enable Sync Checkbox -->
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="garmin_enabled">
+            <label class="form-check-label fw-semibold small" for="garmin_enabled">
+              🟢 Bật đồng bộ Garmin
+            </label>
+          </div>
+
+          <!-- Last Sync & Next Sync -->
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <div class="small text-muted">
+                <span class="fw-semibold">Đồng bộ lần cuối:</span>
+                <span id="garmin_last_sync">Chưa sync</span>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">
+                <span class="fw-semibold">Lần tiếp theo:</span>
+                <span id="garmin_next_sync">05:45 sáng hàng ngày</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Success/Error Messages -->
+          <div id="garminSuccessAlert" class="alert alert-success mt-3" style="display:none;">
+            <i class="fas fa-check-circle me-2"></i><span id="garminSuccessMsg">Xác thực thành công!</span>
+          </div>
+          <div id="garminErrorAlert" class="alert alert-danger mt-3" style="display:none;">
+            <i class="fas fa-exclamation-circle me-2"></i><span id="garminErrorMsg">Lỗi</span>
+          </div>
+
+          <!-- Buttons -->
+          <div class="btn-group-custom mt-4" role="group">
+            <button type="button" class="btn btn-primary px-5 shadow-sm" onclick="testGarminConnection()" id="garminTestBtn">
+              <i class="fas fa-sync me-2"></i>Kiểm Tra & Lưu
+            </button>
+            <button type="button" class="btn btn-outline-warning px-5 shadow-sm ms-2" id="garminReauthBtn"
+                    style="display:none;" onclick="reauthGarmin()">
+              <i class="fas fa-key me-2"></i>Xác Thực Lại
+            </button>
+          </div>
+
+          <!-- Loading Spinner -->
+          <div id="garminLoadingSpinner" class="mt-3" style="display:none;">
+            <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+              <span class="visually-hidden">Đang tải...</span>
+            </div>
+            <span class="text-muted small">Đang xác thực với Garmin...</span>
+          </div>
+        </div>
+
       </div>
 
       <!-- ====== TAB: SETTINGS ====== -->
@@ -965,11 +1349,17 @@
       training: '🏃‍♂️ Training Log',
       memory:   '🧠 AI Memory',
       testing:  '🧪 Testing',
+      setup:    '⚙️ Setup',
       settings: '⚙️ Settings',
       news:     '📰 News Agent',
       logging:  '📋 Log Levels',
       system:   '🖥️ System',
     };
+
+    // Load setup state if switching to setup tab
+    if (tabName === 'setup') {
+      loadSetupState();
+    }
     // Hide all panes
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item-link').forEach(l => l.classList.remove('active'));
@@ -1110,6 +1500,432 @@
       if (cat) profile[cat] = weight;
     });
     document.getElementById('interestProfileJson').value = JSON.stringify(profile);
+  }
+
+  function toggleAccord(level) {
+    const body = document.getElementById('body-' + level);
+    const arrow = document.getElementById('arrow-' + level);
+    if (!body) return;
+    const open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+  }
+
+  function toggleReqModule(id) {
+    const body = document.getElementById(id);
+    if (!body) return;
+    const moduleName = id.replace('reqmod-', '');
+    const arrow = document.getElementById('reqarrow-' + moduleName);
+    const open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+  }
+
+  // ========== SETUP TAB FUNCTIONS ==========
+
+  // Load setup state from /console/setup endpoint
+  async function loadSetupState() {
+    try {
+      const res = await fetch('/console/setup');
+      if (!res.ok) {
+        console.warn('Failed to load setup state:', res.status);
+        return;
+      }
+      const data = await res.json();
+
+      // Pre-fill coaching profile
+      const c = data.coaching || {};
+      if (c.race_distance_km) {
+        const distVal = String(c.race_distance_km);
+        const select = document.getElementById('race_distance_select');
+        const customInput = document.getElementById('race_distance_custom');
+
+        if (['5', '10', '21.1', '42.2'].includes(distVal)) {
+          select.value = distVal;
+          customInput.style.display = 'none';
+        } else {
+          select.value = 'custom';
+          customInput.value = c.race_distance_km;
+          customInput.style.display = 'block';
+        }
+      }
+
+      if (c.race_date) {
+        document.getElementById('race_date').value = c.race_date;
+      }
+
+      if (c.race_target_time_min) {
+        const minutes = parseInt(c.race_target_time_min);
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        document.getElementById('race_target_time').value =
+          hours > 0 ? `${hours}:${String(mins).padStart(2, '0')}` : String(minutes);
+      }
+
+      if (c.current_weekly_km) {
+        document.getElementById('current_weekly_km').value = c.current_weekly_km;
+      }
+
+      if (c.training_days_per_week) {
+        const slider = document.getElementById('training_days_per_week');
+        slider.value = c.training_days_per_week;
+        updateTrainingDaysLabel();
+      }
+
+      if (c.preferred_rest_days && Array.isArray(c.preferred_rest_days)) {
+        c.preferred_rest_days.forEach(day => {
+          const checkbox = document.getElementById(`rest_day_${day}`);
+          if (checkbox) checkbox.checked = true;
+        });
+      }
+
+      // Show/hide incomplete dot in nav
+      const dot = document.getElementById('setup-incomplete-dot');
+      if (dot) {
+        dot.style.display = c.is_complete ? 'none' : 'inline';
+      }
+
+      // Pre-fill Garmin status
+      const g = data.garmin || {};
+      updateGarminStatus(g);
+
+    } catch (error) {
+      console.error('Error loading setup state:', error);
+    }
+  }
+
+  // Update training days label
+  function updateTrainingDaysLabel() {
+    const slider = document.getElementById('training_days_per_week');
+    const label = document.getElementById('trainingDaysValue');
+    if (label) label.textContent = slider.value;
+  }
+
+  // Handle race distance dropdown change
+  function handleRaceDistanceChange() {
+    const select = document.getElementById('race_distance_select');
+    const customInput = document.getElementById('race_distance_custom');
+    if (select.value === 'custom') {
+      customInput.style.display = 'block';
+      customInput.focus();
+    } else {
+      customInput.style.display = 'none';
+    }
+    clearError('race_distance_error');
+  }
+
+  // Validate functions (clear error on user change)
+  function validateRaceDistance() {
+    clearError('race_distance_error');
+  }
+
+  function validateRaceDate() {
+    clearError('race_date_error');
+  }
+
+  function validateTargetTime() {
+    clearError('race_target_time_error');
+  }
+
+  function validateWeeklyKm() {
+    clearError('current_weekly_km_error');
+  }
+
+  // Clear error message
+  function clearError(elementId) {
+    const el = document.getElementById(elementId);
+    if (el) el.textContent = '';
+  }
+
+  // Save coaching profile
+  async function saveCoachingProfile() {
+    // Clear all errors
+    document.querySelectorAll('[id$="_error"]').forEach(el => el.textContent = '');
+    document.getElementById('coachingSuccessAlert').style.display = 'none';
+    document.getElementById('coachingErrorAlert').style.display = 'none';
+
+    // Validate and gather data
+    const select = document.getElementById('race_distance_select');
+    const customInput = document.getElementById('race_distance_custom');
+    let race_distance_km = null;
+
+    if (select.value === 'custom') {
+      const val = parseFloat(customInput.value);
+      if (!val || val <= 0 || val > 200) {
+        document.getElementById('race_distance_error').textContent = 'Vui lòng nhập cự ly hợp lệ (1–200 km)';
+        return;
+      }
+      race_distance_km = val;
+    } else if (select.value) {
+      race_distance_km = parseFloat(select.value);
+    }
+
+    const race_date = document.getElementById('race_date').value;
+    if (!race_date) {
+      document.getElementById('race_date_error').textContent = 'Vui lòng chọn ngày đua';
+      return;
+    }
+
+    // Validate race date is at least 28 days in future
+    const raceDate = new Date(race_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const minDate = new Date(today);
+    minDate.setDate(minDate.getDate() + 28);
+    if (raceDate < minDate) {
+      document.getElementById('race_date_error').textContent = 'Ngày đua phải cách hôm nay ít nhất 28 ngày';
+      return;
+    }
+
+    const target_time_str = document.getElementById('race_target_time').value.trim();
+    let race_target_time_min = null;
+    if (target_time_str) {
+      if (target_time_str.includes(':')) {
+        const [h, m] = target_time_str.split(':');
+        const hh = parseInt(h) || 0;
+        const mm = parseInt(m) || 0;
+        race_target_time_min = hh * 60 + mm;
+      } else {
+        race_target_time_min = parseInt(target_time_str);
+      }
+      if (!race_target_time_min || race_target_time_min <= 0) {
+        document.getElementById('race_target_time_error').textContent = 'Định dạng không hợp lệ';
+        return;
+      }
+    }
+
+    const current_weekly_km = parseFloat(document.getElementById('current_weekly_km').value) || null;
+    if (current_weekly_km && (current_weekly_km < 0 || current_weekly_km > 200)) {
+      document.getElementById('current_weekly_km_error').textContent = 'Vui lòng nhập giá trị hợp lệ (0–200)';
+      return;
+    }
+
+    const training_days_per_week = parseInt(document.getElementById('training_days_per_week').value) || 3;
+
+    const preferred_rest_days = [];
+    document.querySelectorAll('input[id^="rest_day_"]:checked').forEach(cb => {
+      const day = cb.value;
+      if (day) preferred_rest_days.push(day);
+    });
+
+    // Prepare payload
+    const payload = {
+      race_distance_km,
+      race_date,
+      race_target_time_min,
+      current_weekly_km,
+      training_days_per_week,
+      preferred_rest_days
+    };
+
+    // POST to /console/setup/coaching
+    try {
+      const res = await fetch('/console/setup/coaching', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        document.getElementById('coachingSuccessAlert').style.display = 'block';
+        document.getElementById('coachingSuccessMsg').textContent = data.message || 'Đã lưu hồ sơ tập luyện!';
+        // Hide success message after 5s
+        setTimeout(() => {
+          document.getElementById('coachingSuccessAlert').style.display = 'none';
+        }, 5000);
+      } else {
+        // Show field errors
+        if (data.errors && typeof data.errors === 'object') {
+          Object.entries(data.errors).forEach(([field, msg]) => {
+            const errorEl = document.getElementById(`${field}_error`);
+            if (errorEl) errorEl.textContent = msg;
+          });
+        }
+        throw new Error(data.message || 'Lưu thất bại');
+      }
+    } catch (error) {
+      document.getElementById('coachingErrorAlert').style.display = 'block';
+      document.getElementById('coachingErrorMsg').textContent = error.message || 'Đã xảy ra lỗi';
+    }
+  }
+
+  // Update Garmin status badge and fields
+  function updateGarminStatus(garminData) {
+    const badge = document.getElementById('garminStatusBadge');
+    const emailInput = document.getElementById('garmin_email');
+    const passwordInput = document.getElementById('garmin_password');
+    const enabledCheckbox = document.getElementById('garmin_enabled');
+    const lastSyncEl = document.getElementById('garmin_last_sync');
+    const reauthBtn = document.getElementById('garminReauthBtn');
+
+    if (!badge) return;
+
+    let badgeHtml = '';
+    let hasCredentials = false;
+
+    if (garminData.status === 'connected') {
+      badgeHtml = `
+        <div class="alert alert-success" role="alert" style="margin:0 0 16px 0;">
+          <span style="font-size:1.2rem;margin-right:8px;">🟢</span>
+          <strong>Đã kết nối</strong>
+          <span style="color:#718096;">(${garminData.email_masked || '***'})</span>
+        </div>
+      `;
+      hasCredentials = true;
+      if (garminData.last_sync) {
+        lastSyncEl.textContent = garminData.last_sync;
+      }
+    } else if (garminData.status === 'circuit_breaker_open') {
+      badgeHtml = `
+        <div class="alert alert-warning" role="alert" style="margin:0 0 16px 0;">
+          <span style="font-size:1.2rem;margin-right:8px;">⚠️</span>
+          <strong>Circuit Breaker đang mở</strong>
+          <div class="small text-muted mt-2">Quá nhiều lần xác thực thất bại. Vui lòng thử lại sau.</div>
+        </div>
+      `;
+      hasCredentials = true;
+    } else {
+      badgeHtml = `
+        <div class="alert alert-secondary" role="alert" style="margin:0 0 16px 0;">
+          <span style="font-size:1.2rem;margin-right:8px;">🔴</span>
+          <strong>Chưa kết nối</strong>
+        </div>
+      `;
+    }
+
+    badge.innerHTML = badgeHtml;
+
+    // Populate fields if credentials exist
+    if (garminData.email) {
+      emailInput.value = garminData.email;
+    }
+
+    if (garminData.enabled !== undefined) {
+      enabledCheckbox.checked = garminData.enabled;
+    }
+
+    // Show reauth button only if credentials exist
+    if (reauthBtn) {
+      reauthBtn.style.display = hasCredentials ? 'inline-block' : 'none';
+    }
+  }
+
+  // Test Garmin connection
+  async function testGarminConnection() {
+    // Clear alerts
+    document.getElementById('garminSuccessAlert').style.display = 'none';
+    document.getElementById('garminErrorAlert').style.display = 'none';
+    document.querySelectorAll('[id^="garmin_"][id$="_error"]').forEach(el => el.textContent = '');
+
+    // Validate
+    const email = document.getElementById('garmin_email').value.trim();
+    const password = document.getElementById('garmin_password').value.trim();
+
+    if (!email) {
+      document.getElementById('garmin_email_error').textContent = 'Vui lòng nhập email';
+      return;
+    }
+    if (!password) {
+      document.getElementById('garmin_password_error').textContent = 'Vui lòng nhập mật khẩu';
+      return;
+    }
+
+    // Show spinner
+    const spinner = document.getElementById('garminLoadingSpinner');
+    const btn = document.getElementById('garminTestBtn');
+    spinner.style.display = 'block';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/console/setup/garmin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          password,
+          enabled: document.getElementById('garmin_enabled').checked
+        })
+      });
+
+      const data = await res.json();
+      spinner.style.display = 'none';
+      btn.disabled = false;
+
+      if (res.ok && data.success) {
+        document.getElementById('garminSuccessAlert').style.display = 'block';
+        document.getElementById('garminSuccessMsg').textContent = data.message || 'Xác thực thành công!';
+
+        // Update status
+        updateGarminStatus(data.garmin_status || {});
+
+        // Hide success after 5s
+        setTimeout(() => {
+          document.getElementById('garminSuccessAlert').style.display = 'none';
+        }, 5000);
+      } else {
+        // Show field errors or general error
+        if (data.errors && typeof data.errors === 'object') {
+          Object.entries(data.errors).forEach(([field, msg]) => {
+            const errorEl = document.getElementById(`garmin_${field}_error`);
+            if (errorEl) errorEl.textContent = msg;
+          });
+        }
+        throw new Error(data.message || 'Xác thực thất bại');
+      }
+    } catch (error) {
+      spinner.style.display = 'none';
+      btn.disabled = false;
+      document.getElementById('garminErrorAlert').style.display = 'block';
+      document.getElementById('garminErrorMsg').textContent = error.message || 'Đã xảy ra lỗi';
+    }
+  }
+
+  // Re-authenticate Garmin
+  async function reauthGarmin() {
+    if (!confirm('Xóa token và nhập lại thông tin Garmin?')) return;
+
+    const spinner = document.getElementById('garminLoadingSpinner');
+    spinner.style.display = 'block';
+
+    try {
+      const res = await fetch('/console/setup/garmin/reauth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await res.json();
+      spinner.style.display = 'none';
+
+      if (res.ok && data.success) {
+        document.getElementById('garminSuccessAlert').style.display = 'block';
+        document.getElementById('garminSuccessMsg').textContent = data.message || 'Đã xóa token';
+        // Clear password field
+        document.getElementById('garmin_password').value = '';
+        updateGarminStatus({});
+        setTimeout(() => {
+          document.getElementById('garminSuccessAlert').style.display = 'none';
+        }, 5000);
+      } else {
+        throw new Error(data.message || 'Xóa thất bại');
+      }
+    } catch (error) {
+      spinner.style.display = 'none';
+      document.getElementById('garminErrorAlert').style.display = 'block';
+      document.getElementById('garminErrorMsg').textContent = error.message || 'Đã xảy ra lỗi';
+    }
+  }
+
+  // Toggle password visibility
+  function togglePasswordVisibility() {
+    const input = document.getElementById('garmin_password');
+    const toggle = document.getElementById('passwordToggle');
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    if (toggle) {
+      toggle.innerHTML = isPassword ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+    }
   }
 </script>
 

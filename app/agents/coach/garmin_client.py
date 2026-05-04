@@ -6,6 +6,7 @@ from typing import Optional
 
 from app.core.logging_conf import get_module_logger
 from app.core.database import upsert_garmin_daily_metrics, get_garmin_daily_metrics
+from app.core.secrets import decrypt_garmin_credentials
 
 logger = get_module_logger("garmin_client")
 
@@ -71,8 +72,13 @@ class GarminClient:
 
     def __init__(self) -> None:
         self._client = None
-        self._email = os.environ.get("GARMIN_EMAIL", "")
-        self._password = os.environ.get("GARMIN_PASSWORD", "")
+        # Priority: encrypted secrets file → env vars
+        creds = decrypt_garmin_credentials()
+        if creds:
+            self._email, self._password = creds
+        else:
+            self._email = os.environ.get("GARMIN_EMAIL", "")
+            self._password = os.environ.get("GARMIN_PASSWORD", "")
 
     def _get_client(self):
         """Lazy-initialize the garminconnect client, reusing saved tokens."""
@@ -251,6 +257,24 @@ class GarminClient:
             _record_failure()
             logger.error(f"[GARMIN] Failed to fetch gear stats: {e}")
             return []
+
+    def test_connection(self) -> tuple[bool, str]:
+        """Test Garmin credentials. Returns (success, error_message)."""
+        if not self._email or not self._password:
+            return False, "No credentials configured"
+        try:
+            client = self._get_client()
+            # Light check: get user profile
+            client.get_full_name()  # or any cheap API call
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def clear_tokens(self) -> None:
+        """Delete saved tokens, forcing full re-login on next use."""
+        if _TOKEN_FILE.exists():
+            _TOKEN_FILE.unlink()
+        self._client = None
 
     def _notify_circuit_open(self, user_id: str) -> None:
         """Send one Telegram alert when circuit breaker opens."""
