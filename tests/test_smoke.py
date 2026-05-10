@@ -224,6 +224,9 @@ class TestGarminCoachPlanningImports(unittest.TestCase):
         from app.agents.coach.garmin_client import (  # noqa: F401
             GarminClient,
             get_garmin_client,
+            has_oauth_token,
+            save_oauth_token,
+            load_oauth_token,
         )
 
     def test_schemas_importable(self):
