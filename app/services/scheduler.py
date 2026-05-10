@@ -121,11 +121,19 @@ def task_weekly_reflection():
 # ==========================================
 # 📰 NEWS BRIEFINGS
 # ==========================================
+def _is_session_enabled(config: dict, session: str) -> bool:
+    """Return True if the given news session is enabled (defaults True if key absent)."""
+    return config.get("news_agent", {}).get("sessions", {}).get(session, True)
+
+
 def task_morning_news():
     """Morning news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering morning news briefing...")
         config = load_config()
+        if not _is_session_enabled(config, "morning"):
+            logger.info("[SCHEDULER] Morning news session disabled in config. Skipping.")
+            return
+        logger.info("[SCHEDULER] Triggering morning news briefing...")
         generate_news_briefing(config, session="morning")
     except Exception as e:
         logger.error("[SCHEDULER] task_morning_news failed: %s", e, exc_info=True)
@@ -134,8 +142,11 @@ def task_morning_news():
 def task_afternoon_news():
     """Afternoon news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering afternoon news briefing...")
         config = load_config()
+        if not _is_session_enabled(config, "afternoon"):
+            logger.info("[SCHEDULER] Afternoon news session disabled in config. Skipping.")
+            return
+        logger.info("[SCHEDULER] Triggering afternoon news briefing...")
         generate_news_briefing(config, session="afternoon")
     except Exception as e:
         logger.error("[SCHEDULER] task_afternoon_news failed: %s", e, exc_info=True)
@@ -144,8 +155,11 @@ def task_afternoon_news():
 def task_evening_news():
     """Evening news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering evening news briefing...")
         config = load_config()
+        if not _is_session_enabled(config, "evening"):
+            logger.info("[SCHEDULER] Evening news session disabled in config. Skipping.")
+            return
+        logger.info("[SCHEDULER] Triggering evening news briefing...")
         generate_news_briefing(config, session="evening")
     except Exception as e:
         logger.error("[SCHEDULER] task_evening_news failed: %s", e, exc_info=True)

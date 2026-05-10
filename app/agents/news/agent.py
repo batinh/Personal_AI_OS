@@ -157,15 +157,26 @@ _DOC_THEM_RE = re.compile(
 )
 
 
-def _build_sources_block(urls: list[tuple[str, str]], max_sources: int = 3) -> str:
-    """Fallback sources block when no 📰 markers found in model output."""
+def _inject_inline_links(body: str, urls: list[tuple[str, str]]) -> str:
+    """Attach a source link inline after each 📰 article block, pairing URLs in order.
+
+    Splits on 📰 markers so each article gets the next grounding URL appended.
+    If fewer URLs than articles, remaining articles get no link (no broken href).
+    """
     if not urls:
-        return ""
-    lines = ["📎 <b>Nguồn:</b>"]
-    for title, uri in urls[:max_sources]:
-        label = (title.strip() or uri)[:60]
-        lines.append(f'• <a href="{uri}">{label}</a>')
-    return "\n".join(lines)
+        return body
+    parts = re.split(r"(?=📰)", body.strip())
+    result = []
+    url_idx = 0
+    for part in parts:
+        stripped = part.strip()
+        if stripped.startswith("📰") and url_idx < len(urls):
+            _, uri = urls[url_idx]
+            url_idx += 1
+            stripped = stripped.rstrip() + f' <a href="{uri}">→ đọc thêm</a>'
+        if stripped:
+            result.append(stripped)
+    return "\n\n".join(result)
 
 
 def _call_gemini_with_search(
@@ -316,11 +327,9 @@ def _call_topic(
         )
         return topic, None
 
-    # Strip any LLM-written URLs (unreliable), then append real grounding sources block.
+    # Strip any LLM-written URLs then inject real grounding URLs inline after each article.
     body = _DOC_THEM_RE.sub("", block.strip())
-    sources = _build_sources_block(grounding_urls)
-    if sources:
-        body = body + "\n\n" + sources
+    body = _inject_inline_links(body, grounding_urls)
     formatted = f"{emoji} <b>{topic_name.upper()}</b>\n\n{body}"
     logger.info(
         f"[NEWS-TOPIC] Got {len(block)} chars, {len(grounding_urls)} sources for '{topic_name}'"
@@ -347,6 +356,11 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     news_cfg = config.get("news_agent", {})
     if not news_cfg.get("enabled", False):
         logger.info("[NEWS] Agent disabled in config. Skipping.")
+        return
+
+    sessions_cfg = news_cfg.get("sessions", {})
+    if not sessions_cfg.get(session, True):
+        logger.info("[NEWS] Session '%s' disabled in config. Skipping.", session)
         return
 
     chat_id = _resolve_chat_id(config)
@@ -482,9 +496,7 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
         return None
 
     reply = _DOC_THEM_RE.sub("", reply)
-    sources = _build_sources_block(grounding_urls)
-    if sources:
-        reply = reply.rstrip() + "\n\n" + sources
+    reply = _inject_inline_links(reply, grounding_urls)
 
     logger.info(
         f"[NEWS-ONDEMAND] Reply length={len(reply)}, sources={len(grounding_urls)}"
@@ -520,9 +532,7 @@ def _generate_legacy_briefing(
         return
 
     reply = _DOC_THEM_RE.sub("", reply)
-    sources = _build_sources_block(grounding_urls)
-    if sources:
-        reply = reply.rstrip() + "\n\n" + sources
+    reply = _inject_inline_links(reply, grounding_urls)
 
     send_telegram_html(chat_id, reply)
     logger.info(f"[NEWS] Sent legacy {session} briefing to chat_id={chat_id}")

@@ -205,6 +205,26 @@ async def console_save_news(
     news_cfg["evening_time"] = form.get("evening_time", "20:00").strip()
     news_cfg["telegram_chat_id"] = form.get("news_telegram_chat_id", "").strip()
 
+    # --- Per-session toggles ---
+    news_cfg["sessions"] = {
+        "morning": form.get("session_morning") == "on",
+        "afternoon": form.get("session_afternoon") == "on",
+        "evening": form.get("session_evening") == "on",
+    }
+
+    # --- Topics (serialized as JSON by client-side JS) ---
+    topics_json = form.get("topics_json", "[]")
+    try:
+        topics = json.loads(topics_json)
+        if isinstance(topics, list):
+            news_cfg["topics"] = [
+                {"emoji": str(t.get("emoji", "📰")), "name": str(t.get("name", ""))}
+                for t in topics
+                if isinstance(t, dict) and t.get("name", "").strip()
+            ]
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("[CONSOLE] Invalid topics_json — keeping existing topics.")
+
     # Remove deprecated RSS-era keys if present
     for old_key in (
         "watch_interval_minutes",
@@ -276,13 +296,21 @@ async def get_setup_state(request: Request, _=Depends(verify_admin)):
     user_id = get_primary_user_id()
 
     # Coaching profile from config
+    _DAY_ABBRS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    rest_days_raw = cfg.get("setup", {}).get("preferred_rest_days", [])
+    # Normalise: stored as int weekday indices (0=Mon) or already as abbr strings
+    rest_days_abbr = [
+        _DAY_ABBRS[d] if isinstance(d, int) and 0 <= d < 7 else str(d)
+        for d in rest_days_raw
+    ]
+
     coaching = {
         "race_distance_km": cfg.get("race_distance_km"),
         "race_date": cfg.get("race_date"),
         "race_target_time_min": cfg.get("race_target_time_min"),
         "current_weekly_km": cfg.get("setup", {}).get("current_weekly_km", cfg.get("current_weekly_km")),
         "training_days_per_week": cfg.get("setup", {}).get("training_days_per_week"),
-        "preferred_rest_days": cfg.get("setup", {}).get("preferred_rest_days", []),
+        "preferred_rest_days": rest_days_abbr,
         "is_complete": bool(cfg.get("race_date") and cfg.get("race_distance_km")),
     }
 
@@ -295,13 +323,17 @@ async def get_setup_state(request: Request, _=Depends(verify_admin)):
     metrics = get_garmin_daily_metrics(user_id, today)
     last_sync = metrics.get("created_at") if metrics else None
 
+    from app.agents.coach.garmin_client import has_oauth_token as _has_oauth_token
+
     garmin = {
         "is_enabled": garmin_cfg.get("enabled", False),
         "has_credentials": has_creds,
+        "has_oauth_token": _has_oauth_token(),
         "email_masked": _mask_email(decrypt_garmin_credentials()[0]) if has_garmin_credentials() else None,
         "last_sync": last_sync,
         "sync_time": garmin_cfg.get("sync_time", "05:45"),
         "circuit_open": _is_circuit_open(),
+        "is_connected": (_has_oauth_token() or has_creds) and not _is_circuit_open(),
     }
 
     return JSONResponse({"coaching": coaching, "garmin": garmin})
@@ -321,42 +353,52 @@ async def save_coaching_profile(request: Request, _=Depends(verify_admin)):
     body = await request.json()
     errors = {}
 
-    # Run same validators as Telegram wizard
-    dist_result = validate_distance(str(body.get("race_distance_km", "")))
-    if dist_result is None:
-        errors["race_distance_km"] = "Cự ly không hợp lệ (ví dụ: 10, 21.1, 42.2)"
+    # Validators return (ok, value, error_msg) 3-tuples
+    dist_ok, dist_val, dist_err = validate_distance(str(body.get("race_distance_km", "")))
+    if not dist_ok:
+        errors["race_distance_km"] = dist_err or "Cự ly không hợp lệ (ví dụ: 10, 21.1, 42.2)"
 
-    date_result = validate_date(str(body.get("race_date", "")))
-    if date_result is None:
-        errors["race_date"] = "Ngày không hợp lệ hoặc chưa đủ 4 tuần từ hôm nay"
+    date_ok, date_val, date_err = validate_date(str(body.get("race_date", "")))
+    if not date_ok:
+        errors["race_date"] = date_err or "Ngày không hợp lệ hoặc chưa đủ 4 tuần từ hôm nay"
 
-    time_result = validate_time(str(body.get("race_target_time_min", "")))
-    if time_result is None:
-        errors["race_target_time_min"] = "Thời gian không hợp lệ (ví dụ: 1:45 hoặc 105)"
+    km_ok, km_val, km_err = validate_kmweek(str(body.get("current_weekly_km", "")))
+    if not km_ok:
+        errors["current_weekly_km"] = km_err or "Số km không hợp lệ (0–200)"
 
-    km_result = validate_kmweek(str(body.get("current_weekly_km", "")))
-    if km_result is None:
-        errors["current_weekly_km"] = "Số km không hợp lệ (0–200)"
+    days_ok, days_val, days_err = validate_days(str(body.get("training_days_per_week", "")))
+    if not days_ok:
+        errors["training_days_per_week"] = days_err or "Số ngày tập phải từ 3–6"
 
-    days_result = validate_days(str(body.get("training_days_per_week", "")))
-    if days_result is None:
-        errors["training_days_per_week"] = "Số ngày tập phải từ 3–6"
+    # Validate time uses race_distance_km for pace sanity check
+    time_ok, time_val, time_err = validate_time(
+        str(body.get("race_target_time_min", "")),
+        race_distance_km=dist_val or 21.1,
+    )
+    if not time_ok:
+        errors["race_target_time_min"] = time_err or "Thời gian không hợp lệ (ví dụ: 1:45 hoặc 105)"
 
-    rest_result = validate_rest_days(str(body.get("preferred_rest_days", "")))
-    if rest_result is None:
-        errors["preferred_rest_days"] = "Ngày nghỉ không hợp lệ"
+    # preferred_rest_days arrives as JSON array ["sat", "sun"] — join for validator
+    rest_days_raw = body.get("preferred_rest_days", [])
+    if isinstance(rest_days_raw, list):
+        rest_days_str = ", ".join(str(d) for d in rest_days_raw)
+    else:
+        rest_days_str = str(rest_days_raw)
+    rest_ok, rest_val, rest_err = validate_rest_days(rest_days_str, training_days=days_val or 5)
+    if not rest_ok:
+        errors["preferred_rest_days"] = rest_err or "Ngày nghỉ không hợp lệ"
 
     if errors:
         return JSONResponse({"success": False, "errors": errors}, status_code=422)
 
     # Write to config using same path as Telegram wizard
     collected_data = {
-        "race_distance_km": dist_result,
-        "race_date": date_result,
-        "race_target_time_min": time_result,
-        "current_weekly_km": km_result,
-        "training_days_per_week": days_result,
-        "preferred_rest_days": rest_result,
+        "race_distance_km": dist_val,
+        "race_date": date_val,
+        "race_target_time_min": time_val,
+        "current_weekly_km": km_val,
+        "training_days_per_week": days_val,
+        "preferred_rest_days": rest_val,
     }
     user_id = get_primary_user_id()
     finalize_setup(user_id, collected_data)
@@ -376,22 +418,30 @@ async def save_garmin_credentials(request: Request, _=Depends(verify_admin)):
     password = body.get("password", "")
     enable = bool(body.get("enable", True))
 
+    logger.info(f"[GARMIN-SETUP] POST /console/setup/garmin — email={email[:3] + '***' if email else '(empty)'} enable={enable}")
+
     if not email or not password:
-        return JSONResponse({"success": False, "error": "Email và password là bắt buộc."}, status_code=400)
+        logger.warning("[GARMIN-SETUP] Missing email or password in request body")
+        return JSONResponse({"success": False, "message": "Email và password là bắt buộc."}, status_code=400)
 
     # Store encrypted BEFORE testing (so GarminClient can read them)
     encrypt_garmin_credentials(email, password)
+    logger.info("[GARMIN-SETUP] Credentials encrypted and stored — starting connection test (max 30s)")
 
     # Test connection
     client = GarminClient()
-    success, error = client.test_connection()
+    import time
+    t0 = time.monotonic()
+    success, error = client.test_connection(timeout_sec=30)
+    elapsed = round(time.monotonic() - t0, 1)
+    logger.info(f"[GARMIN-SETUP] test_connection result: success={success} elapsed={elapsed}s error={error!r}")
 
     if not success:
         # Still keep credentials but report failure (user may retry)
         return JSONResponse({
             "success": False,
             "is_connected": False,
-            "error": f"Kết nối thất bại: {error}. Thông tin đã lưu, thử lại sau.",
+            "message": f"Kết nối thất bại sau {elapsed}s: {error}. Thông tin đã lưu, thử lại sau.",
         })
 
     # Update garmin.enabled in config
@@ -406,10 +456,61 @@ async def save_garmin_credentials(request: Request, _=Depends(verify_admin)):
     })
 
 
+@router.post("/console/setup/garmin/upload-token")
+async def upload_garmin_token(request: Request, _=Depends(verify_admin)):
+    """Accept an OAuth token JSON string exported from garmin_auth_local.py."""
+    from app.agents.coach.garmin_client import save_oauth_token, has_oauth_token, GarminClient, _garmin_client_instance
+    from fastapi.responses import JSONResponse
+
+    body = await request.json()
+    token_json = (body.get("token_json") or "").strip()
+
+    if not token_json:
+        return JSONResponse({"success": False, "message": "token_json là bắt buộc."}, status_code=400)
+
+    # Basic sanity check — must be JSON with at least one Garmin key
+    try:
+        parsed = json.loads(token_json)
+        if not any(k in parsed for k in ("di_token", "di_refresh_token", "oauth_token", "access_token")):
+            return JSONResponse(
+                {"success": False, "message": "JSON không hợp lệ — không chứa Garmin OAuth token."},
+                status_code=400,
+            )
+    except json.JSONDecodeError:
+        return JSONResponse({"success": False, "message": "Không phải JSON hợp lệ."}, status_code=400)
+
+    save_oauth_token(token_json)
+
+    # Reset singleton so next use picks up the new token
+    import app.agents.coach.garmin_client as _gc_mod
+    _gc_mod._garmin_client_instance = None
+
+    # Quick verification (with timeout) using the new token
+    client = GarminClient()
+    import concurrent.futures
+    def _verify():
+        c = client._get_client()
+        return c.get_full_name() or "OK"
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_verify)
+    executor.shutdown(wait=False)
+    try:
+        name = future.result(timeout=15)
+        logger.info(f"[GARMIN-SETUP] OAuth token upload verified — user={name}")
+        return JSONResponse({"success": True, "message": f"Token hợp lệ! Đã xác thực: {name}"})
+    except concurrent.futures.TimeoutError:
+        logger.warning("[GARMIN-SETUP] OAuth token upload: verification timed out (token saved anyway)")
+        return JSONResponse({"success": True, "message": "Token đã lưu. Xác minh timeout — thử đồng bộ sau."})
+    except Exception as e:
+        logger.error(f"[GARMIN-SETUP] OAuth token upload: verification failed — {e}")
+        return JSONResponse({"success": False, "message": f"Token không hoạt động: {e}"}, status_code=400)
+
+
 @router.get("/console/setup/garmin/status")
 async def get_garmin_status(request: Request, _=Depends(verify_admin)):
     """Return Garmin connection status without exposing credentials."""
-    from app.agents.coach.garmin_client import _TOKEN_FILE
+    from app.agents.coach.garmin_client import _TOKEN_FILE, has_oauth_token
     from app.core.secrets import has_garmin_credentials, decrypt_garmin_credentials
     from fastapi.responses import JSONResponse
     from app.core.database import get_garmin_daily_metrics
@@ -424,13 +525,15 @@ async def get_garmin_status(request: Request, _=Depends(verify_admin)):
 
     has_creds = has_garmin_credentials() or bool(os.getenv("GARMIN_EMAIL"))
     has_tokens = _TOKEN_FILE.exists()
+    has_oauth = has_oauth_token()
     circuit_open = _is_circuit_open()
-    is_connected = has_creds and has_tokens and not circuit_open
+    is_connected = (has_oauth or (has_creds and has_tokens)) and not circuit_open
 
     return JSONResponse({
         "is_enabled": cfg.get("garmin", {}).get("enabled", False),
         "is_connected": is_connected,
         "has_credentials": has_creds,
+        "has_oauth_token": has_oauth,
         "last_sync": metrics.get("created_at") if metrics else None,
         "sync_time": cfg.get("garmin", {}).get("sync_time", "05:45"),
         "circuit_open": circuit_open,

@@ -23,13 +23,14 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 |----|------|-------|----------|----------|------|--------|
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
 | [ISS-014](#iss-014--no-onboarding-guide-for-physiology-config-fields) | feature | No onboarding guide for physiology config fields (LTHR, rFTP) | Low | U+AI | 2026-04-26 | `docs/`, `config.example.json` |
-
 ---
 
 ## Closed
 
 | ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
 |----|------|-------|----------|----------|------------|--------|--------|--------|
+| [ISS-017](#iss-017--news-briefing-ux-overhaul-compact-format--inline-links--per-session-control) | enhancement | News briefing UX: compact format, inline links, per-session control | Medium | U | 2026-05-10 | 2026-05-10 | feat/garmin-coach-planning | `app/agents/news/`, `templates/console.html`, `app/routers/console.py` |
+| [ISS-016](#iss-016--garmin-login-blocked-from-server-ip-no-oauth-token-path) | bug | Garmin login times out from server IP — no OAuth token path | Critical | U+AI | 2026-05-10 | 2026-05-10 | feat/garmin-coach-planning | `garmin_client.py`, `console.py`, `console.html` |
 | [ISS-015](#iss-015--morning-briefing-guard-2-crashes-type-mismatch) | bug | Morning briefing Guard 2 crashes — type mismatch `str` vs `list` | Critical | U+AI | 2026-05-02 | 2026-05-02 | `db34ebe` | `app/agents/coach/agent.py` |
 | [ISS-001](#iss-001--alert-prompt-leaks-raw-template-to-telegram) | bug | Alert prompt leaks raw template to Telegram | Critical | U+AI | 2026-04-11 | 2026-04-11 | `47c63c7` | `alert_engine.py` |
 | [ISS-002](#iss-002--alert-engine-sends-one-message-per-article-spam) | bug | Alert engine sends one message per article (spam) | High | U+AI | 2026-04-11 | 2026-04-11 | `47c63c7` | `alert_engine.py` |
@@ -390,3 +391,47 @@ suggestion = compute_daily_suggestion(
 ```
 
 **Regression test:** `tests/test_sanity_flows.py::TestMorningBriefingGuard2` (9 tests).
+
+---
+
+### ISS-016 — Garmin login blocked from server IP — no OAuth token path
+
+**Type:** bug · **Priority:** Critical · **Reporter:** U+AI · **Date:** 2026-05-10
+**Module:** `app/agents/coach/garmin_client.py`, `app/routers/console.py`, `templates/console.html`
+
+**Symptom:**
+"Kết nối thất bại sau 30.0s: Kết nối timeout sau 30s — Garmin đang giới hạn server IP." displayed in console UI when saving Garmin credentials.
+
+**Root cause:**
+Garmin's unofficial API returns 429 + CAPTCHA_REQUIRED for all 5 login strategies (mobile+cffi, mobile+requests, widget+cffi, portal+cffi, portal+requests) when called from VPS/server IPs. This is a Garmin-side rate limit — no amount of retry or credential changes will fix it.
+
+**Fix:**
+Added OAuth token-based authentication as the primary path:
+1. `scripts/garmin_auth_local.py` — run on local machine to authenticate and export `client.dumps()` JSON
+2. `save_oauth_token()` / `load_oauth_token()` / `has_oauth_token()` functions in `garmin_client.py`
+3. `_get_client()` tries OAuth token first (no SSO needed, works from any IP), then legacy tokens, then full SSO
+4. `POST /console/setup/garmin/upload-token` endpoint accepts the token JSON
+5. Upload UI in Setup tab with instructions and inline verification
+
+**Regression:** OAuth token path is now first priority in `_get_client()`. Legacy SSO path is preserved as fallback (for local dev).
+
+
+### ISS-017 — News briefing UX: compact format, inline links, per-session control
+
+**Type:** enhancement · **Priority:** Medium · **Reporter:** U · **Date:** 2026-05-10
+**Module:** `app/agents/news/prompts.py`, `app/agents/news/agent.py`, `app/services/scheduler.py`, `app/routers/console.py`, `templates/console.html`, `config.example.json`
+
+**Symptom:**
+News briefings were too long (analysis + trend sections added ~40% extra text), source links were grouped at the bottom of each topic instead of inline with each article, and there was no way to disable individual sessions (morning/afternoon/evening) independently.
+
+**Changes:**
+1. **Compact format** — Removed `📊 Phân tích:` and `📈 Xu hướng:` sections from `_TOPIC_SYSTEM_INSTRUCTION`. Each article now outputs as a single line: `📰 <b>Title</b> — 1-sentence summary.`
+2. **Inline links** — Replaced `_build_sources_block()` with `_inject_inline_links()` in `agent.py`. Each `📰` block gets its grounding URL appended inline as `<a href="...">→ đọc thêm</a>`, paired in order with grounding metadata.
+3. **Per-session control** — Added `news_agent.sessions.{morning,afternoon,evening}` boolean config keys. Each scheduler task and `generate_news_briefing()` respects these independently (defaults `True` for backward compat).
+4. **Topics manager UI** — Added drag-reorder (Up/Down buttons) topics editor in console News tab. Topics serialized as `topics_json` and saved to `config["news_agent"]["topics"]`.
+5. **Session toggles UI** — Added per-session checkboxes below each time input in console News tab.
+
+**Config change (config.example.json):**
+```json
+"sessions": { "morning": true, "afternoon": true, "evening": true }
+```

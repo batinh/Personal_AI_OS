@@ -132,13 +132,13 @@ class TestGenerateOnDemandBriefingHappyPath:
             return_value=(long_reply, sources),
         ):
             with patch(
-                "app.agents.news.agent._build_sources_block",
-                return_value="📎 sources block",
+                "app.agents.news.agent._inject_inline_links",
+                return_value=long_reply + " inline link",
             ):
                 with patch("app.agents.news.agent.send_telegram_html") as mock_send:
                     generate_on_demand_briefing("query", "123", _ENABLED_CFG)
         sent_text = mock_send.call_args[0][1]
-        assert "sources block" in sent_text
+        assert "inline link" in sent_text
 
 
 class TestGenerateLegacyBriefing:
@@ -193,8 +193,8 @@ class TestGenerateLegacyBriefing:
                     return_value=(reply, sources),
                 ):
                     with patch(
-                        "app.agents.news.agent._build_sources_block",
-                        return_value="📎 Nguồn block",
+                        "app.agents.news.agent._inject_inline_links",
+                        return_value=reply + " inline nguồn",
                     ):
                         with patch(
                             "app.agents.news.agent.send_telegram_html"
@@ -207,7 +207,7 @@ class TestGenerateLegacyBriefing:
                                 "22/04/2026",
                             )
         sent_text = mock_send.call_args[0][1]
-        assert "Nguồn block" in sent_text
+        assert "inline nguồn" in sent_text
 
 
 class TestOnDemandShortReplyUsesConstant:

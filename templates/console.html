@@ -931,8 +931,8 @@
           <div class="row g-3 mb-3">
             <div class="col-md-6">
               <label class="form-label fw-semibold small">Email Garmin</label>
-              <input type="email" class="form-control" id="garmin_email"
-                     placeholder="your@email.com">
+              <input type="text" class="form-control" id="garmin_email"
+                     placeholder="your@email.com" autocomplete="email">
               <div class="text-danger small mt-1" id="garmin_email_error"></div>
             </div>
 
@@ -999,6 +999,37 @@
               <span class="visually-hidden">Đang tải...</span>
             </div>
             <span class="text-muted small">Đang xác thực với Garmin...</span>
+          </div>
+
+          <!-- OAuth Token Upload (alternative when server IP is blocked) -->
+          <hr class="my-4">
+          <div class="form-section-header small text-muted mb-2">
+            <i class="fas fa-key me-2"></i>Upload OAuth Token <span class="badge bg-secondary ms-1">Khuyến nghị</span>
+          </div>
+          <div class="alert alert-info py-2 px-3 small mb-3">
+            <strong>Tại sao cần token?</strong> Garmin chặn đăng nhập từ server IP. Chạy
+            <code>python scripts/garmin_auth_local.py</code> trên máy cá nhân để lấy token,
+            sau đó paste vào đây. Token tự refresh và hoạt động từ mọi IP.
+          </div>
+          <div id="oauthTokenStatusBadge" class="mb-2"></div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold small">Token JSON (từ script garmin_auth_local.py)</label>
+            <textarea class="form-control font-monospace" id="garmin_oauth_token" rows="4"
+                      placeholder='{"di_token": "...", "di_refresh_token": "...", "di_client_id": "..."}'
+                      style="font-size:0.75rem;"></textarea>
+          </div>
+          <div id="tokenUploadSuccess" class="alert alert-success mt-2" style="display:none;">
+            <i class="fas fa-check-circle me-2"></i><span id="tokenUploadMsg"></span>
+          </div>
+          <div id="tokenUploadError" class="alert alert-danger mt-2" style="display:none;">
+            <i class="fas fa-exclamation-circle me-2"></i><span id="tokenUploadErrMsg"></span>
+          </div>
+          <button type="button" class="btn btn-success px-4 shadow-sm" onclick="uploadGarminToken()" id="tokenUploadBtn">
+            <i class="fas fa-upload me-2"></i>Upload Token
+          </button>
+          <div id="tokenUploadSpinner" class="mt-2" style="display:none;">
+            <div class="spinner-border spinner-border-sm text-success me-2" role="status"></div>
+            <span class="text-muted small">Đang xác minh token...</span>
           </div>
         </div>
 
@@ -1188,16 +1219,31 @@
                 <label class="form-label fw-semibold small">Điểm tin buổi sáng</label>
                 <input type="time" class="form-control" name="morning_time"
                        value="{{ news_config.get('morning_time', '06:30') }}" required>
+                <div class="form-check mt-1">
+                  <input class="form-check-input" type="checkbox" name="session_morning" id="sessionMorning"
+                         {{ 'checked' if news_config.get('sessions', {}).get('morning', True) else '' }}>
+                  <label class="form-check-label small" for="sessionMorning">Bật buổi sáng</label>
+                </div>
               </div>
               <div class="col-md-3">
                 <label class="form-label fw-semibold small">Điểm tin buổi chiều</label>
                 <input type="time" class="form-control" name="afternoon_time"
                        value="{{ news_config.get('afternoon_time', '17:30') }}" required>
+                <div class="form-check mt-1">
+                  <input class="form-check-input" type="checkbox" name="session_afternoon" id="sessionAfternoon"
+                         {{ 'checked' if news_config.get('sessions', {}).get('afternoon', True) else '' }}>
+                  <label class="form-check-label small" for="sessionAfternoon">Bật buổi chiều</label>
+                </div>
               </div>
               <div class="col-md-3">
                 <label class="form-label fw-semibold small">Điểm tin buổi tối</label>
                 <input type="time" class="form-control" name="evening_time"
                        value="{{ news_config.get('evening_time', '20:00') }}" required>
+                <div class="form-check mt-1">
+                  <input class="form-check-input" type="checkbox" name="session_evening" id="sessionEvening"
+                         {{ 'checked' if news_config.get('sessions', {}).get('evening', True) else '' }}>
+                  <label class="form-check-label small" for="sessionEvening">Bật buổi tối</label>
+                </div>
               </div>
               <div class="col-md-3">
                 <label class="form-label fw-semibold small">Model AI cho tin tức</label>
@@ -1209,7 +1255,28 @@
             </div>
           </div>
 
-          <!-- Interest Profile -->
+          <!-- Topics -->
+          <div class="stat-card mb-3">
+            <div class="form-section-header"><i class="fas fa-list me-2"></i>Chủ đề theo dõi</div>
+            <div class="form-text mb-2">Mỗi chủ đề = 1 lần gọi Gemini song song. Dùng ↑↓ để sắp xếp thứ tự hiển thị.</div>
+            <div id="topicsContainer">
+              {% for t in news_config.get('topics', []) %}
+              <div class="topic-row d-flex align-items-center gap-2 mb-2">
+                <input type="text" class="form-control form-control-sm" style="width:60px;" value="{{ t.emoji }}" placeholder="🤖" title="Emoji">
+                <input type="text" class="form-control form-control-sm" value="{{ t.name }}" placeholder="Tên chủ đề">
+                <button type="button" class="btn btn-outline-secondary btn-sm px-2" onclick="moveTopicUp(this)" title="Lên">↑</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-2" onclick="moveTopicDown(this)" title="Xuống">↓</button>
+                <button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="this.closest('.topic-row').remove()">×</button>
+              </div>
+              {% endfor %}
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="addTopicRow()">
+              <i class="fas fa-plus me-1"></i>Thêm chủ đề
+            </button>
+            <input type="hidden" name="topics_json" id="topicsJson">
+          </div>
+
+          <!-- Interest Profile (legacy weights) -->
           <div class="stat-card mb-3">
             <div class="form-section-header"><i class="fas fa-star me-2"></i>Hồ sơ sở thích (Interest Profile)</div>
             <div class="form-text mb-2">Gemini sẽ ưu tiên chủ đề có trọng số cao hơn. Trọng số 1–10.</div>
@@ -1500,6 +1567,46 @@
       if (cat) profile[cat] = weight;
     });
     document.getElementById('interestProfileJson').value = JSON.stringify(profile);
+
+    // Serialize topics list → [{emoji, name}, ...]
+    const topicRows = document.querySelectorAll('#topicsContainer .topic-row');
+    const topics = [];
+    topicRows.forEach(row => {
+      const inputs = row.querySelectorAll('input[type=text]');
+      const emoji = inputs[0] ? inputs[0].value.trim() : '📰';
+      const name  = inputs[1] ? inputs[1].value.trim() : '';
+      if (name) topics.push({ emoji: emoji || '📰', name });
+    });
+    document.getElementById('topicsJson').value = JSON.stringify(topics);
+  }
+
+  function addTopicRow() {
+    const container = document.getElementById('topicsContainer');
+    const div = document.createElement('div');
+    div.className = 'topic-row d-flex align-items-center gap-2 mb-2';
+    div.innerHTML = `
+      <input type="text" class="form-control form-control-sm" style="width:60px;" placeholder="🤖" title="Emoji">
+      <input type="text" class="form-control form-control-sm" placeholder="Tên chủ đề">
+      <button type="button" class="btn btn-outline-secondary btn-sm px-2" onclick="moveTopicUp(this)" title="Lên">↑</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm px-2" onclick="moveTopicDown(this)" title="Xuống">↓</button>
+      <button type="button" class="btn btn-outline-danger btn-sm px-2" onclick="this.closest('.topic-row').remove()">×</button>`;
+    container.appendChild(div);
+  }
+
+  function moveTopicUp(btn) {
+    const row = btn.closest('.topic-row');
+    const prev = row.previousElementSibling;
+    if (prev && prev.classList.contains('topic-row')) {
+      row.parentNode.insertBefore(row, prev);
+    }
+  }
+
+  function moveTopicDown(btn) {
+    const row = btn.closest('.topic-row');
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains('topic-row')) {
+      row.parentNode.insertBefore(next, row);
+    }
   }
 
   function toggleAccord(level) {
@@ -1588,6 +1695,7 @@
       // Pre-fill Garmin status
       const g = data.garmin || {};
       updateGarminStatus(g);
+      updateOAuthTokenBadge(g.has_oauth_token || false);
 
     } catch (error) {
       console.error('Error loading setup state:', error);
@@ -1731,6 +1839,8 @@
       if (res.ok && data.success) {
         document.getElementById('coachingSuccessAlert').style.display = 'block';
         document.getElementById('coachingSuccessMsg').textContent = data.message || 'Đã lưu hồ sơ tập luyện!';
+        // Reload form to show saved values
+        loadSetupState();
         // Hide success message after 5s
         setTimeout(() => {
           document.getElementById('coachingSuccessAlert').style.display = 'none';
@@ -1765,7 +1875,12 @@
     let badgeHtml = '';
     let hasCredentials = false;
 
-    if (garminData.status === 'connected') {
+    // Normalise: support both {status:'connected'} (from test endpoint) and {is_connected, has_credentials, circuit_open} (from setup endpoint)
+    const isConnected = garminData.status === 'connected' || garminData.is_connected;
+    const circuitOpen = garminData.status === 'circuit_breaker_open' || garminData.circuit_open;
+    const hasCreds = garminData.has_credentials || isConnected;
+
+    if (isConnected) {
       badgeHtml = `
         <div class="alert alert-success" role="alert" style="margin:0 0 16px 0;">
           <span style="font-size:1.2rem;margin-right:8px;">🟢</span>
@@ -1777,12 +1892,21 @@
       if (garminData.last_sync) {
         lastSyncEl.textContent = garminData.last_sync;
       }
-    } else if (garminData.status === 'circuit_breaker_open') {
+    } else if (circuitOpen) {
       badgeHtml = `
         <div class="alert alert-warning" role="alert" style="margin:0 0 16px 0;">
           <span style="font-size:1.2rem;margin-right:8px;">⚠️</span>
           <strong>Circuit Breaker đang mở</strong>
           <div class="small text-muted mt-2">Quá nhiều lần xác thực thất bại. Vui lòng thử lại sau.</div>
+        </div>
+      `;
+      hasCredentials = true;
+    } else if (hasCreds) {
+      badgeHtml = `
+        <div class="alert alert-warning" role="alert" style="margin:0 0 16px 0;">
+          <span style="font-size:1.2rem;margin-right:8px;">🟡</span>
+          <strong>Có thông tin nhưng chưa xác thực thành công</strong>
+          <span style="color:#718096;">(${garminData.email_masked || ''})</span>
         </div>
       `;
       hasCredentials = true;
@@ -1872,13 +1996,14 @@
             if (errorEl) errorEl.textContent = msg;
           });
         }
-        throw new Error(data.message || 'Xác thực thất bại');
+        throw new Error(data.message || data.error || 'Xác thực thất bại');
       }
     } catch (error) {
       spinner.style.display = 'none';
       btn.disabled = false;
       document.getElementById('garminErrorAlert').style.display = 'block';
       document.getElementById('garminErrorMsg').textContent = error.message || 'Đã xảy ra lỗi';
+      console.debug('[GARMIN] test_connection error:', error);
     }
   }
 
@@ -1925,6 +2050,64 @@
     input.type = isPassword ? 'text' : 'password';
     if (toggle) {
       toggle.innerHTML = isPassword ? '<i class="fas fa-eye-slash"></i>' : '<i class="fas fa-eye"></i>';
+    }
+  }
+
+  // Upload OAuth token exported from garmin_auth_local.py
+  async function uploadGarminToken() {
+    const tokenJson = document.getElementById('garmin_oauth_token').value.trim();
+    const successEl = document.getElementById('tokenUploadSuccess');
+    const errorEl = document.getElementById('tokenUploadError');
+    const spinner = document.getElementById('tokenUploadSpinner');
+    const btn = document.getElementById('tokenUploadBtn');
+
+    successEl.style.display = 'none';
+    errorEl.style.display = 'none';
+
+    if (!tokenJson) {
+      errorEl.style.display = 'block';
+      document.getElementById('tokenUploadErrMsg').textContent = 'Vui lòng paste Token JSON từ script garmin_auth_local.py';
+      return;
+    }
+
+    spinner.style.display = 'block';
+    btn.disabled = true;
+
+    try {
+      const res = await fetch('/console/setup/garmin/upload-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token_json: tokenJson })
+      });
+      const data = await res.json();
+      spinner.style.display = 'none';
+      btn.disabled = false;
+
+      if (res.ok && data.success) {
+        successEl.style.display = 'block';
+        document.getElementById('tokenUploadMsg').textContent = data.message || 'Token đã lưu thành công!';
+        document.getElementById('garmin_oauth_token').value = '';
+        // Refresh the status badges
+        loadSetupState();
+      } else {
+        throw new Error(data.message || 'Upload thất bại');
+      }
+    } catch (error) {
+      spinner.style.display = 'none';
+      btn.disabled = false;
+      errorEl.style.display = 'block';
+      document.getElementById('tokenUploadErrMsg').textContent = error.message || 'Đã xảy ra lỗi';
+    }
+  }
+
+  // Update OAuth token status badge
+  function updateOAuthTokenBadge(hasOauthToken) {
+    const el = document.getElementById('oauthTokenStatusBadge');
+    if (!el) return;
+    if (hasOauthToken) {
+      el.innerHTML = '<span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>OAuth token đã lưu — kết nối từ mọi IP</span>';
+    } else {
+      el.innerHTML = '<span class="badge bg-secondary"><i class="fas fa-times-circle me-1"></i>Chưa có OAuth token</span>';
     }
   }
 </script>
