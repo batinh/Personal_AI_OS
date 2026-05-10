@@ -67,3 +67,9 @@ get_full_context.py
 # SQLite WAL mode temp files
 *.db-shm
 *.db-wal
+
+# Generated context bundle
+ai_context_bundle.md
+
+# Generated coverage reports
+reports/
