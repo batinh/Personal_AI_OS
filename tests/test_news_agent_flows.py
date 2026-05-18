@@ -246,3 +246,76 @@ class TestGenerateNewsBriefingStructuredLog:
         mock_send.assert_called_once()
         assert mock_send.call_args[0][1] == ERR_001
         mock_legacy.assert_not_called()
+
+
+class TestCallGeminiWithSearchRetry:
+    """Verify _call_gemini_with_search retries on 503/504 and fails cleanly after max retries."""
+
+    def test_retries_on_504_then_succeeds(self):
+        """First call raises 504 DEADLINE_EXCEEDED; second call succeeds."""
+        from unittest.mock import MagicMock, patch
+        from app.agents.news.agent import _call_gemini_with_search
+
+        call_count = 0
+
+        def fake_generate(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("504 DEADLINE_EXCEEDED: Deadline expired")
+            mock_resp = MagicMock()
+            mock_cand = MagicMock()
+            mock_cand.finish_reason = None
+            mock_cand.grounding_metadata = object()
+            mock_resp.candidates = [mock_cand]
+            return mock_resp
+
+        with patch("app.agents.news.agent.client") as mock_client:
+            mock_client.models.generate_content.side_effect = fake_generate
+            with patch("app.agents.news.agent.time.sleep") as mock_sleep:
+                with patch("app.agents.news.agent._extract_text", return_value="news text"):
+                    with patch("app.agents.news.agent._extract_grounding_urls", return_value=[("T", "http://example.com")]):
+                        result_text, result_urls = _call_gemini_with_search(
+                            "model", "sys", "prompt"
+                        )
+
+        assert call_count == 2, "Should have retried exactly once"
+        mock_sleep.assert_called_once_with(5)  # first retry delay
+        assert result_text == "news text"
+
+    def test_all_retries_exhausted_returns_none(self):
+        """All 3 attempts (1 + 2 retries) raise 503 → returns (None, [])."""
+        from unittest.mock import patch
+        from app.agents.news.agent import _call_gemini_with_search, _NEWS_MAX_RETRIES
+
+        with patch("app.agents.news.agent.client") as mock_client:
+            mock_client.models.generate_content.side_effect = Exception(
+                "503 UNAVAILABLE: high demand"
+            )
+            with patch("app.agents.news.agent.time.sleep"):
+                result_text, result_urls = _call_gemini_with_search(
+                    "model", "sys", "prompt"
+                )
+
+        assert result_text is None
+        assert result_urls == []
+        assert mock_client.models.generate_content.call_count == _NEWS_MAX_RETRIES + 1
+
+    def test_non_retryable_error_fails_immediately(self):
+        """A non-transient error (e.g. invalid API key) should NOT be retried."""
+        from unittest.mock import patch
+        from app.agents.news.agent import _call_gemini_with_search
+
+        with patch("app.agents.news.agent.client") as mock_client:
+            mock_client.models.generate_content.side_effect = Exception(
+                "400 INVALID_ARGUMENT: API key invalid"
+            )
+            with patch("app.agents.news.agent.time.sleep") as mock_sleep:
+                result_text, result_urls = _call_gemini_with_search(
+                    "model", "sys", "prompt"
+                )
+
+        assert result_text is None
+        assert result_urls == []
+        mock_client.models.generate_content.call_count == 1  # no retry
+        mock_sleep.assert_not_called()

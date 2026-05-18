@@ -51,15 +51,21 @@ from app.core.gemini_utils import (
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
-client = genai.Client(http_options=types.HttpOptions(timeout=30000))  # 30s in ms
+client = genai.Client(http_options=types.HttpOptions(timeout=90000))  # 90s in ms — grounded search needs more time than regular calls
 
 # Briefings with links use send_telegram_html(); plain notifications use send_telegram_msg().
 # Do NOT truncate here — chunking is handled inside notification.py.
 
 # Max parallel topic workers — overridable via config["news_agent"]["max_topic_workers"]
 _MAX_TOPIC_WORKERS = 4
-# Per-topic timeout in seconds — overridable via config["news_agent"]["topic_timeout_seconds"]
-_TOPIC_TIMEOUT_S = 30
+# Wall-clock timeout for all topic workers combined — overridable via config["news_agent"]["topic_timeout_seconds"]
+# Must be >> HTTP timeout (90s) to allow at least one retry per worker.
+_TOPIC_TIMEOUT_S = 120
+
+# Retry config for transient Gemini errors (503/504/DEADLINE_EXCEEDED)
+_NEWS_RETRYABLE = ("503", "504", "DEADLINE_EXCEEDED", "UNAVAILABLE")
+_NEWS_MAX_RETRIES = 2
+_NEWS_RETRY_DELAYS = (5, 15)  # seconds between retries
 
 
 # ==========================================
@@ -206,13 +212,33 @@ def _call_gemini_with_search(
         ),  # 0 = disable thinking output
     )
     _t0 = time.monotonic()
+    response = None
+    for _attempt in range(_NEWS_MAX_RETRIES + 1):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=types.GenerateContentConfig(**config_kwargs),
+            )
+            break  # success — exit retry loop
+        except Exception as e:
+            err_str = str(e)
+            is_retryable = any(token in err_str for token in _NEWS_RETRYABLE)
+            if is_retryable and _attempt < _NEWS_MAX_RETRIES:
+                delay = _NEWS_RETRY_DELAYS[_attempt]
+                logger.warning(
+                    "[NEWS] Gemini 503/504 on attempt %d — retrying in %ds. error=%s",
+                    _attempt + 1,
+                    delay,
+                    e,
+                )
+                time.sleep(delay)
+                continue
+            logger.warning("[NEWS] Gemini call failed: %s", e)
+            return None, []
+    if response is None:
+        return None, []
     try:
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-            config=types.GenerateContentConfig(**config_kwargs),
-        )
-
         if _DEBUG_NEWS:
             candidates = response.candidates or []
             for ci, cand in enumerate(candidates):
@@ -284,7 +310,7 @@ def _call_gemini_with_search(
 
         return text, grounding_urls
     except Exception as e:
-        logger.warning(f"[NEWS] Gemini call failed: {e}")
+        logger.warning("[NEWS] Response processing error: %s", e)
         return None, []
 
 

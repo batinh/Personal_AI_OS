@@ -30,6 +30,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
 |----|------|-------|----------|----------|------------|--------|--------|--------|
+| [ISS-021](#iss-021--news-agent-504503-causes-silent-topic-drops-no-retry) | bug | News agent 504/503 causes silent topic drops — no retry logic | High | U+AI | 2026-05-18 | 2026-05-18 | `f8d5c27` | `news/agent.py`, `news/memory.py`, `config.example.json` |
 | [ISS-020](#iss-020--webhook-gemini-timeout--silent-analysis-failure-no-run-report) | bug | Webhook Gemini timeout → silent analysis failure, no run report | High | U+AI | 2026-05-17 | 2026-05-17 | feat/garmin-coach-planning | `webhooks.py`, `agent.py`, `utils.py`, `database.py`, `scheduler.py` |
 | [ISS-017](#iss-017--news-briefing-ux-overhaul-compact-format--inline-links--per-session-control) | enhancement | News briefing UX: compact format, inline links, per-session control | Medium | U | 2026-05-10 | 2026-05-10 | feat/garmin-coach-planning | `app/agents/news/`, `templates/console.html`, `app/routers/console.py` |
 | [ISS-016](#iss-016--garmin-login-blocked-from-server-ip-no-oauth-token-path) | bug | Garmin login times out from server IP — no OAuth token path | Critical | U+AI | 2026-05-10 | 2026-05-10 | feat/garmin-coach-planning | `garmin_client.py`, `console.py`, `console.html` |
@@ -461,3 +462,31 @@ News briefings were too long (analysis + trend sections added ~40% extra text), 
 ```json
 "sessions": { "morning": true, "afternoon": true, "evening": true }
 ```
+
+
+---
+
+### ISS-021 — News agent 504/503 causes silent topic drops — no retry logic
+
+**Type:** bug · **Priority:** High · **Reporter:** U+AI · **Date:** 2026-05-18
+**Module:** `app/agents/news/agent.py`, `app/agents/news/memory.py`, `config.example.json`
+**Commit:** `f8d5c27`
+
+**Symptom:**
+News briefings arrive with missing topics under high Google API load. No error message to user. Logs show `504 DEADLINE_EXCEEDED` or `503 UNAVAILABLE` from Gemini, but the topic worker silently returns `(None, [])` and the topic is dropped from the final briefing with no retry.
+
+**Root Cause (5 Whys):**
+1. **Why are topics missing?** `_call_gemini_with_search()` returned `None` on API error — topic skipped.
+2. **Why no retry?** The function had a single `try/except` with no retry loop.
+3. **Why did the single call fail?** HTTP timeout was 30s; grounded search under load takes 40-60s+.
+4. **Why is the wall-clock pool timeout 30s?** `_TOPIC_TIMEOUT_S = 30` — equal to HTTP timeout, so no slack for a retry even if added.
+5. **Why no prior protection?** The retry pattern existed in the coach agent (`send_message_with_retry`) but was never ported to the news agent.
+
+**Fix:**
+1. `news/agent.py` — added 2-retry loop with 5s/15s backoff for `503/504/DEADLINE_EXCEEDED/UNAVAILABLE` errors; HTTP timeout 30s→90s; `_TOPIC_TIMEOUT_S` default 30s→120s.
+2. `news/memory.py` — HTTP timeout 30s→60s (memory extraction also uses grounded calls).
+3. `config.example.json` — `topic_timeout_seconds` default 30→120.
+4. `tests/test_news_agent_flows.py` — 3 retry scenario tests (retry-then-succeed, all-exhaust, non-retryable).
+5. `tests/test_sdk_contracts.py` — static assertion: news agent timeouts >= 60_000ms.
+
+**Action required on T440:** Update `data/config.json` → `news_agent.topic_timeout_seconds = 120` (live config is not auto-updated from `config.example.json`).
