@@ -104,6 +104,37 @@ def test_all_http_options_timeouts_are_safe():
     )
 
 
+def test_news_agent_timeouts_meet_minimum():
+    """
+    News agent HTTP timeouts must be >= 60_000ms (60s) to handle grounded search
+    latency under API load. Lower values cause silent topic drops on 504/503.
+    """
+    _MIN_NEWS_TIMEOUT_MS = 60_000
+
+    news_files = {
+        "app/agents/news/agent.py": _MIN_NEWS_TIMEOUT_MS,
+        "app/agents/news/memory.py": _MIN_NEWS_TIMEOUT_MS,
+    }
+    violations = []
+    for rel_path, min_ms in news_files.items():
+        path = pathlib.Path(rel_path)
+        if not path.exists():
+            violations.append(f"{rel_path}: file not found")
+            continue
+        timeouts = _find_http_options_timeouts(path.read_text(encoding="utf-8"))
+        if not timeouts:
+            violations.append(f"{rel_path}: no HttpOptions(timeout=...) found")
+            continue
+        for val in timeouts:
+            if val < min_ms:
+                violations.append(
+                    f"{rel_path}: HttpOptions(timeout={val}) < {min_ms}ms "
+                    f"(grounded search needs >= {min_ms // 1000}s)"
+                )
+
+    assert not violations, "News agent timeouts too low:\n" + "\n".join(violations)
+
+
 def test_no_bare_genai_client_with_tiny_timeout():
     """
     Secondary check: any genai.Client(http_options=...) must not carry a tiny timeout.
