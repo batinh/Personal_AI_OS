@@ -106,8 +106,10 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             error_msg = str(e)
             _RETRYABLE = (
                 "503",
+                "504",
                 "429",
                 "Unavailable",
+                "DEADLINE_EXCEEDED",
                 "timed out",
                 "timeout",
                 "ssl",
@@ -116,7 +118,8 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             )
             if any(token in error_msg for token in _RETRYABLE):
                 if attempt < max_retries - 1:
-                    wait_time = 2**attempt  # Wait 1s, 2s, 4s...
+                    _server_error = any(t in error_msg for t in ("503", "504", "DEADLINE_EXCEEDED", "Unavailable"))
+                    wait_time = min(5 * (2**attempt) if _server_error else 2**attempt, 60)
                     logger.warning(
                         f"[API RESILIENCE] Transient error ({error_msg[:80]}). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
                     )

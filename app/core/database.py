@@ -498,6 +498,41 @@ def list_run_activity_ids_in_date_range(
         return []
 
 
+def get_activities_needing_analysis(user_id: str, days_back: int = 3) -> List[Dict]:
+    """
+    Return recent run activities with gcs_score IS NULL — webhook analysis failed or never ran.
+    Used by the retry scheduler to re-attempt Gemini analysis.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT activity_id, name, start_date, distance_km
+            FROM run_activities
+            WHERE user_id = ?
+              AND gcs_score IS NULL
+              AND date(start_date) >= date('now', ? || ' days')
+            ORDER BY start_date DESC
+            """,
+            (str(user_id), f"-{days_back}"),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {
+                "activity_id": r["activity_id"],
+                "name": r["name"],
+                "start_date": r["start_date"],
+                "distance_km": r["distance_km"],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_activities_needing_analysis: {e}")
+        return []
+
+
 def save_run_activity_raw(
     user_id: str,
     activity_id: str,

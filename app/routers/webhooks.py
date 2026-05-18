@@ -211,6 +211,19 @@ def run_strava_workflow(activity_id: str):
                 logger.info(f"[*] Sent RPE keyboard for Activity {activity_id}")
             except Exception as e:
                 logger.error(f"[*] Failed to send RPE keyboard for Activity {activity_id}: {e}")
+    elif chat_id:
+        # Gemini analysis failed (timeout/API error) — still notify user the run was saved
+        dist_km = round(meta_data.get("distance", 0) / 1000, 2)
+        moving_min = round(meta_data.get("moving_time", 0) / 60, 1)
+        avg_hr = int(meta_data.get("average_heartrate", 0) or 0)
+        fallback_msg = (
+            f"✅ <b>Đã lưu bài chạy:</b> {act_name}\n"
+            f"📏 {dist_km}km · ⏱ {moving_min} phút · ❤️ {avg_hr} bpm\n"
+            f"⚠️ Phân tích AI tạm thời không khả dụng (Gemini timeout). Dữ liệu đã được lưu.\n"
+            f"🔗 https://www.strava.com/activities/{activity_id}"
+        )
+        send_telegram_msg(chat_id, fallback_msg)
+        logger.warning(f"[*] Sent fallback Telegram (no analysis) for Activity {activity_id}")
 
 
 @router.post("/webhook")

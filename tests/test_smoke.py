@@ -140,6 +140,12 @@ class TestCoachAgentImports(unittest.TestCase):
             get_yearly_volume,
         )
 
+    def test_database_retry_analysis_functions(self):
+        from app.core.database import (  # noqa: F401
+            get_activities_needing_analysis,
+            get_run_activity_raw,
+        )
+
 
 class TestNewsAgentImports(unittest.TestCase):
     """News agent symbols must all be importable."""
@@ -280,6 +286,7 @@ class TestGarminCoachPlanningImports(unittest.TestCase):
             task_weekly_plan_generation,
             task_cleanup_stale_setup,
             task_gear_check,
+            task_retry_pending_analyses,
         )
 
 

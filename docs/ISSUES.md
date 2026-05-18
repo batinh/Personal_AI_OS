@@ -23,12 +23,14 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 |----|------|-------|----------|----------|------|--------|
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
 | [ISS-014](#iss-014--no-onboarding-guide-for-physiology-config-fields) | feature | No onboarding guide for physiology config fields (LTHR, rFTP) | Low | U+AI | 2026-04-26 | `docs/`, `config.example.json` |
+
 ---
 
 ## Closed
 
 | ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
 |----|------|-------|----------|----------|------------|--------|--------|--------|
+| [ISS-020](#iss-020--webhook-gemini-timeout--silent-analysis-failure-no-run-report) | bug | Webhook Gemini timeout → silent analysis failure, no run report | High | U+AI | 2026-05-17 | 2026-05-17 | feat/garmin-coach-planning | `webhooks.py`, `agent.py`, `utils.py`, `database.py`, `scheduler.py` |
 | [ISS-017](#iss-017--news-briefing-ux-overhaul-compact-format--inline-links--per-session-control) | enhancement | News briefing UX: compact format, inline links, per-session control | Medium | U | 2026-05-10 | 2026-05-10 | feat/garmin-coach-planning | `app/agents/news/`, `templates/console.html`, `app/routers/console.py` |
 | [ISS-016](#iss-016--garmin-login-blocked-from-server-ip-no-oauth-token-path) | bug | Garmin login times out from server IP — no OAuth token path | Critical | U+AI | 2026-05-10 | 2026-05-10 | feat/garmin-coach-planning | `garmin_client.py`, `console.py`, `console.html` |
 | [ISS-015](#iss-015--morning-briefing-guard-2-crashes-type-mismatch) | bug | Morning briefing Guard 2 crashes — type mismatch `str` vs `list` | Critical | U+AI | 2026-05-02 | 2026-05-02 | `db34ebe` | `app/agents/coach/agent.py` |
@@ -56,6 +58,30 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 ---
 
 ## Detail: Closed
+
+### ISS-020 — Webhook Gemini timeout → silent analysis failure, no run report
+
+**Type:** bug · **Priority:** High · **Reporter:** U+AI · **Date:** 2026-05-17
+**Module:** `app/routers/webhooks.py`, `app/agents/coach/agent.py`, `app/services/scheduler.py`
+
+**Symptom:**
+User completes a run. Strava sends the `create` webhook event. The app receives it, saves the activity to DB and computes metrics — but Gemini is under load and returns `504 DEADLINE_EXCEEDED`. All retries fail. The user never receives a Telegram analysis report. `gcs_score` stays `NULL` forever.
+
+**Root Causes (5-Why):**
+1. **Why no report?** `analyze_run_with_gemini` returned `None` (analysis failed).
+2. **Why did analysis fail?** Gemini returned `504 DEADLINE_EXCEEDED` at ~20:00 VN — peak load.
+3. **Why didn't retry work?** `"504"` and `"DEADLINE_EXCEEDED"` were missing from `_RETRYABLE`; backoff was too short (1s/2s/4s) for Gemini overload.
+4. **Why no fallback?** No fallback Telegram notification when analysis fails entirely.
+5. **Why no recovery?** No retry mechanism for activities with `gcs_score IS NULL`.
+
+**Fixes applied:**
+- **RC-1** (`agent.py`): Added `"504"` + `"DEADLINE_EXCEEDED"` to `_RETRYABLE`; longer backoff for server errors (5s/10s/20s, cap 60s).
+- **RC-2** (`webhooks.py`): Added fallback `elif chat_id:` notification with basic stats when analysis returns `None`.
+- **RC-3** (`utils.py`): Same retry + backoff fix in `send_message_with_retry` (canonical copy used by memory).
+- **RC-4** (`utils.py`): Same longer backoff fix.
+- **RC-5** (`database.py` + `scheduler.py`): Added `get_activities_needing_analysis()` DB query; added `task_retry_pending_analyses()` scheduler task (every 2h) to re-run Gemini on `gcs_score IS NULL` activities from the last 3 days.
+
+---
 
 ### ISS-007 — `/news` command sends two messages (loading + result)
 

@@ -7,7 +7,28 @@
 - v3 — 3-agent orchestration: architect + code-reviewer + tdd-guide (Claude Opus 4.7, 2026-04-20)
 
 **Scope**: Full codebase audit across 5 pillars + verification of v1/v2 findings + deep security/error-handling review + TDD gap analysis.
-**Status**: APPROVED — pending implementation. **Stability, predictability, documentation, and zero negative side effects are non-negotiable.**
+**Status**: IN PROGRESS — 12 of 27 items complete. **Stability, predictability, documentation, and zero negative side effects are non-negotiable.**
+
+### Completed (as of 2026-05-17)
+
+| Item | Description | Date |
+|------|-------------|------|
+| P0.7 | Wrap all scheduler tasks in try/except | 2026-04-21 |
+| P1.1 | Gemini timeout + retry (120s coach / 30s news, ms units) | 2026-04-21 |
+| P1.7 | Strava webhook null-body guard + Telegram JSON error handling | 2026-04-21 |
+| P2.1b | Eliminate duplicate `send_message_with_retry` | 2026-04-21 |
+| P3.7 | Thread-safe config cache (threading.Lock) | 2026-04-21 |
+| P3.8 | Extract `get_local_tz()` to `timezone_utils.py` | 2026-04-21 |
+| T3 | Scheduler task exception recovery tests | 2026-04-21 |
+| T4 | Webhook JSON decode error tests | 2026-04-21 |
+| T6 | Config thread-safety tests | 2026-04-21 |
+| T7 | Multi-tenant run activity isolation tests | 2026-04-21 |
+| RC-5 | `task_retry_pending_analyses()` — 2h retry for `gcs_score IS NULL` runs | 2026-05-17 |
+| ISS-020 | 5-Why root cause fix for silent webhook Gemini failures | 2026-05-17 |
+
+### Still Open
+
+Critical: P0.6 (admin credentials), P1.2 (startup env validation), P1.3 (SIGTERM), P1.4 (swallowed exceptions), P1.5 (webhook rate limit), P1.6 (HTTP timeouts), P2.1 (asyncio.gather), P2.2 (coach split), P2.3 (prompt unify), P2.4 (task queue), P3.4 (HMAC verification).
 
 ---
 
@@ -600,7 +621,9 @@ REQUIRED_ENV_VARS = [
 - [x] T7 Multi-tenant run activity isolation tests (`tests/test_database.py`) — training loads, mileage, logs (2026-04-21)
 - Reference: `tests/test_untested_critical_paths.md` — 45 concrete test stubs ready to implement
 
-**Coverage milestone (2026-04-26):** 83% total — exceeds the 80% minimum from ADR-009. Total suite: 812 passed, 5 skipped (T1/T2/T5 deferred). Per ADR-009, `pytest --cov-fail-under=80` gate can now be enabled.
+**Coverage milestone (2026-04-26):** 83% total — exceeds the 80% minimum from ADR-009. Per ADR-009, `pytest --cov-fail-under=80` gate can now be enabled.
+
+**Current suite (2026-05-17):** 1010 passed, 5 skipped, 0 failures. T1/T2/T5 deferred.
 
 ---
 
