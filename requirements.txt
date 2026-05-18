@@ -13,6 +13,8 @@ pytz
 chromadb==0.4.24
 feedparser>=6.0.0
 # Test dependencies — pinned for reproducible CI/local parity
+garminconnect>=0.2.19
+cryptography>=41.0
 pytest>=9.0,<10
 pytest-cov>=7.0,<8
 anyio>=4.0,<5

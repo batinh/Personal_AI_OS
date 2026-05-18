@@ -321,6 +321,12 @@ class TestSetupJobs(unittest.TestCase):
             "weekly_reflection",
             "proactive_check",
             "log_audit",
+            "garmin_sync",
+            "weekly_plan_gen",
+            "cleanup_stale_setup",
+            "gear_check",
+            "auto_reschedule",
+            "nutrition_alert",
         ):
             self.assertIn(expected_id, job_ids)
 
@@ -338,15 +344,17 @@ class TestSetupJobs(unittest.TestCase):
     def test_total_jobs_with_news_enabled(self):
         cfg = _make_config(news_enabled=True)
         mock_sched = self._run_setup(cfg)
-        # 9 core (briefing, backup, harvest, reflection, proactive, log_audit,
-        #          garmin_sync, weekly_plan_gen, cleanup_stale_setup) + 3 news = 12
-        self.assertEqual(mock_sched.add_job.call_count, 12)
+        # 13 core (briefing, backup, harvest, reflection, proactive, log_audit,
+        #           garmin_sync, weekly_plan_gen, cleanup_stale_setup, auto_reschedule,
+        #           nutrition_alert, gear_check, retry_pending_analyses)
+        #    + 3 news = 16
+        self.assertEqual(mock_sched.add_job.call_count, 16)
 
     def test_total_jobs_without_news(self):
         cfg = _make_config(news_enabled=False)
         mock_sched = self._run_setup(cfg)
-        # 9 core only
-        self.assertEqual(mock_sched.add_job.call_count, 9)
+        # 13 core (added retry_pending_analyses)
+        self.assertEqual(mock_sched.add_job.call_count, 13)
 
 
 # ==========================================

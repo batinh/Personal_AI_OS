@@ -119,7 +119,8 @@ class TestSendTelegramMsg(unittest.TestCase):
 
     @patch("app.core.notification.requests.post")
     @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token"})
-    def test_sends_with_html_parse_mode(self, mock_post):
+    def test_sends_without_parse_mode(self, mock_post):
+        """send_telegram_msg always sends plain text — no parse_mode."""
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_post.return_value = mock_response
@@ -127,54 +128,32 @@ class TestSendTelegramMsg(unittest.TestCase):
         send_telegram_msg("123456", "Hello **Runner**!")
 
         mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args[1]
-        payload = call_kwargs["json"]
-        self.assertEqual(payload["parse_mode"], "HTML")
-        self.assertIn("<b>Runner</b>", payload["text"])
+        payload = mock_post.call_args[1]["json"]
+        self.assertNotIn("parse_mode", payload)
+        self.assertIn("Runner", payload["text"])
 
     @patch("app.core.notification.requests.post")
     @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token"})
-    def test_fallback_to_plain_text_on_400(self, mock_post):
-        """If Telegram returns 400 'parse entities' error, retry without parse_mode."""
-        bad_response = MagicMock()
-        bad_response.status_code = 400
-        bad_response.text = "Bad Request: can't parse entities"
-
-        good_response = MagicMock()
-        good_response.status_code = 200
-        good_response.text = "OK"
-
-        mock_post.side_effect = [bad_response, good_response]
-
-        send_telegram_msg("123456", "Some text")
-
-        # Should have called twice: first HTML, then fallback plain
-        self.assertEqual(mock_post.call_count, 2)
-        # Second call must NOT have parse_mode
-        second_payload = mock_post.call_args_list[1][1]["json"]
-        self.assertNotIn("parse_mode", second_payload)
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token"})
-    def test_fallback_text_has_no_html_tags(self, mock_post):
-        """Fallback plain text must not contain raw HTML tags (user sees clean text)."""
-        bad_response = MagicMock()
-        bad_response.status_code = 400
-        bad_response.text = "Bad Request: can't parse entities"
-
-        good_response = MagicMock()
-        good_response.status_code = 200
-        good_response.text = "OK"
-
-        mock_post.side_effect = [bad_response, good_response]
+    def test_html_input_stripped_before_send(self, mock_post):
+        """HTML tags from input are stripped — plain text arrives at Telegram."""
+        mock_post.return_value = MagicMock(status_code=200, text="OK")
 
         send_telegram_msg("123456", "<b>Tin nóng</b> — thị trường biến động")
 
-        second_payload = mock_post.call_args_list[1][1]["json"]
-        fallback_text = second_payload["text"]
-        self.assertNotIn("<b>", fallback_text)
-        self.assertNotIn("</b>", fallback_text)
-        self.assertIn("Tin nóng", fallback_text)
+        payload = mock_post.call_args[1]["json"]
+        self.assertNotIn("<b>", payload["text"])
+        self.assertNotIn("</b>", payload["text"])
+        self.assertIn("Tin nóng", payload["text"])
+
+    @patch("app.core.notification.requests.post")
+    @patch.dict("os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token"})
+    def test_400_on_plain_msg_not_retried(self, mock_post):
+        """Plain text messages are never retried on 400 (no HTML parse_mode to fall back from)."""
+        mock_post.return_value = MagicMock(status_code=400, text="Bad Request")
+
+        send_telegram_msg("123456", "Some text")
+
+        self.assertEqual(mock_post.call_count, 1)
 
     @patch("app.core.notification.requests.post")
     def test_no_token_skips_request(self, mock_post):
@@ -233,68 +212,78 @@ class TestSendTypingAction(unittest.TestCase):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 4. split_html_preserving_tags – Pure logic
+# 4. _split_plain and _split_html_naive – Pure chunking logic
 # ══════════════════════════════════════════════════════════════════════════════
-class TestSplitHtmlPreservingTags(unittest.TestCase):
+class TestSplitPlain(unittest.TestCase):
 
     def _split(self, text, limit):
-        from app.core.notification import split_html_preserving_tags
-
-        return split_html_preserving_tags(text, limit)
+        from app.core.notification import _split_plain
+        return _split_plain(text, limit)
 
     def test_short_text_returns_single_chunk(self):
         chunks = self._split("Hello world", 100)
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0], "Hello world")
 
-    def test_plain_text_splits_at_limit(self):
-        text = "A" * 20
-        chunks = self._split(text, 10)
+    def test_plain_text_splits_at_word_boundary(self):
+        text = "word " * 30  # 150 chars
+        chunks = self._split(text.strip(), 50)
         self.assertGreater(len(chunks), 1)
         for c in chunks:
-            self.assertLessEqual(len(c), 10)
+            self.assertLessEqual(len(c), 50)
 
-    def test_all_chunks_reassemble_to_original_text(self):
-        from app.core.notification import _strip_html
+    def test_all_content_preserved(self):
+        text = "A" * 8000
+        chunks = self._split(text, 4000)
+        self.assertEqual("".join(chunks), text)
 
-        text = "Word " * 30
-        chunks = self._split(text.strip(), 50)
-        combined = _strip_html("".join(chunks))
-        self.assertEqual(combined.replace("  ", " "), text.strip().replace("  ", " "))
-
-    def test_open_tags_closed_at_chunk_boundary(self):
-        text = "<b>" + "X" * 50 + "</b>"
-        chunks = self._split(text, 20)
-        for chunk in chunks[:-1]:
-            self.assertIn("</b>", chunk, f"Chunk missing closing tag: {chunk!r}")
-
-    def test_balanced_tags_reopened_in_next_chunk(self):
-        text = "<b>" + "Y" * 50 + "</b>"
-        chunks = self._split(text, 15)
-        for chunk in chunks[1:]:
-            # Each continuation chunk should reopen the bold tag
-            if "Y" in chunk:
-                self.assertIn("<b>", chunk)
-
-    def test_empty_string_returns_empty_list(self):
-        chunks = self._split("", 100)
-        self.assertEqual(chunks, [])
-
-    def test_closing_tag_overflow_included_in_chunk(self):
-        # A closing tag that overflows should be included in the current chunk (keep pair balanced)
-        text = "<b>Short</b>"
-        chunks = self._split(text, 8)
-        # All chunks together should contain the closing tag
-        full = "".join(chunks)
-        self.assertIn("</b>", full)
-
-    def test_nested_tags_tracked_correctly(self):
-        text = "<b><i>BoldItalic</i></b>"
+    def test_message_at_exact_limit_is_one_chunk(self):
+        text = "A" * 100
         chunks = self._split(text, 100)
-        # Fits in one chunk — must come through intact
         self.assertEqual(len(chunks), 1)
-        self.assertIn("<b>", chunks[0])
-        self.assertIn("<i>", chunks[0])
+
+    def test_single_token_larger_than_limit(self):
+        text = "A" * 200
+        chunks = self._split(text, 100)
+        self.assertGreater(len(chunks), 1)
+        self.assertEqual("".join(chunks), text)
+
+
+class TestSplitHtmlNaive(unittest.TestCase):
+
+    def _split(self, text, limit):
+        from app.core.notification import _split_html_naive
+        return _split_html_naive(text, limit)
+
+    def test_short_html_single_chunk(self):
+        text = "<b>Hello</b> world"
+        chunks = self._split(text, 100)
+        self.assertEqual(len(chunks), 1)
+
+    def test_splits_at_paragraph_boundary(self):
+        para = "<b>Para</b> " + "X" * 50 + "\n\n"
+        text = para * 10  # ~640 chars, split at limit=200
+        chunks = self._split(text, 200)
+        self.assertGreater(len(chunks), 1)
+
+    def test_all_content_preserved(self):
+        import re
+        para = "Para text " * 10 + "\n\n"
+        text = para * 5
+        chunks = self._split(text, 100)
+        combined_flat = re.sub(r'\s+', '', "".join(chunks))
+        original_flat = re.sub(r'\s+', '', text)
+        self.assertEqual(combined_flat, original_flat)
+
+    def test_oversized_para_stripped_and_word_split(self):
+        big_para = "<b>Big</b>: " + "W " * 300  # ~600 chars > limit
+        chunks = self._split(big_para, 100)
+        for c in chunks:
+            self.assertLessEqual(len(c), 100)
+
+    def test_empty_returns_empty_or_single_empty(self):
+        chunks = self._split("", 100)
+        self.assertEqual("".join(chunks).strip(), "")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -318,128 +307,44 @@ class TestSendTelegramMsgChunking(unittest.TestCase):
     @patch.dict(
         "os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_LIMIT": "100"}
     )
-    def test_each_chunk_has_html_parse_mode(self, mock_post):
+    def test_plain_msg_has_no_parse_mode(self, mock_post):
         mock_post.return_value = MagicMock(status_code=200, text="OK")
         send_telegram_msg("123", self._make_long_text())
         for call in mock_post.call_args_list:
             payload = call[1]["json"]
-            self.assertEqual(payload.get("parse_mode"), "HTML")
+            self.assertNotIn("parse_mode", payload)
+
+
+class TestSendTelegramHtml(unittest.TestCase):
+    """send_telegram_html sends with parse_mode=HTML; 400 falls back to plain."""
 
     @patch("app.core.notification.requests.post")
     @patch.dict(
-        "os.environ", {"TELEGRAM_BOT_TOKEN": "fake-token", "TELEGRAM_LIMIT": "100"}
+        "os.environ",
+        {"TELEGRAM_BOT_TOKEN": "fake", "TELEGRAM_LIMIT": "100"},
     )
-    def test_chunk_parse_error_falls_back_to_plain(self, mock_post):
-        bad = MagicMock(status_code=400, text="can't parse entities")
+    def test_html_msg_uses_parse_mode_html(self, mock_post):
+        from app.core.notification import send_telegram_html
+
+        mock_post.return_value = MagicMock(status_code=200, text="OK")
+        send_telegram_html("123", "<b>Hello</b> " * 30)
+        for call in mock_post.call_args_list:
+            self.assertEqual(call[1]["json"].get("parse_mode"), "HTML")
+
+    @patch("app.core.notification.requests.post")
+    @patch.dict(
+        "os.environ",
+        {"TELEGRAM_BOT_TOKEN": "fake", "TELEGRAM_LIMIT": "1000"},
+    )
+    def test_html_400_falls_back_to_plain(self, mock_post):
+        from app.core.notification import send_telegram_html
+
+        bad = MagicMock(status_code=400, text="can't parse")
         good = MagicMock(status_code=200, text="OK")
-        # First chunk fails, fallback succeeds; subsequent chunks succeed
-        mock_post.side_effect = [bad, good, good, good, good, good, good]
-        send_telegram_msg("123", self._make_long_text())
-        # Second call should NOT have parse_mode (plain text fallback)
-        second_payload = mock_post.call_args_list[1][1]["json"]
-        self.assertNotIn("parse_mode", second_payload)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 6. send_telegram_msg – Attachment path (len > ATTACHMENT_THRESHOLD)
-# ══════════════════════════════════════════════════════════════════════════════
-class TestSendTelegramMsgAttachment(unittest.TestCase):
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict(
-        "os.environ",
-        {
-            "TELEGRAM_BOT_TOKEN": "fake-token",
-            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-        },
-    )
-    def test_huge_message_uses_send_document(self, mock_post):
-        mock_post.return_value = MagicMock(status_code=200, text="OK")
-        send_telegram_msg("123", "X " * 100)  # > 50 chars threshold
-        mock_post.assert_called_once()
-        # post is called with files= kwarg (not json=)
-        call_kwargs = mock_post.call_args[1]
-        self.assertIn("files", call_kwargs)
-        self.assertNotIn("json", call_kwargs)
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict(
-        "os.environ",
-        {
-            "TELEGRAM_BOT_TOKEN": "fake-token",
-            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-        },
-    )
-    def test_attachment_caption_is_set(self, mock_post):
-        mock_post.return_value = MagicMock(status_code=200, text="OK")
-        send_telegram_msg("123", "X " * 100)
-        data_kwarg = mock_post.call_args[1]["data"]
-        self.assertIn("caption", data_kwarg)
-        self.assertIn("chat_id", data_kwarg)
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict(
-        "os.environ",
-        {
-            "TELEGRAM_BOT_TOKEN": "fake-token",
-            "TELEGRAM_ATTACHMENT_THRESHOLD": "50",
-        },
-    )
-    def test_attachment_sends_plain_text_file(self, mock_post):
-        mock_post.return_value = MagicMock(status_code=200, text="OK")
-        send_telegram_msg("123", "<b>Bold content</b> " * 10)
-        files = mock_post.call_args[1]["files"]
-        filename, content = files["document"][0], files["document"][1]
-        self.assertEqual(filename, "report.txt")
-        self.assertNotIn(b"<b>", content)  # plain text, no HTML tags
-
-
-class TestSendTelegramMsgChunkingFallback(unittest.TestCase):
-    """When split_html_preserving_tags raises, fall back to plain-text paragraph chunking."""
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict(
-        "os.environ",
-        {
-            "TELEGRAM_BOT_TOKEN": "test_token",
-            "TELEGRAM_LIMIT": "50",
-            "TELEGRAM_ATTACHMENT_THRESHOLD": "1000000",
-        },
-    )
-    @patch(
-        "app.core.notification.split_html_preserving_tags",
-        side_effect=ValueError("broken"),
-    )
-    def test_fallback_chunking_sends_multiple_posts(self, _mock_split, mock_post):
-        mock_post.return_value = MagicMock(status_code=200, text="OK")
-        # Message > 50 chars so chunking path is triggered
-        long_text = "Word " * 30  # 150 chars
-        send_telegram_msg("123", long_text)
-        # Should have sent at least one request via fallback
-        self.assertGreater(mock_post.call_count, 0)
-
-    @patch("app.core.notification.requests.post")
-    @patch.dict(
-        "os.environ",
-        {
-            "TELEGRAM_BOT_TOKEN": "test_token",
-            "TELEGRAM_LIMIT": "50",
-            "TELEGRAM_ATTACHMENT_THRESHOLD": "1000000",
-        },
-    )
-    @patch(
-        "app.core.notification.split_html_preserving_tags",
-        side_effect=RuntimeError("fail"),
-    )
-    def test_fallback_strips_html_tags(self, _mock_split, mock_post):
-        mock_post.return_value = MagicMock(status_code=200, text="OK")
-        html_text = "<b>Bold</b> " * 30
-        send_telegram_msg("123", html_text)
-        # Verify at least one call was made and the text posted doesn't have raw <b> tags
-        # (fallback strips html before chunking)
-        self.assertGreater(mock_post.call_count, 0)
-        first_payload = mock_post.call_args_list[0][1]["json"]
-        self.assertNotIn("<b>", first_payload.get("text", ""))
+        mock_post.side_effect = [bad, good]
+        send_telegram_html("123", "<b>Short</b>")
+        second = mock_post.call_args_list[1][1]["json"]
+        self.assertNotIn("parse_mode", second)
 
 
 class TestSendHtmlEmail(unittest.TestCase):

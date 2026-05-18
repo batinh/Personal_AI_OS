@@ -8,7 +8,7 @@ from app.agents.news.agent import (
     _resolve_topics,
     _session_header,
     _extract_grounding_urls,
-    _build_sources_block,
+    _inject_inline_links,
     _call_gemini_with_search,
     _DOC_THEM_RE,
 )
@@ -148,38 +148,43 @@ class TestExtractGroundingUrls:
         assert result == []
 
 
-class TestBuildSourcesBlock:
-    """Tests for FR-4.7 and US-1.3 (real sources block)."""
+class TestInjectInlineLinks:
+    """Tests for inline link injection after each 📰 article."""
 
-    def test_single_url_formatted_correctly(self):
+    def test_single_article_gets_inline_link(self):
+        body = "📰 <b>Tin 1</b> — Tóm tắt."
         urls = [("Reuters", "https://reuters.com/a")]
-        result = _build_sources_block(urls)
-        assert "📎" in result
+        result = _inject_inline_links(body, urls)
+        assert "→ đọc thêm" in result
         assert "reuters.com/a" in result
 
-    def test_capped_at_max_sources(self):
-        urls = [(f"Title{i}", f"https://example.com/{i}") for i in range(5)]
-        result = _build_sources_block(urls, max_sources=3)
-        lines = [ln for ln in result.splitlines() if ln.startswith("•")]
-        assert len(lines) == 3
+    def test_two_articles_each_get_own_link(self):
+        body = "📰 <b>Tin 1</b> — Tóm tắt 1.\n\n📰 <b>Tin 2</b> — Tóm tắt 2."
+        urls = [("A", "https://example.com/1"), ("B", "https://example.com/2")]
+        result = _inject_inline_links(body, urls)
+        assert "example.com/1" in result
+        assert "example.com/2" in result
 
-    def test_fourth_url_not_included(self):
-        urls = [(f"T{i}", f"https://ex.com/{i}") for i in range(4)]
-        result = _build_sources_block(urls, max_sources=3)
-        assert "ex.com/3" not in result
+    def test_fewer_urls_than_articles_no_error(self):
+        body = "📰 <b>Tin 1</b> — Tóm tắt.\n\n📰 <b>Tin 2</b> — Tóm tắt 2."
+        urls = [("A", "https://example.com/1")]
+        result = _inject_inline_links(body, urls)
+        assert "example.com/1" in result
+        assert result.count("→ đọc thêm") == 1
 
-    def test_empty_urls_returns_empty_string(self):
-        assert _build_sources_block([]) == ""
+    def test_empty_urls_returns_body_unchanged(self):
+        body = "📰 <b>Tin 1</b> — Tóm tắt."
+        result = _inject_inline_links(body, [])
+        assert result == body
 
-    def test_long_title_truncated_at_60_chars(self):
-        long_title = "A" * 200
-        urls = [(long_title, "https://example.com")]
-        result = _build_sources_block(urls)
-        # The displayed label should be ≤60 chars
-        import re
-
-        match = re.search(r">([^<]+)</a>", result)
-        assert match and len(match.group(1)) <= 60
+    def test_links_appear_inline_not_at_end(self):
+        body = "📰 <b>Tin 1</b> — Tóm tắt.\n\n📰 <b>Tin 2</b> — Tóm tắt 2."
+        urls = [("A", "https://a.com"), ("B", "https://b.com")]
+        result = _inject_inline_links(body, urls)
+        idx_a = result.index("a.com")
+        idx_b = result.index("b.com")
+        idx_tin2 = result.index("Tin 2")
+        assert idx_a < idx_tin2 < idx_b
 
 
 class TestDocThemRegex:

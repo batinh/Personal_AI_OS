@@ -301,6 +301,18 @@ def init_db():
         ON run_activities(user_id, start_date)
     """)
 
+    # [GARMIN] Auto-migrate garmin_daily_metrics for columns added after initial deploy
+    try:
+        cur = c.execute("PRAGMA table_info(garmin_daily_metrics)")
+        cols = [r[1] for r in cur.fetchall()]
+        if cols:
+            for col, coltype in [("daily_steps", "INTEGER"), ("avg_stress_level", "INTEGER")]:
+                if col not in cols:
+                    logger.info(f"[DATABASE] Migrating garmin_daily_metrics: adding {col}")
+                    c.execute(f"ALTER TABLE garmin_daily_metrics ADD COLUMN {col} {coltype}")
+    except Exception as e:
+        logger.error(f"[DATABASE] garmin_daily_metrics migration error: {e}")
+
     conn.commit()
     conn.close()
     logger.info(
@@ -483,6 +495,41 @@ def list_run_activity_ids_in_date_range(
         return [{"activity_id": r[0], "start_date": r[1]} for r in rows]
     except Exception as e:
         logger.error(f"[DB_ERROR] list_run_activity_ids_in_date_range: {e}")
+        return []
+
+
+def get_activities_needing_analysis(user_id: str, days_back: int = 3) -> List[Dict]:
+    """
+    Return recent run activities with gcs_score IS NULL — webhook analysis failed or never ran.
+    Used by the retry scheduler to re-attempt Gemini analysis.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT activity_id, name, start_date, distance_km
+            FROM run_activities
+            WHERE user_id = ?
+              AND gcs_score IS NULL
+              AND date(start_date) >= date('now', ? || ' days')
+            ORDER BY start_date DESC
+            """,
+            (str(user_id), f"-{days_back}"),
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {
+                "activity_id": r["activity_id"],
+                "name": r["name"],
+                "start_date": r["start_date"],
+                "distance_km": r["distance_km"],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_activities_needing_analysis: {e}")
         return []
 
 

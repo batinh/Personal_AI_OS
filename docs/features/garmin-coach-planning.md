@@ -1,9 +1,9 @@
 # Feature Design: Garmin-Integrated Adaptive Coach Planning
 
 **Slug:** `garmin-coach-planning`
-**Status:** Planning — Pending Approval
-**Version:** 3.0
-**Date:** 2026-04-27
+**Status:** In Progress — OAuth Token Auth Implemented (2026-05-10)
+**Version:** 3.1
+**Date:** 2026-05-10
 **Author:** Tinh Nguyen
 **Related:** `docs/features/COACH_DYNO_PRD.md`, `docs/features/coach-agent-requirements.md`
 

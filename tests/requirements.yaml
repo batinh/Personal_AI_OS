@@ -1,0 +1,730 @@
+requirements:
+  REQ-C01:
+    description: User can request daily briefing via /brief or /standup Telegram command
+    priority: CRITICAL
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_sanity_flows.py::TestMorningBriefingGuard1
+    - test_e2e_coach_commands.py::TestCoachBriefCommand::test_brief_command_sends_telegram_message
+  REQ-C02:
+    description: Morning briefing Guard 1 — prompts /setup when race_date not configured
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_sanity_flows.py::TestMorningBriefingGuard1::test_message_contains_setup_keyword
+  REQ-C03:
+    description: Morning briefing Guard 2 — generates daily suggestion when no active
+      plan
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_sanity_flows.py::TestMorningBriefingGuard2
+    - test_daily_suggestion.py::TestSickInjuredRule
+  REQ-C04:
+    description: Morning briefing Guard 3 — full AI analysis with plan+context injected
+    priority: HIGH
+    module: coach
+    coverage_status: partial
+    covered_by:
+    - test_sanity_flows.py::TestMorningBriefingFullAIPath
+    - test_e2e_coach_commands.py::TestCoachBriefCommand::test_brief_command_sends_telegram_message
+  REQ-C05:
+    description: User accepts weekly plan via /accept or /chap command
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_coach_commands.py::TestCoachPlanCommands::test_accept_plan_sends_confirmation
+  REQ-C06:
+    description: User rejects weekly plan via /reject command — prompts regeneration
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_coach_commands.py::TestCoachPlanCommands::test_reject_plan_sends_confirmation
+  REQ-C07:
+    description: User marks self sick via /sick or /om command — rest forced
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_coach_commands.py::TestCoachStateCommands::test_sick_command_sends_confirmation
+  REQ-C08:
+    description: User marks self recovered via /recover or /khoe — training resumes
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_coach_commands.py::TestCoachStateCommands::test_recover_command_sends_confirmation
+  REQ-C09:
+    description: User views upcoming plan via /plan — shows plan or daily suggestion
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_coach_commands.py::TestCoachPlanCommands::test_plan_command_with_no_active_plan
+  REQ-C10:
+    description: User triggers 6-step onboarding wizard via /setup
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_setup_flow.py::TestSetupFSM::test_happy_path_6_steps
+  REQ-C11:
+    description: 'Setup wizard: each step validated before advancing'
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_setup_flow.py::TestValidateDistance
+    - test_setup_flow.py::TestSetupFSM::test_invalid_input_repeats_same_step
+  REQ-C12:
+    description: 'Setup complete: config saved, user notified'
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_setup_flow.py::TestSetupFSM::test_happy_path_6_steps
+  REQ-C13:
+    description: User clears chat history via /clear or /reset
+    priority: LOW
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2ETelegramWebhookRouting
+  REQ-C14:
+    description: Free-text message routes to AI coach — Gemini response returned
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_coach_commands.py::TestCoachFreeTextChat::test_free_text_routes_to_coach
+  REQ-C15:
+    description: Chat history context included in Gemini prompt (last 10 messages)
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_database.py::TestChatHistory::test_load_respects_limit
+  REQ-C16:
+    description: Manual reflection via /reflect triggers memory extraction + weekly
+      report
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_scheduler.py::TestTaskWeeklyReflection
+    - test_sanity_flows.py::TestSchedulerTaskWrappers::test_task_morning_briefing_calls_generate
+  REQ-CS01:
+    description: 'Scheduler: morning briefing runs at configured time (default 06:00)'
+    priority: CRITICAL
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_sanity_flows.py::TestSchedulerTaskWrappers::test_task_morning_briefing_calls_generate
+    - test_scheduler.py::TestTaskMorningBriefing::test_with_chat_id_calls_generate_morning_briefing
+  REQ-CS02:
+    description: 'Scheduler: Strava auto-harvest runs every 6 hours'
+    priority: HIGH
+    module: coach
+    coverage_status: partial
+    covered_by:
+    - test_scheduler.py::TestSchedulerTaskExceptionRecovery::test_auto_harvest_exception_does_not_propagate
+  REQ-CS03:
+    description: 'Scheduler: weekly reflection runs Sunday at 20:00'
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_scheduler.py::TestTaskWeeklyReflection::test_always_calls_generate_weekly_reflection
+  REQ-CS04:
+    description: 'Scheduler: daily backup runs at 02:00 producing a zip archive'
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_scheduler_tasks.py::TestBackupTask::test_backup_task_creates_zip_file
+  REQ-CS05:
+    description: 'Scheduler: stale setup sessions (>24h) cleaned up automatically'
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_e2e_scheduler_tasks.py::TestSetupCleanupTask::test_stale_session_removed
+  REQ-CS06:
+    description: 'Scheduler: Garmin sync runs and stores daily metrics'
+    priority: HIGH
+    module: coach
+    coverage_status: partial
+    covered_by:
+    - test_scheduler.py::TestSetupJobs::test_core_jobs_always_added
+  REQ-CS07:
+    description: 'Scheduler: weekly plan generation triggered Monday 07:00'
+    priority: HIGH
+    module: coach
+    coverage_status: partial
+    covered_by:
+    - test_scheduler.py::TestSetupJobs::test_core_jobs_always_added
+  REQ-CS08:
+    description: All scheduler jobs registered at startup, visible from /health
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_scheduler.py::TestSetupJobs::test_core_jobs_always_added
+    - test_e2e_scheduler_tasks.py::TestSchedulerStartup::test_all_jobs_registered_on_startup
+  REQ-W01:
+    description: Strava webhook GET /webhook accepts verify_token handshake
+    priority: CRITICAL
+    module: webhooks
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2EStravaWebhookFlow
+  REQ-W02:
+    description: Strava webhook POST 'create' event triggers run analysis workflow
+    priority: CRITICAL
+    module: webhooks
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2EStravaWebhookFlow::test_create_event_returns_ok_and_queues_workflow
+  REQ-W03:
+    description: Strava webhook 'delete' event removes activity from DB
+    priority: HIGH
+    module: webhooks
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2EStravaWebhookFlow::test_delete_event_returns_ok_and_queues_cleanup
+  REQ-W04:
+    description: Strava webhook 'update' (title change) silently ignored
+    priority: MEDIUM
+    module: webhooks
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2EStravaWebhookFlow::test_update_event_ignored
+  REQ-W05:
+    description: Non-activity Strava events (athlete/segment) silently ignored
+    priority: MEDIUM
+    module: webhooks
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2EStravaWebhookFlow::test_non_activity_object_ignored
+  REQ-W06:
+    description: Malformed Strava webhook payload returns 422 validation error
+    priority: HIGH
+    module: webhooks
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2EStravaPayloadValidation
+  REQ-W07:
+    description: 'Strava run analysis output: Telegram message + Strava description
+      + email'
+    priority: HIGH
+    module: webhooks
+    coverage_status: covered
+    covered_by:
+    - test_e2e_integration_edge_cases.py::TestStravaThreeChannelOutput::test_create_event_triggers_three_channel_output
+  REQ-W08:
+    description: Missing Strava token — graceful error message sent to user, no crash
+    priority: HIGH
+    module: webhooks
+    coverage_status: covered
+    covered_by:
+    - test_e2e_integration_edge_cases.py::TestStravaErrorHandling::test_missing_strava_token_sends_error_message
+  REQ-N01:
+    description: 'News command: /news [morning|afternoon|evening] triggers briefing'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestHandleNewsCommandValid
+  REQ-N02:
+    description: 'News command: /news help shows command reference'
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestHandleNewsCommandHelp
+  REQ-N03:
+    description: 'News command: /news invalid-arg shows error + help'
+    priority: LOW
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestHandleNewsCommandInvalid
+  REQ-N04:
+    description: 'News command disabled: shows ERR-004 when agent_enabled=false'
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestHandleNewsCommandDisabled
+  REQ-N05:
+    description: '@news <query> triggers on-demand real-time search'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestHandleNewsChatHappyPath
+  REQ-N06:
+    description: 'News on-demand: rate limit max 10 queries/hour per user'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestCheckRateLimit
+    - test_news_telegram.py::TestHandleNewsChatRateLimit
+  REQ-N07:
+    description: 'News: articles contain real links from Google grounding (not hallucinated)'
+    priority: CRITICAL
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_helpers.py::TestCallGeminiWithSearchGroundingGate
+    - test_news_agent_helpers.py::TestExtractGroundingUrls
+  REQ-N08:
+    description: 'News: AI thinking/preamble text NEVER forwarded to Telegram'
+    priority: CRITICAL
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_thinking.py::TestStripThoughtPreamble
+    - test_news_agent_thinking.py::TestCallGeminiWithSearch
+  REQ-N09:
+    description: 'News briefing: one failed topic does not block remaining topics'
+    priority: HIGH
+    module: news
+    coverage_status: partial
+    covered_by:
+    - test_news_agent_flows.py::TestGenerateNewsBriefingHappyPath::test_sends_merged_message
+  REQ-N10:
+    description: 'News briefing: per-topic 30s timeout enforced'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_e2e_news_flows.py::TestNewsPerTopicTimeout::test_topic_timeout_does_not_block_other_topics
+  REQ-N11:
+    description: 'News: morning/afternoon/evening session-specific tone in prompt'
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_prompts.py::TestBuildSessionPrompt
+  REQ-N12:
+    description: 'News: same article not repeated in morning AND evening of same day'
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_e2e_news_flows.py::TestNewsDedup::test_article_not_repeated_in_same_day_sessions
+  REQ-N13:
+    description: 'News: all messages in Vietnamese (no English user-facing text)'
+    priority: HIGH
+    module: news
+    coverage_status: partial
+    covered_by:
+    - test_news_telegram.py::TestErrorConstants
+    - test_news_prompts.py::TestBuildNewsSystemInstruction
+  REQ-N14:
+    description: 'News: ERR-001 sent when all topics fail grounding check'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_flows.py::TestGenerateNewsBriefingNoTopics::test_no_topics_sends_err001
+    - test_news_agent_flows.py::TestGenerateNewsBriefingHappyPath::test_all_topics_fail_sends_err001
+  REQ-NS01:
+    description: 'Scheduler: morning news briefing at configured time (default 06:30)'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_scheduler.py::TestSchedulerTaskExceptionRecovery::test_morning_news_exception_does_not_propagate
+  REQ-NS02:
+    description: 'Scheduler: afternoon news briefing at configured time (default 17:30)'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_scheduler.py::TestSchedulerTaskExceptionRecovery::test_afternoon_news_exception_does_not_propagate
+  REQ-NS03:
+    description: News briefing skipped when scheduler fires >30 min past schedule
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_scheduler.py::TestIsLateTrigger
+  REQ-NS04:
+    description: 'News: on-demand /news command via Telegram webhook accepted end-to-end'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_e2e_news_flows.py::TestNewsCommandE2E::test_news_command_webhook_accepted
+  REQ-H01:
+    description: GET /console returns HTML with HTTP Basic auth required
+    priority: HIGH
+    module: console
+    coverage_status: covered
+    covered_by:
+    - test_e2e_console_ui.py::TestConsoleRoutes::test_console_requires_basic_auth
+  REQ-H02:
+    description: Console /console?tab=testing renders coverage + drilldown accordion
+    priority: HIGH
+    module: console
+    coverage_status: covered
+    covered_by:
+    - test_e2e_console_ui.py::TestConsoleTestingTab::test_testing_tab_renders_coverage_data
+  REQ-H03:
+    description: 'Console: POST /console/save persists config and reloads scheduler'
+    priority: HIGH
+    module: console
+    coverage_status: covered
+    covered_by:
+    - test_e2e_console_ui.py::TestConsoleRoutes::test_save_persists_config_and_reloads_scheduler
+  REQ-H04:
+    description: 'Console: POST /console/toggle pauses/resumes AI service'
+    priority: MEDIUM
+    module: console
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2EStravaFullWorkflow::test_paused_service_skips_workflow
+    - test_e2e_console_ui.py::TestConsoleRoutes::test_toggle_pauses_resumes_service
+  REQ-H05:
+    description: 'Console: /admin and /dashboard redirect to /console'
+    priority: LOW
+    module: console
+    coverage_status: covered
+    covered_by:
+    - test_e2e_console_ui.py::TestConsoleRoutes::test_admin_redirects_to_console
+  REQ-H06:
+    description: 'Console: admin auth rejects requests with wrong credentials'
+    priority: HIGH
+    module: console
+    coverage_status: covered
+    covered_by:
+    - test_e2e_console_ui.py::TestConsoleRoutes::test_wrong_credentials_rejected
+  REQ-H07:
+    description: 'Console testing tab: accordion drilldown shows per-test case status'
+    priority: MEDIUM
+    module: console
+    coverage_status: covered
+    covered_by:
+    - test_e2e_console_ui.py::TestConsoleTestingTab::test_testing_tab_accordion_levels_present
+  REQ-S01:
+    description: GET /health returns JSON with db/config/scheduler status
+    priority: CRITICAL
+    module: system
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2EHealthCheck
+  REQ-S02:
+    description: Config auto-initialized from config.example.json when data/config.json
+      missing
+    priority: HIGH
+    module: system
+    coverage_status: covered
+    covered_by:
+    - test_config.py::TestConfigAutoInit
+  REQ-S03:
+    description: SQLite WAL mode enabled for concurrent access
+    priority: HIGH
+    module: system
+    coverage_status: covered
+    covered_by:
+    - test_database.py::TestUsers
+  REQ-S04:
+    description: All database tables include user_id (multi-tenant design)
+    priority: MEDIUM
+    module: system
+    coverage_status: covered
+    covered_by:
+    - test_database.py::TestMultiTenantRunActivityIsolation
+  REQ-S05:
+    description: 'Timezone handling: stored UTC, displayed Asia/Ho_Chi_Minh'
+    priority: HIGH
+    module: system
+    coverage_status: covered
+    covered_by:
+    - test_e2e_local.py::TestE2ETimezoneUtils
+  REQ-S06:
+    description: Config reload after /console/save takes effect for next AI request
+    priority: HIGH
+    module: system
+    coverage_status: covered
+    covered_by:
+    - test_e2e_integration_edge_cases.py::TestConfigReload::test_config_reload_on_save
+  REQ-T01:
+    description: 'Telegram: HTML parse_mode messages rendered correctly (no Markdown)'
+    priority: HIGH
+    module: notifications
+    coverage_status: covered
+    covered_by:
+    - test_notification.py::TestSanitizeMdToTgHtml
+    - test_notification.py::TestSendTelegramMsg
+  REQ-T02:
+    description: 'Telegram: messages >4096 chars chunked and sent in multiple parts'
+    priority: HIGH
+    module: notifications
+    coverage_status: covered
+    covered_by:
+    - test_telegram_chunking.py::TestChunkSizeBound
+    - test_telegram_chunking.py::TestContentPreservation
+  REQ-T03:
+    description: 'Telegram: typing indicator sent before long operations'
+    priority: LOW
+    module: notifications
+    coverage_status: covered
+    covered_by:
+    - test_notification.py::TestSendTypingAction
+  REQ-SC01:
+    description: 'TRIMP: Training Impulse calculated from HR zones + duration'
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_utils.py::TestCalculateTrimp
+  REQ-SC02:
+    description: 'ACWR: Acute/Chronic Workload Ratio from 7-day and 28-day loads'
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_utils.py::TestCalculateAcwr
+  REQ-SC03:
+    description: Training phase auto-detected from days-to-race (Base/Build/Taper)
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_utils.py::TestCalculateTrainingPhase
+  REQ-SC04:
+    description: Daily suggestion computed from ACWR + athlete state + recent runs
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_daily_suggestion.py::TestAcwrCritical
+    - test_daily_suggestion.py::TestModerateReadiness
+  REQ-G01:
+    description: Gemini API timeout (30s) handled gracefully — fallback message sent
+    priority: HIGH
+    module: system
+    coverage_status: covered
+    covered_by:
+    - test_e2e_integration_edge_cases.py::TestGeminiTimeout::test_gemini_timeout_sends_fallback_message
+  REQ-G02:
+    description: HttpOptions.timeout is milliseconds (30000 = 30s) — unit invariant
+    priority: CRITICAL
+    module: system
+    coverage_status: covered
+    covered_by:
+    - test_smoke.py::TestSDKContracts::test_gemini_http_options_timeout_unit_unchanged
+  REQ-CF01:
+    description: 'Post-run analysis: structured Gemini prompt with GCS scoring, persisted
+      to DB and Strava description'
+    priority: CRITICAL
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_flow_run_analysis.py::TestAnalyzeRunWithGemini
+  REQ-CF02:
+    description: Strava activity memorized in ChromaDB RAG after each run
+    priority: HIGH
+    module: coach
+    coverage_status: partial
+    covered_by:
+    - test_flow_run_analysis.py::TestAnalyzeRunWithGemini
+  REQ-CF03:
+    description: 'Proactive overload alert: ACWR > 1.3 triggers Telegram alert at
+      noon coach check'
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_scheduler.py::TestTaskProactiveCoachCheck::test_acwr_above_1_3_sends_warning_alert
+    - test_scheduler.py::TestTaskProactiveCoachCheck::test_acwr_above_1_5_sends_critical_alert
+  REQ-CF04:
+    description: 'Taper reminder: weeks-to-race ≤ 3 triggers taper reminder at noon
+      coach check'
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_scheduler.py::TestTaskProactiveCoachCheck::test_weeks_left_3_sends_taper_reminder
+    - test_scheduler.py::TestTaskProactiveCoachCheck::test_weeks_left_1_sends_taper_reminder
+  REQ-CF05:
+    description: Coach chat intent classified as fast (short/greeting) or standard
+      (training query)
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_intent_classification.py::TestFastExactWhitelist
+    - test_intent_classification.py::TestStandardKeywordRouting
+    - test_intent_classification.py::TestLongTextDefaultsToStandard
+  REQ-CF06:
+    description: Write-intent keywords (Vietnamese + English) route to write tools
+      in coach chat
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_agent.py::TestHandleTelegramChat
+  REQ-CF07:
+    description: 'Degenerate response detection: fast path retries with standard context
+      when response empty'
+    priority: MEDIUM
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_intent_classification.py::TestDegenerateResponse
+  REQ-CF08:
+    description: Implicit memory extracted from standard-path chat response after
+      each interaction
+    priority: HIGH
+    module: coach
+    coverage_status: covered
+    covered_by:
+    - test_flow_memory_extraction.py::TestExtractImplicitMemory
+    - test_agent.py::TestExtractImplicitMemory
+  REQ-NX01:
+    description: 'Scheduler: evening news briefing at configured time (default 20:00
+      ICT)'
+    priority: HIGH
+    module: news
+    coverage_status: partial
+    covered_by:
+    - test_scheduler.py::TestSchedulerTaskExceptionRecovery::test_evening_news_exception_does_not_propagate
+    - test_sanity_flows.py::TestSchedulerTaskWrappers::test_task_morning_news_calls_generate
+  REQ-NX02:
+    description: 'News: each configured topic processed independently; partial failure
+      does not block others'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_flows.py::TestGenerateNewsBriefingHappyPath::test_sends_merged_message
+    - test_news_agent_flows.py::TestGenerateNewsBriefingNoTopics::test_no_topics_sends_err001
+  REQ-NX03:
+    description: 'News: source links injected from grounding metadata (not LLM text)'
+    priority: CRITICAL
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_helpers.py::TestBuildSourcesBlock
+    - test_news_agent_flows.py::TestGenerateNewsBriefingHappyPath::test_sources_block_appended_when_grounding_urls_present
+  REQ-NX04:
+    description: 'News: grounding_used=False rejects response and returns (None, [])'
+    priority: CRITICAL
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_helpers.py::TestCallGeminiWithSearchGroundingGate::test_grounding_used_false_returns_none
+  REQ-NX05:
+    description: 'News: every LLM call produces structured log entry (model, grounding_used,
+      latency_ms)'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_flows.py::TestGenerateNewsBriefingStructuredLog
+  REQ-NX06:
+    description: 'News: LLM-authored <a href> doc-them tracking links stripped from
+      response'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_helpers.py::TestDocThemRegex
+  REQ-NX07:
+    description: 'News: sources block capped at max 3 links ordered by grounding_chunks
+      index'
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_helpers.py::TestBuildSourcesBlock::test_capped_at_max_sources
+  REQ-NX08:
+    description: 'News: preference signals extracted from on-demand conversations
+      in background thread'
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_memory.py::TestRunExtractInBackground
+    - test_news_memory.py::TestExtractAndSaveSignals
+  REQ-NX09:
+    description: 'News: silent failure is not acceptable — CRITICAL log written when
+      briefing not sent'
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_agent_flows.py::TestGenerateNewsBriefingNoTopics::test_no_topics_sends_err001
+    - test_news_agent_flows.py::TestGenerateNewsBriefingHappyPath::test_all_topics_fail_sends_err001
+  REQ-ERR01:
+    description: 'ERR-001 constant defined: all grounding fails — ''Không lấy được
+      tin tức thực tế lúc này'''
+    priority: CRITICAL
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestErrorConstants
+    - test_news_agent_flows.py::TestGenerateNewsBriefingHappyPath::test_all_topics_fail_sends_err001
+  REQ-ERR02:
+    description: 'ERR-002 constant defined: on-demand grounding failed — ''Không tìm
+      thấy kết quả'''
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestErrorConstants
+    - test_news_agent_flows.py::TestOnDemandShortReplyUsesConstant::test_short_reply_sends_err002_constant
+  REQ-ERR03:
+    description: 'ERR-003 constant defined: rate limit exceeded — ''Bạn đã gửi quá
+      nhiều yêu cầu'''
+    priority: HIGH
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestErrorConstants
+    - test_news_telegram.py::TestHandleNewsChatRateLimit
+  REQ-ERR04:
+    description: 'ERR-004 constant defined: news agent disabled — ''News Agent đang
+      tắt'''
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestErrorConstants
+    - test_news_telegram.py::TestHandleNewsCommandDisabled
+  REQ-ERR05:
+    description: 'ERR-005 constant defined: invalid /news argument — ''Lệnh không
+      hợp lệ'''
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestErrorConstants
+    - test_news_telegram.py::TestHandleNewsCommandInvalid
+  REQ-ERR06:
+    description: 'ERR-006 constant defined: exception during /news session — ''Lỗi
+      khi lấy tin'''
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestErrorConstants
+  REQ-ERR07:
+    description: 'ERR-007 constant defined: on-demand query <100 chars returns same
+      message as ERR-002'
+    priority: MEDIUM
+    module: news
+    coverage_status: covered
+    covered_by:
+    - test_news_telegram.py::TestErrorConstants
+    - test_news_agent_flows.py::TestGenerateOnDemandBriefingShortReply::test_short_reply_sends_error_and_returns_none

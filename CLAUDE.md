@@ -18,7 +18,7 @@ bash scripts/rollback-t440.sh            # restore airunningcoach:backup image
 bash scripts/install-hooks.sh           # one-time: install pre-commit hooks (smoke + ruff + black)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-Before commit: `docs/DELIVERY_CHECKLIST.md` (typed by change type). Pragmatic review: `docs/pragmatic_review_checklist.md`. New feature: `docs/feature_design_template.md`. Bug or feature: `docs/ISSUES.md`.
+Before commit: `docs/DELIVERY_CHECKLIST.md` (typed by change type). Pragmatic review: `docs/process/review-checklist.md`. New feature: `docs/features/_template.md`. Bug or feature: `docs/ISSUES.md`.
 
 ## Docker Log Debug Toolkit
 `scripts/fetch-logs.sh` — fetch và filter log từ container `airunningcoach`.
@@ -72,19 +72,26 @@ Every code change must pass this gate before deploying to T440:
           Catches ImportError and missing symbols before any logic runs.
           Run this first — fastest feedback (< 2s).
 
-2. E2E    python -m pytest tests/test_e2e_local.py -v
+2. SANITY python -m pytest tests/test_sanity_flows.py -v
+          58 flow-level regression tests: morning briefing guards, daily suggestion
+          all branches, scheduler wrappers, Telegram command routing, news briefing,
+          Strava webhooks, health endpoint, notification pipeline, agentic loop.
+          Run after any agent/flow change to catch real user-facing regressions.
+          No Docker required — mocks all I/O (Gemini, DB, Telegram). ~5s.
+
+3. E2E    python -m pytest tests/test_e2e_local.py -v
           28 HTTP-level tests: health, Strava webhook flow, Telegram routing,
           scheduler startup, timezone utils, config concurrency.
           Run after any refactor to prove end-to-end paths still work.
           No Docker required — uses FastAPI TestClient.
 
-3. UNIT   python -m pytest tests/ -q
+4. UNIT   python -m pytest tests/ -q
           Full suite: unit + integration tests. 0 failures required.
 
-4. DEPLOY bash scripts/pre-deploy-check.sh
+5. DEPLOY bash scripts/pre-deploy-check.sh
           Runs: pytest suite + config loads + docker compose syntax.
 
-5. T440   bash scripts/deploy-t440.sh
+6. T440   bash scripts/deploy-t440.sh
           git pull + docker rebuild + health check (90s timeout) +
           E2E curl smoke tests (/health, /console, /admin, /webhook,
           scheduler running, no errors in last 50 log lines).
@@ -100,7 +107,7 @@ assertion in `tests/test_smoke.py` under the matching class.
 - `deploy-t440` health timeout → container crash, check: `docker logs airunningcoach --tail 50`
 
 ## Feature Design Doc Convention
-- **Every new feature** (≥2 files changed): create `docs/features/{feature-slug}.md` using `docs/feature_design_template.md`
+- **Every new feature** (≥2 files changed): create `docs/features/{feature-slug}.md` using `docs/features/_template.md`
 - **Slug**: lowercase English, hyphens — e.g. `news-agent-overhaul`, `telegram-routing`
 - **Before code**: design doc first, then implement — link from the issue in `docs/ISSUES.md`
 
@@ -109,7 +116,11 @@ assertion in `tests/test_smoke.py` under the matching class.
 |------|------|
 | Coach flow bug | `app/agents/coach/agent.py` + affected `flows/` |
 | Prompt change | `app/agents/coach/prompts.py` |
-| DB schema/query | `app/core/database.py` + `docs/database_design.md` |
+| DB schema/query | `app/core/database.py` + `docs/architecture/database.md` |
+| System architecture | `docs/architecture/overview.md` |
+| Data flows | `docs/architecture/flows.md` |
+| Memory design | `docs/architecture/memory.md` |
+| Stream storage | `docs/architecture/stream-storage.md` |
 | News agent | `app/agents/news/agent.py`, `feeds.py`, `prompts.py`, `telegram_handler.py` |
 | News alerts | `app/agents/news/alert_engine.py` |
 | Scheduler | `app/services/scheduler.py` |
@@ -118,7 +129,14 @@ assertion in `tests/test_smoke.py` under the matching class.
 | Config | `app/core/config.py` + `config.example.json` |
 | Log audit | `app/services/log_auditor.py` + `app/routers/audit.py` |
 | Tests | `tests/conftest.py` + `tests/test_<module>.py` |
+| Test inventory | `docs/testing/specs.md` |
 | Issue tracking | `docs/ISSUES.md` |
+| Coaching science | `docs/engineering/coaching-science.md` |
+| Refactor roadmap | `docs/engineering/refactor-roadmap.md` |
+| Telegram notifications | `docs/engineering/telegram.md` |
+| Setup / env vars | `docs/engineering/setup.md` |
+| Review checklist | `docs/process/review-checklist.md` |
+| Delivery checklist | `docs/process/delivery-checklist.md` |
 
 ## Language Zones — STRICTLY ENFORCED
 | Zone | Scope | Language |
@@ -156,7 +174,7 @@ assertion in `tests/test_smoke.py` under the matching class.
 ## Conventions
 - Logging: `logger.info("[MODULE] message")` — e.g. `[TOOL-USE]`, `[SCHEDULER]`, `[DB_ERROR]`
 - Git commits: `type: description` (English, Zone 1)
-- Coaching science: `docs/coaching_constants.md` (TRIMP, ACWR, taper, GCS)
+- Coaching science: `docs/engineering/coaching-science.md` (TRIMP, ACWR, taper, GCS)
 - Roadmap: update `README.md` in-place, never create a new one
 - Responses: be concise — no trailing summaries, no restating what was just done
 - Bug or feature found (by user or AI): add to `docs/ISSUES.md` immediately — Open table first, detail section at bottom. Move to Closed with commit hash when done.

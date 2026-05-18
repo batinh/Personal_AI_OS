@@ -100,3 +100,35 @@ Design docs live in `docs/features/<slug>.md` (this file). CLAUDE.md File Map up
 | `@news câu hỏi` | News agent chat |
 | `@tin câu hỏi` | News agent chat |
 | Any other text | Coach (default) |
+
+---
+
+## ISS-017 — UX Overhaul: Compact Format, Inline Links, Per-Session Control (2026-05-10)
+
+### Changes
+
+**1. Compact 1-line summaries (removed trend/analysis sections)**
+- Rewrote `_TOPIC_SYSTEM_INSTRUCTION` in `prompts.py` to output only `📰 <b>Title</b> — 1-sentence summary.` per article
+- Removed `📊 Phân tích:` and `📈 Xu hướng:` blocks entirely
+
+**2. Inline links per article**
+- Replaced `_build_sources_block()` with `_inject_inline_links(body, urls)` in `agent.py`
+- Post-processing: splits on `📰` regex markers, pairs grounding URLs in order, appends `<a href="...">→ đọc thêm</a>` inline after each article
+
+**3. Per-session enable/disable toggle**
+- `config.example.json`: added `news_agent.sessions.{morning,afternoon,evening}` booleans (default `true`)
+- `agent.py` `generate_news_briefing()`: checks `sessions_cfg.get(session, True)` before calling Gemini
+- `scheduler.py`: added `_is_session_enabled()` helper; all 3 task functions call it before running
+- Web UI (`console.html`): checkbox per session label; `console.py` `POST /console/save-news` reads `session_morning`, `session_afternoon`, `session_evening` form fields
+
+### Config Schema
+
+```json
+"news_agent": {
+  "sessions": {
+    "morning": true,
+    "afternoon": true,
+    "evening": false
+  }
+}
+```

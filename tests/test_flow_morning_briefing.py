@@ -39,6 +39,13 @@ _PATCHES = [
     "app.agents.coach.flows.morning_briefing.send_telegram_msg",
     "app.agents.coach.flows.morning_briefing.save_message",
     "app.agents.coach.flows.morning_briefing.client",
+    "app.agents.coach.flows.morning_briefing._has_active_plan_this_week",
+    "app.agents.coach.flows.morning_briefing.get_garmin_daily_metrics",
+    "app.agents.coach.flows.morning_briefing.get_athlete_state",
+    "app.agents.coach.flows.morning_briefing._get_recent_runs",
+    "app.agents.coach.flows.morning_briefing._days_since_last_run",
+    "app.agents.coach.flows.morning_briefing.compute_daily_suggestion",
+    "app.agents.coach.flows.morning_briefing.format_daily_suggestion_for_briefing",
 ]
 
 
@@ -50,6 +57,7 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         chat_id="123456",
         memories=None,
         history=None,
+        has_active_plan=True,  # Default to True so tests use LLM path
     ):
         mocks = {}
         patchers = []
@@ -70,6 +78,18 @@ class TestGenerateMorningBriefing(unittest.TestCase):
         mocks["get_runs_in_last_days"].return_value = []
         mocks["build_standup_prompt"].return_value = "Full standup prompt"
         mocks["debug_log_prompt"].return_value = None
+
+        # Mock daily suggestion path (Phase 3.5)
+        mocks["_has_active_plan_this_week"].return_value = has_active_plan
+        mocks["get_garmin_daily_metrics"].return_value = {"training_readiness_score": 70}
+        mocks["get_athlete_state"].return_value = "healthy"
+        mocks["_get_recent_runs"].return_value = []
+        mocks["_days_since_last_run"].return_value = 0
+        mocks["compute_daily_suggestion"].return_value = {
+            "title_vi": "Easy Run",
+            "description_vi": "Chạy nhẹ",
+        }
+        mocks["format_daily_suggestion_for_briefing"].return_value = "💡 Easy Run"
 
         response = MagicMock()
         response.text = reply_text

@@ -1,5 +1,5 @@
 from app.core.user_context import get_primary_user_id
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.core.timezone_utils import get_local_tz
 
 from google import genai
@@ -12,6 +12,11 @@ from app.core.database import (
     get_plan_for_date,
     get_runs_in_last_days,
     get_all_active_memories,
+    get_training_loads,
+    get_weekly_volume,
+    has_active_plan_this_week,
+    get_athlete_state,
+    get_garmin_daily_metrics,
 )
 from app.agents.coach.utils import (
     calculate_acwr,
@@ -34,12 +39,80 @@ from app.agents.coach.tools import (
     get_volume_summary,
     get_metric_trend,
 )
-from app.core.database import get_training_loads, get_weekly_volume
+from app.agents.coach.daily_suggestion import (
+    compute_daily_suggestion,
+    format_daily_suggestion_for_briefing,
+)
 
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("coach")
 client = genai.Client()
+
+
+def _has_active_plan_this_week(user_id: str) -> bool:
+    """Check if user has an accepted weekly plan for the current week."""
+    tz = get_local_tz()
+    now = datetime.now(tz)
+    # Calculate current week's Monday
+    days_since_monday = now.weekday()  # 0 = Monday, 6 = Sunday
+    week_start = (now - timedelta(days=days_since_monday)).strftime("%Y-%m-%d")
+    return has_active_plan_this_week(user_id, week_start)
+
+
+def _get_recent_runs(user_id: str, days: int = 7) -> list:
+    """Get recent run activities from database for analysis."""
+    try:
+        from app.core.database import get_db
+        import sqlite3
+
+        with get_db() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            since_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+            cursor.execute(
+                """
+                SELECT date, distance_km, workout_type_detected, gcs_score, rpe_score
+                FROM run_activities
+                WHERE user_id = ? AND date >= ?
+                ORDER BY date DESC
+                """,
+                (user_id, since_date),
+            )
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+    except Exception as e:
+        logger.warning(f"[MORNING_BRIEFING] Failed to get recent runs: {e}")
+        return []
+
+
+def _days_since_last_run(user_id: str) -> int:
+    """Calculate days since last run activity."""
+    try:
+        from app.core.database import get_db
+        import sqlite3
+
+        with get_db() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute(
+                "SELECT date FROM run_activities WHERE user_id = ? ORDER BY date DESC LIMIT 1",
+                (user_id,),
+            )
+            row = cursor.fetchone()
+
+            if not row:
+                return 999  # No runs recorded
+
+            last_run_date = datetime.strptime(row["date"], "%Y-%m-%d").date()
+            today = datetime.now().date()
+            delta = today - last_run_date
+            return delta.days
+    except Exception as e:
+        logger.warning(f"[MORNING_BRIEFING] Failed to get days_since_last_run: {e}")
+        return 0
 
 
 def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
@@ -70,6 +143,9 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         if race_date_str
         else "Duy trì thể lực."
     )
+
+    # Check if there's an active plan for this week
+    has_active_plan = _has_active_plan_this_week(user_id_str)
 
     today_plan = get_plan_for_date(user_id_str, now.strftime("%Y-%m-%d"))
     plan_context = (
@@ -148,6 +224,54 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     )
 
     # 3. Execution (Resilience Pattern)
+    # Phase 3.5: Check if no active plan → show daily suggestion instead of LLM call
+    if not has_active_plan:
+        try:
+            # Check if race_date is configured; if not, show setup prompt
+            if not race_date_str:
+                setup_prompt = "ℹ️ Anh chưa thiết lập mục tiêu đua. Dùng /setup để bắt đầu."
+                if chat_id:
+                    send_telegram_msg(chat_id, setup_prompt)
+                    save_message(
+                        user_id_str, "model", f"[MORNING BRIEFING] {setup_prompt}"
+                    )
+                logger.info("[MORNING_BRIEFING] Race date not configured, showing setup prompt")
+                return
+
+            # Compute daily suggestion (pure function, no LLM)
+            garmin_data = get_garmin_daily_metrics(user_id_str, now.strftime("%Y-%m-%d"))
+            readiness_score = garmin_data.get("training_readiness_score") if garmin_data else None
+            athlete_state = get_athlete_state(user_id_str)
+            recent_runs = _get_recent_runs(user_id_str, days=7)
+            days_since_last = _days_since_last_run(user_id_str)
+
+            suggestion = compute_daily_suggestion(
+                readiness_score=readiness_score,
+                acwr=acwr_data.get("acwr"),
+                recent_runs=recent_runs,
+                athlete_state=athlete_state,
+                day_of_week=now.weekday(),
+                days_since_last_run=days_since_last,
+            )
+
+            # Format suggestion for briefing
+            suggestion_text = format_daily_suggestion_for_briefing(suggestion, garmin_data)
+            reply = (
+                f"🌅 Chào buổi sáng! Hôm nay ({now.strftime('%A')})\n\n"
+                + suggestion_text
+            )
+
+            if chat_id:
+                send_telegram_msg(chat_id, reply)
+                save_message(user_id_str, "model", f"[MORNING BRIEFING] {reply}")
+            logger.info("[MORNING_BRIEFING] Showed daily suggestion (no active plan)")
+            return
+
+        except Exception as e:
+            logger.error(f"[MORNING_BRIEFING] Daily suggestion error: {e}")
+            # Fall through to LLM-based briefing on error
+
+    # Standard LLM-based briefing (when active plan exists or daily suggestion fails)
     try:
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),

@@ -30,6 +30,10 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
 |----|------|-------|----------|----------|------------|--------|--------|--------|
+| [ISS-020](#iss-020--webhook-gemini-timeout--silent-analysis-failure-no-run-report) | bug | Webhook Gemini timeout → silent analysis failure, no run report | High | U+AI | 2026-05-17 | 2026-05-17 | feat/garmin-coach-planning | `webhooks.py`, `agent.py`, `utils.py`, `database.py`, `scheduler.py` |
+| [ISS-017](#iss-017--news-briefing-ux-overhaul-compact-format--inline-links--per-session-control) | enhancement | News briefing UX: compact format, inline links, per-session control | Medium | U | 2026-05-10 | 2026-05-10 | feat/garmin-coach-planning | `app/agents/news/`, `templates/console.html`, `app/routers/console.py` |
+| [ISS-016](#iss-016--garmin-login-blocked-from-server-ip-no-oauth-token-path) | bug | Garmin login times out from server IP — no OAuth token path | Critical | U+AI | 2026-05-10 | 2026-05-10 | feat/garmin-coach-planning | `garmin_client.py`, `console.py`, `console.html` |
+| [ISS-015](#iss-015--morning-briefing-guard-2-crashes-type-mismatch) | bug | Morning briefing Guard 2 crashes — type mismatch `str` vs `list` | Critical | U+AI | 2026-05-02 | 2026-05-02 | `db34ebe` | `app/agents/coach/agent.py` |
 | [ISS-001](#iss-001--alert-prompt-leaks-raw-template-to-telegram) | bug | Alert prompt leaks raw template to Telegram | Critical | U+AI | 2026-04-11 | 2026-04-11 | `47c63c7` | `alert_engine.py` |
 | [ISS-002](#iss-002--alert-engine-sends-one-message-per-article-spam) | bug | Alert engine sends one message per article (spam) | High | U+AI | 2026-04-11 | 2026-04-11 | `47c63c7` | `alert_engine.py` |
 | [ISS-003](#iss-003--digest-messages-have-no-embedded-links) | enhancement | Digest messages have no embedded links | High | U | 2026-04-11 | 2026-04-11 | `47c63c7` | `prompts.py`, `agent.py` |
@@ -54,6 +58,30 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 ---
 
 ## Detail: Closed
+
+### ISS-020 — Webhook Gemini timeout → silent analysis failure, no run report
+
+**Type:** bug · **Priority:** High · **Reporter:** U+AI · **Date:** 2026-05-17
+**Module:** `app/routers/webhooks.py`, `app/agents/coach/agent.py`, `app/services/scheduler.py`
+
+**Symptom:**
+User completes a run. Strava sends the `create` webhook event. The app receives it, saves the activity to DB and computes metrics — but Gemini is under load and returns `504 DEADLINE_EXCEEDED`. All retries fail. The user never receives a Telegram analysis report. `gcs_score` stays `NULL` forever.
+
+**Root Causes (5-Why):**
+1. **Why no report?** `analyze_run_with_gemini` returned `None` (analysis failed).
+2. **Why did analysis fail?** Gemini returned `504 DEADLINE_EXCEEDED` at ~20:00 VN — peak load.
+3. **Why didn't retry work?** `"504"` and `"DEADLINE_EXCEEDED"` were missing from `_RETRYABLE`; backoff was too short (1s/2s/4s) for Gemini overload.
+4. **Why no fallback?** No fallback Telegram notification when analysis fails entirely.
+5. **Why no recovery?** No retry mechanism for activities with `gcs_score IS NULL`.
+
+**Fixes applied:**
+- **RC-1** (`agent.py`): Added `"504"` + `"DEADLINE_EXCEEDED"` to `_RETRYABLE`; longer backoff for server errors (5s/10s/20s, cap 60s).
+- **RC-2** (`webhooks.py`): Added fallback `elif chat_id:` notification with basic stats when analysis returns `None`.
+- **RC-3** (`utils.py`): Same retry + backoff fix in `send_message_with_retry` (canonical copy used by memory).
+- **RC-4** (`utils.py`): Same longer backoff fix.
+- **RC-5** (`database.py` + `scheduler.py`): Added `get_activities_needing_analysis()` DB query; added `task_retry_pending_analyses()` scheduler task (every 2h) to re-run Gemini on `gcs_score IS NULL` activities from the last 3 days.
+
+---
 
 ### ISS-007 — `/news` command sends two messages (loading + result)
 
@@ -352,3 +380,84 @@ Noted in Coach Agent PRD v1.0 PO review: "most users won't configure them". Defe
 - `docs/features/onboarding-physiology.md` explains how to derive LTHR (race result or Garmin estimate), rFTP (Stryd test), and threshold pace (5 km race result formula)
 - `config.example.json` inline comments reference the guide
 - Console admin UI shows field help text when value = 0
+
+---
+
+### ISS-015 — Morning briefing Guard 2 crashes — type mismatch `str` vs `list`
+
+**Type:** bug · **Priority:** Critical · **Reporter:** U+AI · **Date:** 2026-05-02
+**Module:** `app/agents/coach/agent.py` (Guard 2 in `generate_morning_briefing`)
+
+**Symptom:**
+No morning briefing delivered on 2026-05-02. `/brief` and `/standup` commands silently failed. Scheduler caught the exception and logged it as ERROR without re-raising.
+
+**Root cause:**
+`generate_morning_briefing` Guard 2 (no active weekly plan) calls:
+```python
+recent = get_runs_in_last_days(user_id_str, days=7)  # returns formatted str
+compute_daily_suggestion(..., recent_runs=recent, ...)  # expects list[dict]
+```
+`compute_daily_suggestion` iterates `recent_runs` and calls `.get()` on each element. When passed a string, it iterates characters → `AttributeError: 'str' object has no attribute 'get'`.
+
+**Fix (agent.py Guard 2):**
+```python
+# Before
+state = get_athlete_state(user_id_str) or {}
+recent = get_runs_in_last_days(user_id_str, days=7)
+suggestion = compute_daily_suggestion(recent_runs=recent, athlete_state=state, ...)
+
+# After
+state = get_athlete_state(user_id_str) or "healthy"
+suggestion = compute_daily_suggestion(
+    recent_runs=[],
+    athlete_state=state,
+    day_of_week=now.weekday(),
+    ...
+)
+```
+
+**Regression test:** `tests/test_sanity_flows.py::TestMorningBriefingGuard2` (9 tests).
+
+---
+
+### ISS-016 — Garmin login blocked from server IP — no OAuth token path
+
+**Type:** bug · **Priority:** Critical · **Reporter:** U+AI · **Date:** 2026-05-10
+**Module:** `app/agents/coach/garmin_client.py`, `app/routers/console.py`, `templates/console.html`
+
+**Symptom:**
+"Kết nối thất bại sau 30.0s: Kết nối timeout sau 30s — Garmin đang giới hạn server IP." displayed in console UI when saving Garmin credentials.
+
+**Root cause:**
+Garmin's unofficial API returns 429 + CAPTCHA_REQUIRED for all 5 login strategies (mobile+cffi, mobile+requests, widget+cffi, portal+cffi, portal+requests) when called from VPS/server IPs. This is a Garmin-side rate limit — no amount of retry or credential changes will fix it.
+
+**Fix:**
+Added OAuth token-based authentication as the primary path:
+1. `scripts/garmin_auth_local.py` — run on local machine to authenticate and export `client.dumps()` JSON
+2. `save_oauth_token()` / `load_oauth_token()` / `has_oauth_token()` functions in `garmin_client.py`
+3. `_get_client()` tries OAuth token first (no SSO needed, works from any IP), then legacy tokens, then full SSO
+4. `POST /console/setup/garmin/upload-token` endpoint accepts the token JSON
+5. Upload UI in Setup tab with instructions and inline verification
+
+**Regression:** OAuth token path is now first priority in `_get_client()`. Legacy SSO path is preserved as fallback (for local dev).
+
+
+### ISS-017 — News briefing UX: compact format, inline links, per-session control
+
+**Type:** enhancement · **Priority:** Medium · **Reporter:** U · **Date:** 2026-05-10
+**Module:** `app/agents/news/prompts.py`, `app/agents/news/agent.py`, `app/services/scheduler.py`, `app/routers/console.py`, `templates/console.html`, `config.example.json`
+
+**Symptom:**
+News briefings were too long (analysis + trend sections added ~40% extra text), source links were grouped at the bottom of each topic instead of inline with each article, and there was no way to disable individual sessions (morning/afternoon/evening) independently.
+
+**Changes:**
+1. **Compact format** — Removed `📊 Phân tích:` and `📈 Xu hướng:` sections from `_TOPIC_SYSTEM_INSTRUCTION`. Each article now outputs as a single line: `📰 <b>Title</b> — 1-sentence summary.`
+2. **Inline links** — Replaced `_build_sources_block()` with `_inject_inline_links()` in `agent.py`. Each `📰` block gets its grounding URL appended inline as `<a href="...">→ đọc thêm</a>`, paired in order with grounding metadata.
+3. **Per-session control** — Added `news_agent.sessions.{morning,afternoon,evening}` boolean config keys. Each scheduler task and `generate_news_briefing()` respects these independently (defaults `True` for backward compat).
+4. **Topics manager UI** — Added drag-reorder (Up/Down buttons) topics editor in console News tab. Topics serialized as `topics_json` and saved to `config["news_agent"]["topics"]`.
+5. **Session toggles UI** — Added per-session checkboxes below each time input in console News tab.
+
+**Config change (config.example.json):**
+```json
+"sessions": { "morning": true, "afternoon": true, "evening": true }
+```

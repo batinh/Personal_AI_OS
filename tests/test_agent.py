@@ -27,6 +27,7 @@ def _make_response(text: str):
     part = MagicMock()
     part.text = text
     part.thought = False
+    part.function_call = None  # no tool call → agentic loop exits after one turn
     content = MagicMock()
     content.parts = [part]
     candidate = MagicMock()
@@ -76,7 +77,7 @@ class TestSendMessageWithRetry(unittest.TestCase):
         ]
         result = fn(mock_session, "hello", max_retries=3)
         self.assertEqual(result.text, "Recovered")
-        mock_sleep.assert_called_once_with(1)  # first backoff = 2^0 = 1s
+        mock_sleep.assert_called_once_with(5)  # server error first backoff = 5 * 2^0 = 5s
 
     @patch("app.agents.coach.agent.time.sleep")
     def test_retries_on_429_then_succeeds(self, mock_sleep):
@@ -404,6 +405,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
     @patch("app.agents.coach.flows.morning_briefing.send_telegram_msg")
     @patch("app.agents.coach.flows.morning_briefing.save_message")
     @patch(
+        "app.agents.coach.flows.morning_briefing._has_active_plan_this_week",
+        return_value=True,  # Use LLM path, not daily suggestion
+    )
+    @patch(
         "app.agents.coach.flows.morning_briefing.load_history_for_gemini",
         return_value=[],
     )
@@ -453,6 +458,10 @@ class TestGenerateMorningBriefing(unittest.TestCase):
 
     @patch("app.agents.coach.flows.morning_briefing.send_telegram_msg")
     @patch("app.agents.coach.flows.morning_briefing.save_message")
+    @patch(
+        "app.agents.coach.flows.morning_briefing._has_active_plan_this_week",
+        return_value=True,  # Use LLM path, not daily suggestion
+    )
     @patch(
         "app.agents.coach.flows.morning_briefing.load_history_for_gemini",
         return_value=[],

@@ -7,7 +7,11 @@ from datetime import datetime
 
 from app.core.user_context import get_primary_user_id
 from app.core.config import load_config
-from app.core.database import get_training_loads
+from app.core.database import (
+    get_training_loads,
+    get_activities_needing_analysis,
+    get_run_activity_raw,
+)
 from app.core.notification import send_telegram_msg
 from app.agents.coach.harvest import harvest_data
 from app.agents.coach.utils import calculate_training_phase
@@ -16,6 +20,7 @@ from app.agents.coach.agent import (
     generate_weekly_reflection,
     generate_morning_briefing,
     extract_implicit_memory,
+    analyze_run_with_gemini,
 )
 from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
@@ -121,11 +126,19 @@ def task_weekly_reflection():
 # ==========================================
 # 📰 NEWS BRIEFINGS
 # ==========================================
+def _is_session_enabled(config: dict, session: str) -> bool:
+    """Return True if the given news session is enabled (defaults True if key absent)."""
+    return config.get("news_agent", {}).get("sessions", {}).get(session, True)
+
+
 def task_morning_news():
     """Morning news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering morning news briefing...")
         config = load_config()
+        if not _is_session_enabled(config, "morning"):
+            logger.info("[SCHEDULER] Morning news session disabled in config. Skipping.")
+            return
+        logger.info("[SCHEDULER] Triggering morning news briefing...")
         generate_news_briefing(config, session="morning")
     except Exception as e:
         logger.error("[SCHEDULER] task_morning_news failed: %s", e, exc_info=True)
@@ -134,8 +147,11 @@ def task_morning_news():
 def task_afternoon_news():
     """Afternoon news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering afternoon news briefing...")
         config = load_config()
+        if not _is_session_enabled(config, "afternoon"):
+            logger.info("[SCHEDULER] Afternoon news session disabled in config. Skipping.")
+            return
+        logger.info("[SCHEDULER] Triggering afternoon news briefing...")
         generate_news_briefing(config, session="afternoon")
     except Exception as e:
         logger.error("[SCHEDULER] task_afternoon_news failed: %s", e, exc_info=True)
@@ -144,8 +160,11 @@ def task_afternoon_news():
 def task_evening_news():
     """Evening news briefing via Gemini+search. Must be regular def (BackgroundScheduler thread pool)."""
     try:
-        logger.info("[SCHEDULER] Triggering evening news briefing...")
         config = load_config()
+        if not _is_session_enabled(config, "evening"):
+            logger.info("[SCHEDULER] Evening news session disabled in config. Skipping.")
+            return
+        logger.info("[SCHEDULER] Triggering evening news briefing...")
         generate_news_briefing(config, session="evening")
     except Exception as e:
         logger.error("[SCHEDULER] task_evening_news failed: %s", e, exc_info=True)
@@ -284,6 +303,278 @@ def task_cleanup_stale_setup():
 
 
 # ==========================================
+# 🔄 AUTO-RESCHEDULE (INCOMPLETE HARD SESSIONS)
+# ==========================================
+_HARD_WORKOUT_KEYWORDS = ("interval", "tempo", "race pace", "tốc độ", "cường độ cao", "threshold")
+
+
+def task_auto_reschedule():
+    """23:00 daily — defer incomplete hard sessions if readiness low.
+
+    If today's training_plans entry is a hard workout AND not completed AND readiness < 30,
+    defer to next available day. Runs in BackgroundScheduler thread pool.
+    """
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping auto-reschedule.")
+            return
+
+        from datetime import date, timedelta
+        from app.core.database import get_db
+
+        logger.info("[SCHEDULER] Running auto-reschedule check...")
+
+        with get_db() as conn:
+            c = conn.cursor()
+
+            today_str = date.today().isoformat()
+            c.execute(
+                """SELECT workout_title, status FROM training_plans
+                   WHERE user_id = ? AND date = ?""",
+                (user_id, today_str),
+            )
+            plan_row = c.fetchone()
+
+            if not plan_row:
+                logger.info("[SCHEDULER] No training plan for today. Skipping reschedule.")
+                return
+
+            workout_title = plan_row["workout_title"] or ""
+            status = plan_row["status"] or "pending"
+
+            is_hard = any(kw in workout_title.lower() for kw in _HARD_WORKOUT_KEYWORDS)
+            if not (is_hard and status.lower() != "completed"):
+                logger.info(f"[SCHEDULER] Today's plan '{workout_title}' ({status}) — no reschedule needed.")
+                return
+
+            # Check readiness from garmin_daily_metrics
+            c.execute(
+                """SELECT training_readiness_score FROM garmin_daily_metrics
+                   WHERE user_id = ? AND date = ? ORDER BY date DESC LIMIT 1""",
+                (user_id, today_str),
+            )
+            readiness_row = c.fetchone()
+            readiness_score = readiness_row["training_readiness_score"] if readiness_row else None
+
+            if readiness_score is None or readiness_score >= 30:
+                logger.info(f"[SCHEDULER] Readiness {readiness_score} >= 30. No reschedule needed.")
+                return
+
+            logger.info(f"[SCHEDULER] Readiness {readiness_score} < 30. Deferring '{workout_title}'...")
+
+            # Find next available day (no plan yet)
+            for offset in range(1, 8):
+                future_date = (date.today() + timedelta(days=offset)).isoformat()
+                c.execute(
+                    """SELECT date FROM training_plans WHERE user_id = ? AND date = ?""",
+                    (user_id, future_date),
+                )
+                if not c.fetchone():
+                    c.execute(
+                        """UPDATE training_plans SET date = ?
+                           WHERE user_id = ? AND date = ?""",
+                        (future_date, user_id, today_str),
+                    )
+                    conn.commit()
+
+                    chat_id = get_primary_user_id()
+                    send_telegram_msg(
+                        str(chat_id),
+                        f"📅 Giáo án điều chỉnh: Thể trạng hôm nay thấp (readiness {readiness_score}%). "
+                        f"Bài '{workout_title}' đã dời sang {future_date}. Hôm nay tập Easy hoặc nghỉ.",
+                    )
+                    logger.info(f"[SCHEDULER] Deferred '{workout_title}' from {today_str} to {future_date}.")
+                    return
+
+            # No available day found — reduce weekly target by 5%
+            logger.warning("[SCHEDULER] No available day to reschedule. Reducing weekly target by 5%.")
+            week_start = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+            c.execute(
+                """SELECT actual_target_km FROM user_weekly_targets
+                   WHERE user_id = ? ORDER BY week_start_date DESC LIMIT 1""",
+                (user_id,),
+            )
+            target_row = c.fetchone()
+            if target_row and target_row["actual_target_km"]:
+                new_target = target_row["actual_target_km"] * 0.95
+                c.execute(
+                    """INSERT INTO user_weekly_targets (user_id, week_start_date, standard_target_km, actual_target_km)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(user_id, week_start_date) DO UPDATE SET actual_target_km=excluded.actual_target_km""",
+                    (user_id, week_start, new_target, new_target),
+                )
+                conn.commit()
+
+            chat_id = get_primary_user_id()
+            send_telegram_msg(
+                str(chat_id),
+                "⚠️ Không tìm được ngày phù hợp để dời bài tập. Giảm mục tiêu tuần này -5%.",
+            )
+
+    except Exception as e:
+        logger.error("[SCHEDULER] task_auto_reschedule failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 🥗 NUTRITION ALERT (LONG RUN PREP)
+# ==========================================
+def task_nutrition_alert():
+    """20:00 daily — if tomorrow has LongRun > 15km, send nutrition prep alert.
+
+    Runs in BackgroundScheduler thread pool.
+    """
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping nutrition alert.")
+            return
+
+        from datetime import date, timedelta
+        from app.core.database import get_db
+
+        logger.info("[SCHEDULER] Running nutrition alert check...")
+
+        tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
+
+        with get_db() as conn:
+            c = conn.cursor()
+
+            # Check tomorrow's training plan
+            c.execute(
+                """SELECT target_distance_km FROM training_plans
+                   WHERE user_id = ? AND date = ?""",
+                (user_id, tomorrow_str),
+            )
+            plan_row = c.fetchone()
+
+            if not plan_row:
+                logger.info("[SCHEDULER] No training plan for tomorrow. Skipping nutrition alert.")
+                return
+
+            distance_km = plan_row.get("target_distance_km")
+
+            # Only alert for LongRun > 15km
+            if distance_km is None or distance_km <= 15:
+                logger.info(f"[SCHEDULER] Tomorrow's distance {distance_km}km <= 15km. No alert.")
+                return
+
+            logger.info(f"[SCHEDULER] Tomorrow has LongRun {distance_km}km. Sending nutrition alert...")
+
+            chat_id = get_primary_user_id()
+            send_telegram_msg(
+                str(chat_id),
+                f"⚡ Ngày mai có Long Run {distance_km:.1f}km. Hãy chuẩn bị: "
+                f"2 gói gel hoặc điểm bổ sung năng lượng, 500ml nước điện giải.",
+            )
+
+    except Exception as e:
+        logger.error("[SCHEDULER] task_nutrition_alert failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 👟 GEAR TRACKER (SHOE MILEAGE CHECK)
+# ==========================================
+def task_gear_check():
+    """Weekly Monday check: alert if shoe mileage exceeds threshold. Runs in BackgroundScheduler thread pool."""
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping gear check.")
+            return
+
+        config = load_config()
+        gear_cfg = config.get("garmin", {})
+        warn_threshold_km = float(gear_cfg.get("gear_warn_km", 550))
+        critical_threshold_km = float(gear_cfg.get("gear_critical_km", 650))
+
+        logger.info("[SCHEDULER] Running gear mileage check...")
+        garmin = get_garmin_client()
+        gear_list = garmin.fetch_gear_stats(user_id)
+
+        if not gear_list:
+            logger.info("[SCHEDULER] No gear data available from Garmin.")
+            return
+
+        chat_id = get_primary_user_id()
+        for gear in gear_list:
+            gear_name = gear.get("name", "Unknown")
+            total_km = gear.get("total_km", 0)
+
+            if total_km >= critical_threshold_km:
+                msg = (
+                    f"🚨 <b>GIÀY CẦN THAY NGAY</b>\n"
+                    f"{gear_name}: {total_km:.1f}km (ngưỡng tới hạn: {critical_threshold_km}km)\n"
+                    f"Khuyến nghị: Thay giày ngay, giày cũ có thể gây chấn thương."
+                )
+                send_telegram_msg(str(chat_id), msg)
+                logger.info(f"[SCHEDULER] Critical gear alert: {gear_name} at {total_km}km")
+
+            elif total_km >= warn_threshold_km:
+                msg = (
+                    f"⚠️ <b>GIÀY SẮP HẾT DÙNG</b>\n"
+                    f"{gear_name}: {total_km:.1f}km (ngưỡng cảnh báo: {warn_threshold_km}km)\n"
+                    f"Khuyến nghị: Chuẩn bị thay giày trong vài tuần tới."
+                )
+                send_telegram_msg(str(chat_id), msg)
+                logger.info(f"[SCHEDULER] Gear warning: {gear_name} at {total_km}km")
+
+    except Exception as e:
+        logger.error("[SCHEDULER] task_gear_check failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 🔁 RETRY FAILED GEMINI ANALYSES
+# ==========================================
+def task_retry_pending_analyses():
+    """Every 2h — re-run Gemini analysis for runs where gcs_score IS NULL (webhook timed out).
+
+    Sends Telegram notification on success. Runs in BackgroundScheduler thread pool.
+    """
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping retry analysis.")
+            return
+
+        config = load_config()
+        pending = get_activities_needing_analysis(user_id, days_back=3)
+
+        if not pending:
+            logger.info("[SCHEDULER] No pending analyses found.")
+            return
+
+        logger.info(f"[SCHEDULER] Retrying analysis for {len(pending)} activities...")
+
+        for act in pending:
+            activity_id = str(act["activity_id"])
+            act_name = act.get("name", "Unknown Run")
+
+            raw = get_run_activity_raw(activity_id)
+            if not raw:
+                logger.warning(f"[SCHEDULER] No raw data for activity {activity_id}. Skipping.")
+                continue
+
+            meta_data = raw.get("full_meta", {})
+            logger.info(f"[SCHEDULER] Retrying analysis: {act_name} ({activity_id})")
+
+            analysis_text = analyze_run_with_gemini(activity_id, act_name, meta_data, config)
+            if analysis_text:
+                telegram_msg = (
+                    f"🔁 <b>Phân tích bài chạy (retry):</b> {act_name}\n\n"
+                    f"{analysis_text}\n\n"
+                    f"🔗 Xem trên Strava: https://www.strava.com/activities/{activity_id}"
+                )
+                send_telegram_msg(user_id, telegram_msg)
+                logger.info(f"[SCHEDULER] Retry analysis sent for {activity_id}")
+            else:
+                logger.warning(f"[SCHEDULER] Retry analysis still failed for {activity_id}")
+
+    except Exception as e:
+        logger.error("[SCHEDULER] task_retry_pending_analyses failed: %s", e, exc_info=True)
+
+
+# ==========================================
 # ⚙️ SCHEDULER MANAGEMENT
 # ==========================================
 def setup_jobs():
@@ -364,6 +655,30 @@ def setup_jobs():
         task_cleanup_stale_setup,
         CronTrigger(hour=3, minute=0, timezone=TZ_VN),
         id="cleanup_stale_setup",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_gear_check,
+        CronTrigger(day_of_week="mon", hour=7, minute=0, timezone=TZ_VN),
+        id="gear_check",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_auto_reschedule,
+        CronTrigger(hour=23, minute=0, timezone=TZ_VN),
+        id="auto_reschedule",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_nutrition_alert,
+        CronTrigger(hour=20, minute=0, timezone=TZ_VN),
+        id="nutrition_alert",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_retry_pending_analyses,
+        IntervalTrigger(hours=2, timezone=TZ_VN),
+        id="retry_pending_analyses",
         replace_existing=True,
     )
 

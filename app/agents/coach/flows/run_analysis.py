@@ -13,6 +13,7 @@ from app.core.database import (
     update_plan_status,
     get_run_metrics_from_db,
 )
+from app.core.notification import send_inline_keyboard_menu
 from app.agents.coach.utils import (
     calculate_acwr,
     calculate_training_phase,

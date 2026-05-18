@@ -8,7 +8,7 @@ Zone 3: function names/logic = English, user-facing messages = Vietnamese.
 """
 
 import time
-from app.core.notification import send_telegram_msg
+from app.core.notification import send_telegram_msg, send_telegram_html
 from app.core.user_context import get_primary_user_id
 from app.agents.news.memory import run_extract_in_background
 from app.core.logging_conf import get_module_logger
@@ -111,11 +111,11 @@ def handle_news_command(chat_id: str, args: list[str], config: dict) -> None:
     sub = args[0].lower().strip() if args else "morning"
 
     if sub == "help":
-        send_telegram_msg(chat_id, _HELP_MSG)
+        send_telegram_html(chat_id, _HELP_MSG)
         return
 
     if sub not in _VALID_FLOWS:
-        send_telegram_msg(chat_id, ERR_005.format(arg=sub) + f"\n\n{_HELP_MSG}")
+        send_telegram_html(chat_id, ERR_005.format(arg=sub) + f"\n\n{_HELP_MSG}")
         return
 
     label = _FLOW_LABELS[sub]
@@ -154,7 +154,7 @@ def handle_news_chat(chat_id: str, text: str, config: dict) -> None:
         return
 
     if not text:
-        send_telegram_msg(chat_id, _HELP_MSG)
+        send_telegram_html(chat_id, _HELP_MSG)
         return
 
     rate_limit = int(news_cfg.get("ondemand_rate_limit_per_hour", RATE_LIMIT))

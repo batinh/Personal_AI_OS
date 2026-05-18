@@ -472,3 +472,190 @@ class TestGetVolumeSummary(unittest.TestCase):
         }
         result = get_volume_summary("u1", "year", 2025)
         self.assertIn("500.0 km", result)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# save_bulk_workout_plan
+# ══════════════════════════════════════════════════════════════════════════════
+class TestSaveBulkWorkoutPlan(unittest.TestCase):
+
+    @patch("app.agents.coach.tools.update_daily_plan")
+    def test_saves_all_valid_entries(self, mock_db):
+        from app.agents.coach.tools import save_bulk_workout_plan
+        import json
+
+        mock_db.return_value = "✅ Đã cập nhật giáo án ngày 2026-05-01: Easy Run (Pending)"
+        entries = [
+            {"date": "2026-05-01", "workout_title": "Easy Run", "description": "6km Z2"},
+            {"date": "2026-05-02", "workout_title": "Rest Day", "description": "nghỉ"},
+        ]
+        result = save_bulk_workout_plan("u1", json.dumps(entries))
+        self.assertIn("2/2", result)
+        self.assertIn("✅", result)
+        self.assertEqual(mock_db.call_count, 2)
+
+    @patch("app.agents.coach.tools.update_daily_plan")
+    def test_skips_entries_missing_required_fields(self, mock_db):
+        from app.agents.coach.tools import save_bulk_workout_plan
+        import json
+
+        mock_db.return_value = "✅ ok"
+        entries = [
+            {"date": "2026-05-01", "workout_title": "Run", "description": "6km"},
+            {"workout_title": "Missing date"},  # no date
+            {"date": "2026-05-03"},              # no title
+        ]
+        result = save_bulk_workout_plan("u1", json.dumps(entries))
+        self.assertIn("1/3", result)
+        self.assertEqual(mock_db.call_count, 1)
+
+    def test_invalid_json_returns_error(self):
+        from app.agents.coach.tools import save_bulk_workout_plan
+
+        result = save_bulk_workout_plan("u1", "not json {")
+        self.assertIn("❌", result)
+        self.assertIn("JSON", result)
+
+    def test_empty_array_returns_error(self):
+        from app.agents.coach.tools import save_bulk_workout_plan
+
+        result = save_bulk_workout_plan("u1", "[]")
+        self.assertIn("❌", result)
+
+    @patch("app.agents.coach.tools.update_daily_plan")
+    def test_partial_db_failure_reported(self, mock_db):
+        from app.agents.coach.tools import save_bulk_workout_plan
+        import json
+
+        mock_db.side_effect = ["✅ ok", "❌ DB error"]
+        entries = [
+            {"date": "2026-05-01", "workout_title": "Run", "description": "ok"},
+            {"date": "2026-05-02", "workout_title": "Run", "description": "fail"},
+        ]
+        result = save_bulk_workout_plan("u1", json.dumps(entries))
+        self.assertIn("⚠️", result)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# _run_agentic_loop — tool-call execution loop
+# ══════════════════════════════════════════════════════════════════════════════
+class TestAgenticLoop(unittest.TestCase):
+
+    def _make_text_response(self, text: str):
+        """Stub Gemini response that returns text only (no tool calls)."""
+        from unittest.mock import MagicMock
+        from google.genai import types
+
+        part = MagicMock()
+        part.text = text
+        part.thought = False
+        part.function_call = None
+
+        content = MagicMock()
+        content.parts = [part]
+
+        candidate = MagicMock()
+        candidate.content = content
+
+        response = MagicMock()
+        response.candidates = [candidate]
+        response.text = text
+        return response
+
+    def _make_fn_call_then_text_response(self, fn_name: str, fn_args: dict, reply_text: str):
+        """
+        First call returns a function_call part; second call returns text.
+        Returns (first_response, second_response).
+        """
+        from unittest.mock import MagicMock
+
+        # --- first response: function_call ---
+        fc = MagicMock()
+        fc.name = fn_name
+        fc.args = fn_args
+
+        fc_part = MagicMock()
+        fc_part.text = None
+        fc_part.thought = False
+        fc_part.function_call = fc
+
+        fc_content = MagicMock()
+        fc_content.parts = [fc_part]
+
+        fc_candidate = MagicMock()
+        fc_candidate.content = fc_content
+
+        r1 = MagicMock()
+        r1.candidates = [fc_candidate]
+        r1.text = None
+
+        # --- second response: text ---
+        r2 = self._make_text_response(reply_text)
+        return r1, r2
+
+    def test_text_only_response_returns_immediately(self):
+        from unittest.mock import MagicMock, patch
+        from app.agents.coach.agent import _run_agentic_loop
+
+        chat = MagicMock()
+        chat.send_message.return_value = self._make_text_response("xin chào")
+
+        result = _run_agentic_loop(chat, "hello")
+        self.assertEqual(result, "xin chào")
+        self.assertEqual(chat.send_message.call_count, 1)
+
+    def test_executes_tool_and_feeds_result_back(self):
+        from unittest.mock import MagicMock, patch
+        from app.agents.coach.agent import _run_agentic_loop
+
+        r1, r2 = self._make_fn_call_then_text_response(
+            "check_training_status", {"user_id": "u1"}, "ACWR: 1.0"
+        )
+        chat = MagicMock()
+        chat.send_message.side_effect = [r1, r2]
+
+        with patch("app.agents.coach.agent._TOOL_DISPATCH", {
+            "check_training_status": lambda user_id: "ACWR 1.0 sweet spot"
+        }):
+            result = _run_agentic_loop(chat, "status?")
+
+        self.assertIn("ACWR", result)
+        self.assertEqual(chat.send_message.call_count, 2)
+
+    def test_unknown_tool_returns_error_but_continues(self):
+        from unittest.mock import MagicMock, patch
+        from app.agents.coach.agent import _run_agentic_loop
+
+        r1, r2 = self._make_fn_call_then_text_response(
+            "nonexistent_tool", {"x": 1}, "done"
+        )
+        chat = MagicMock()
+        chat.send_message.side_effect = [r1, r2]
+
+        with patch("app.agents.coach.agent._TOOL_DISPATCH", {}):
+            result = _run_agentic_loop(chat, "do thing")
+
+        self.assertEqual(result, "done")
+        self.assertEqual(chat.send_message.call_count, 2)
+
+    def test_dispatch_map_contains_all_tools(self):
+        from app.agents.coach.agent import _TOOL_DISPATCH, _TOOLS_READ_ONLY, _TOOLS_WRITE
+
+        all_tools = _TOOLS_READ_ONLY + _TOOLS_WRITE
+        for tool_fn in all_tools:
+            self.assertIn(
+                tool_fn.__name__,
+                _TOOL_DISPATCH,
+                f"Tool '{tool_fn.__name__}' missing from _TOOL_DISPATCH",
+            )
+
+    def test_write_keywords_trigger_write_tools(self):
+        from app.agents.coach.agent import _select_tools_for_message, _TOOLS_READ_ONLY, _TOOLS_WRITE
+
+        write_len = len(_TOOLS_READ_ONLY) + len(_TOOLS_WRITE)
+        for kw in ["lưu", "lập kế hoạch", "tạo giáo án", "lịch tập tuần này", "save"]:
+            tools = _select_tools_for_message(kw)
+            self.assertEqual(
+                len(tools), write_len,
+                f"Expected write tools for keyword '{kw}'"
+            )

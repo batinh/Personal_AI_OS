@@ -237,6 +237,7 @@ def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
         return
 
     loaded, memorized, metrics = 0, 0, 0
+    activity_lines: list[str] = []
     for activity in reversed(target_activities):
         if activity.get("type") not in RUN_TYPES:
             continue
@@ -249,12 +250,21 @@ def execute_manual_sync(chat_id: str, limit: int = 3, days_back: int = None):
             memorized += 1
         if r["metrics"]:
             metrics += 1
+
+        dist_km = round(activity.get("distance", 0) / 1000, 2)
+        act_name = activity.get("name", "Unknown Run")
+        date_str = (activity.get("start_date_local", "") or "")[:10]
+        status = "✅" if r["loaded"] else "⚠️"
+        activity_lines.append(f"{status} {date_str} · {act_name} · {dist_km}km")
+
         time.sleep(1)
 
+    activity_detail = "\n".join(activity_lines)
     send_telegram_msg(
         chat_id,
         f"🎉 <b>Hoàn tất Đồng bộ!</b>\n"
-        f"💾 Đã lưu DB: {loaded} | 🧠 Ký ức: {memorized} | 📐 Metrics: {metrics}",
+        f"💾 Đã lưu DB: {loaded} | 🧠 Ký ức: {memorized} | 📐 Metrics: {metrics}\n\n"
+        f"{activity_detail}",
     )
 
     _reconcile(chat_id, strava_client, target_activities, days_back)

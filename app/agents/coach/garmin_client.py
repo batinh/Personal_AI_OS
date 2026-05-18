@@ -1,3 +1,4 @@
+import concurrent.futures
 import json
 import os
 from datetime import date, datetime, timedelta
@@ -6,6 +7,7 @@ from typing import Optional
 
 from app.core.logging_conf import get_module_logger
 from app.core.database import upsert_garmin_daily_metrics, get_garmin_daily_metrics
+from app.core.secrets import decrypt_garmin_credentials
 
 logger = get_module_logger("garmin_client")
 
@@ -13,8 +15,27 @@ _BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _TOKEN_FILE = _BASE_DIR / "data" / "garmin_tokens.json"
 _CIRCUIT_STATE_FILE = _BASE_DIR / "data" / "garmin_circuit.json"
 
+_OAUTH_TOKEN_FILE = _BASE_DIR / "data" / "garmin_oauth_token.json"
+
 _CIRCUIT_FAILURE_THRESHOLD = 3
 _CIRCUIT_COOLDOWN_HOURS = 24
+
+
+def save_oauth_token(token_json: str) -> None:
+    """Persist OAuth token exported from garminconnect (client.dumps())."""
+    _OAUTH_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _OAUTH_TOKEN_FILE.write_text(token_json)
+    logger.info("[GARMIN] OAuth token saved")
+
+
+def load_oauth_token() -> Optional[str]:
+    if _OAUTH_TOKEN_FILE.exists():
+        return _OAUTH_TOKEN_FILE.read_text().strip()
+    return None
+
+
+def has_oauth_token() -> bool:
+    return _OAUTH_TOKEN_FILE.exists() and _OAUTH_TOKEN_FILE.stat().st_size > 10
 
 
 def _load_circuit_state() -> dict:
@@ -71,8 +92,13 @@ class GarminClient:
 
     def __init__(self) -> None:
         self._client = None
-        self._email = os.environ.get("GARMIN_EMAIL", "")
-        self._password = os.environ.get("GARMIN_PASSWORD", "")
+        # Priority: encrypted secrets file → env vars
+        creds = decrypt_garmin_credentials()
+        if creds:
+            self._email, self._password = creds
+        else:
+            self._email = os.environ.get("GARMIN_EMAIL", "")
+            self._password = os.environ.get("GARMIN_PASSWORD", "")
 
     def _get_client(self):
         """Lazy-initialize the garminconnect client, reusing saved tokens."""
@@ -87,8 +113,21 @@ class GarminClient:
             )
             raise
 
+        # Priority 1: OAuth token (works from any IP — no SSO needed)
+        if has_oauth_token():
+            token_str = load_oauth_token()
+            try:
+                client = Garmin(self._email or "", self._password or "")
+                client.login(tokenstore=token_str)
+                self._client = client
+                logger.info("[GARMIN] Session restored from OAuth token (no SSO)")
+                return client
+            except Exception as e:
+                logger.warning(f"[GARMIN] OAuth token restore failed ({e}), trying other methods")
+
         client = Garmin(self._email, self._password)
 
+        # Priority 2: Legacy session tokens
         if _TOKEN_FILE.exists():
             try:
                 token_data = json.loads(_TOKEN_FILE.read_text())
@@ -102,6 +141,7 @@ class GarminClient:
                     f"[GARMIN] Token resume failed ({e}), falling back to full login"
                 )
 
+        # Priority 3: Full SSO login (may fail from server IPs due to Garmin blocking)
         client.login()
         self._save_tokens(client)
         self._client = client
@@ -251,6 +291,46 @@ class GarminClient:
             _record_failure()
             logger.error(f"[GARMIN] Failed to fetch gear stats: {e}")
             return []
+
+    def test_connection(self, timeout_sec: int = 30) -> tuple[bool, str]:
+        """Test Garmin connection with hard timeout. Uses OAuth token fast path if available."""
+        # Fast path: OAuth token exists — verify without SSO
+        if has_oauth_token():
+            logger.info("[GARMIN] test_connection — using OAuth token fast path")
+            timeout_sec = min(timeout_sec, 15)  # token path is fast; cap at 15s
+
+        if not has_oauth_token() and not self._email:
+            return False, "Chưa có OAuth token hoặc credentials. Tải token từ script local."
+
+        logger.info(f"[GARMIN] test_connection start — has_token={has_oauth_token()} email={self._email[:3] if self._email else '(none)'}*** timeout={timeout_sec}s")
+
+        def _do_connect() -> str:
+            client = self._get_client()
+            name = client.get_full_name()
+            return name or "OK"
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_do_connect)
+        executor.shutdown(wait=False)  # don't block on thread after timeout
+        try:
+            name = future.result(timeout=timeout_sec)
+            logger.info(f"[GARMIN] test_connection success — user={name}")
+            return True, ""
+        except concurrent.futures.TimeoutError:
+            logger.warning(f"[GARMIN] test_connection timed out after {timeout_sec}s — Garmin is blocking server IP")
+            return False, f"Kết nối timeout sau {timeout_sec}s — Garmin đang giới hạn server IP. Dùng env vars GARMIN_EMAIL/GARMIN_PASSWORD hoặc thử lại sau."
+        except Exception as e:
+            logger.error(f"[GARMIN] test_connection failed: {e}")
+            return False, str(e)
+
+    def clear_tokens(self) -> None:
+        """Delete all saved tokens, forcing full re-login on next use."""
+        if _TOKEN_FILE.exists():
+            _TOKEN_FILE.unlink()
+        if _OAUTH_TOKEN_FILE.exists():
+            _OAUTH_TOKEN_FILE.unlink()
+        self._client = None
+        logger.info("[GARMIN] All tokens cleared")
 
     def _notify_circuit_open(self, user_id: str) -> None:
         """Send one Telegram alert when circuit breaker opens."""

@@ -38,14 +38,14 @@ class TestHandleNewsCommandDisabled:
 
 class TestHandleNewsCommandHelp:
     def test_help_arg_sends_help_message(self):
-        with patch("app.agents.news.telegram_handler.send_telegram_msg") as mock_send:
+        with patch("app.agents.news.telegram_handler.send_telegram_html") as mock_send:
             handle_news_command("123", ["help"], _ENABLED_CFG)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][1]
         assert "News Agent" in text
 
     def test_help_case_insensitive(self):
-        with patch("app.agents.news.telegram_handler.send_telegram_msg") as mock_send:
+        with patch("app.agents.news.telegram_handler.send_telegram_html") as mock_send:
             handle_news_command("123", ["HELP"], _ENABLED_CFG)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][1]
@@ -54,7 +54,7 @@ class TestHandleNewsCommandHelp:
 
 class TestHandleNewsCommandInvalid:
     def test_invalid_arg_sends_error(self):
-        with patch("app.agents.news.telegram_handler.send_telegram_msg") as mock_send:
+        with patch("app.agents.news.telegram_handler.send_telegram_html") as mock_send:
             handle_news_command("123", ["weekly"], _ENABLED_CFG)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][1]
@@ -62,7 +62,7 @@ class TestHandleNewsCommandInvalid:
         assert "❌" in text
 
     def test_invalid_arg_includes_help(self):
-        with patch("app.agents.news.telegram_handler.send_telegram_msg") as mock_send:
+        with patch("app.agents.news.telegram_handler.send_telegram_html") as mock_send:
             handle_news_command("123", ["bogus"], _ENABLED_CFG)
         text = mock_send.call_args[0][1]
         assert "News Agent" in text
@@ -105,7 +105,7 @@ class TestHandleNewsChatDisabled:
 
 class TestHandleNewsChatEmptyText:
     def test_empty_string_sends_help(self):
-        with patch("app.agents.news.telegram_handler.send_telegram_msg") as mock_send:
+        with patch("app.agents.news.telegram_handler.send_telegram_html") as mock_send:
             handle_news_chat("123", "", _ENABLED_CFG)
         mock_send.assert_called_once()
         text = mock_send.call_args[0][1]
