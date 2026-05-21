@@ -31,11 +31,13 @@ from app.core.database import (
     get_athlete_state,
     set_athlete_state,
     has_active_plan_this_week,
+    get_pending_weekly_plan,
 )
 from app.agents.coach.setup_flow import is_setup_in_progress, advance_setup, start_setup
 from app.agents.coach.flows.weekly_plan_generation import (
     accept_weekly_plan,
     reject_weekly_plan,
+    generate_weekly_plan,
 )
 from app.agents.coach.daily_suggestion import (
     compute_daily_suggestion,
@@ -810,29 +812,59 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         send_telegram_msg(chat_id, reply)
         return
 
-    # [2i] /plan — show upcoming plan or generate daily suggestion if no active plan
+    # [2i] /plan — show accepted plan, re-surface pending plan, or generate on demand
     if text.strip().lower() in ["/plan", "/ke_hoach"]:
-        send_telegram_msg(chat_id, "⏳ Đang tải kế hoạch...")
+        send_telegram_msg(chat_id, "⏳ Đang kiểm tra kế hoạch...")
+
+        # Step 1: accepted plan rows exist in training_plans → show schedule
         upcoming = get_upcoming_plans(chat_id, limit_days=7)
         if upcoming:
             send_telegram_msg(chat_id, f"📅 Lịch tập tuần này:\n{upcoming}")
-        else:
-            loads = get_training_loads(chat_id)
-            from app.agents.coach.utils import calculate_acwr
+            return
 
-            acwr_data = calculate_acwr(
-                loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0)
-            )
-            state = get_athlete_state(chat_id) or {}
-            recent = get_runs_in_last_days(chat_id, days=7)
-            suggestion = compute_daily_suggestion(
-                readiness_score=70,
-                acwr=float(acwr_data.get("acwr", 0)),
-                recent_runs=recent,
-                athlete_state=state,
-            )
-            reply = format_daily_suggestion_for_briefing(suggestion)
-            send_telegram_msg(chat_id, reply)
+        # Step 2: plan generated but not yet accepted → re-show preview + /accept prompt
+        from datetime import date as _date, timedelta as _td
+
+        _today = _date.today()
+        _week_start = (_today - _td(days=_today.weekday())).strftime("%Y-%m-%d")
+        pending = get_pending_weekly_plan(chat_id, _week_start)
+        if pending:
+            from app.agents.coach.schemas import WeeklyPlanResult
+            from app.agents.coach.flows.weekly_plan_generation import _format_plan_preview
+
+            try:
+                result = WeeklyPlanResult.model_validate_json(pending["ai_output"])
+                preview = _format_plan_preview(result)
+                send_telegram_msg(
+                    chat_id,
+                    "⏳ Giáo án đang chờ xác nhận:\n\n" + preview,
+                )
+            except Exception as _e:
+                logger.warning(f"[CHAT] Failed to re-format pending plan: {_e}")
+                send_telegram_msg(
+                    chat_id,
+                    "⏳ Có giáo án đang chờ xác nhận.\n"
+                    "Dùng /accept để xác nhận hoặc /reject &lt;lý do&gt; để từ chối.",
+                )
+            return
+
+        # Step 3: no plan at all → generate on demand
+        send_telegram_msg(chat_id, "📋 Chưa có giáo án. Đang tạo kế hoạch tuần này...")
+        try:
+            from app.core.config import load_config as _load_config
+
+            _config = _load_config()
+            _result = generate_weekly_plan(chat_id, _config)
+            if _result is None:
+                send_telegram_msg(
+                    chat_id,
+                    "⚠️ Không thể tạo giáo án lúc này.\n"
+                    "Có thể do đã tồn tại kế hoạch hoặc trạng thái VĐV không cho phép.\n"
+                    "Thử lại sau hoặc dùng /recover nếu đang bị chấn thương.",
+                )
+        except Exception as _e:
+            logger.error(f"[CHAT] On-demand plan generation failed: {_e}")
+            send_telegram_msg(chat_id, "❌ Lỗi khi tạo giáo án. Vui lòng thử lại sau.")
         return
 
     # 1. Calculate Context (fast vs standard path)

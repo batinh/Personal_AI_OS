@@ -933,7 +933,7 @@ def get_upcoming_plans(user_id: str, limit_days: int = 7) -> str:
         conn.close()
 
         if not rows:
-            return "Chưa có giáo án nào được lên lịch cho những ngày tới."
+            return ""
         plan_text = [
             f"- Ngày {r['date']} [{r['status']}]: {r['workout_title']} - {r['description']}"
             for r in rows
