@@ -275,6 +275,7 @@ STRAVA_FORMAT_RULES = """
 2. TẠO ĐIỂM NHẤN BẰNG CHỮ IN HOA (Ví dụ: ZONE 4, VƯỢT CHỈ TIÊU).
 3. Sử dụng dải ký tự `-----------------------------` để phân tách.
 4. Mỗi ý chỉ dài 1-2 dòng, xuống dòng liên tục.
+5. KHÔNG bao gồm lập luận nội bộ (ACWR, Giai đoạn, Kết luận an toàn) vào mô tả Strava. Đây là thông tin dùng để suy luận nội bộ, KHÔNG xuất hiện trong văn bản gửi lên Strava.
 """
 
 EMAIL_FORMAT_RULES = """
@@ -302,6 +303,7 @@ UNIVERSAL_FORMAT_RULES = """
 2. TẠO ĐIỂM NHẤN BẰNG CHỮ IN HOA (Ví dụ: ZONE 4, VƯỢT CHỈ TIÊU) thay vì in đậm.
 3. Giữ nguyên các dải ký tự `-----------------------------` và `════════════════════════` như trong Cấu trúc yêu cầu.
 4. Mỗi ý chỉ dài 1-2 dòng, xuống dòng liên tục để dễ đọc trên thiết bị di động.
+5. KHÔNG bao gồm lập luận nội bộ (ACWR hiện tại, Giai đoạn hiện tại, Kết luận an toàn) vào nội dung xuất bản. Đây là bước suy luận nội bộ — KHÔNG xuất hiện trong văn bản cuối gửi lên Strava hoặc thiết bị.
 """
 
 
