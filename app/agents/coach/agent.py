@@ -31,12 +31,9 @@ from app.core.database import (
     get_athlete_state,
     set_athlete_state,
     has_active_plan_this_week,
-    get_pending_weekly_plan,
 )
 from app.agents.coach.setup_flow import is_setup_in_progress, advance_setup, start_setup
 from app.agents.coach.flows.weekly_plan_generation import (
-    accept_weekly_plan,
-    reject_weekly_plan,
     generate_weekly_plan,
 )
 from app.agents.coach.daily_suggestion import (
@@ -799,17 +796,22 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         )
         return
 
-    # [2g] /accept — accept the pending weekly plan
+    # [2g] /accept — no longer needed; plans are auto-saved on generation
     if text.strip().lower() in ["/accept", "/chap"]:
-        reply = accept_weekly_plan(chat_id)
-        send_telegram_msg(chat_id, reply)
+        send_telegram_msg(
+            chat_id,
+            "✅ Giáo án được lưu tự động khi tạo. Không cần xác nhận.\n"
+            "Dùng /plan để xem lịch tập hoặc chat với coach để điều chỉnh.",
+        )
         return
 
-    # [2h] /reject — reject the pending weekly plan
+    # [2h] /reject — redirect to chat-based adjustment
     if text.strip().lower().startswith("/reject"):
-        reason = text.strip()[7:].strip()
-        reply = reject_weekly_plan(chat_id, reason=reason)
-        send_telegram_msg(chat_id, reply)
+        send_telegram_msg(
+            chat_id,
+            "ℹ️ Chat trực tiếp với coach để điều chỉnh giáo án.\n"
+            "Ví dụ: \"Thứ Tư đổi thành nghỉ\", \"Giảm quãng đường Long Run xuống 18km\"",
+        )
         return
 
     # [2i] /plan — show accepted plan, re-surface pending plan, or generate on demand
@@ -822,33 +824,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             send_telegram_msg(chat_id, f"📅 Lịch tập tuần này:\n{upcoming}")
             return
 
-        # Step 2: plan generated but not yet accepted → re-show preview + /accept prompt
-        from datetime import date as _date, timedelta as _td
-
-        _today = _date.today()
-        _week_start = (_today - _td(days=_today.weekday())).strftime("%Y-%m-%d")
-        pending = get_pending_weekly_plan(chat_id, _week_start)
-        if pending:
-            from app.agents.coach.schemas import WeeklyPlanResult
-            from app.agents.coach.flows.weekly_plan_generation import _format_plan_preview
-
-            try:
-                result = WeeklyPlanResult.model_validate_json(pending["ai_output"])
-                preview = _format_plan_preview(result)
-                send_telegram_msg(
-                    chat_id,
-                    "⏳ Giáo án đang chờ xác nhận:\n\n" + preview,
-                )
-            except Exception as _e:
-                logger.warning(f"[CHAT] Failed to re-format pending plan: {_e}")
-                send_telegram_msg(
-                    chat_id,
-                    "⏳ Có giáo án đang chờ xác nhận.\n"
-                    "Dùng /accept để xác nhận hoặc /reject &lt;lý do&gt; để từ chối.",
-                )
-            return
-
-        # Step 3: no plan at all → generate on demand
+        # Step 2: no plan at all → generate on demand
         send_telegram_msg(chat_id, "📋 Chưa có giáo án. Đang tạo kế hoạch tuần này...")
         try:
             from app.core.config import load_config as _load_config
