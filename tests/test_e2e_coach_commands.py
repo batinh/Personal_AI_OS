@@ -207,34 +207,31 @@ class TestCoachPlanCommands(unittest.TestCase):
 
     @patch(_AGENT_SEND)
     @patch(_AGENT_TYPING)
-    @patch("app.agents.coach.agent.accept_weekly_plan", return_value="✅ Kế hoạch đã được chấp nhận!")
     @patch("app.agents.coach.agent.is_setup_in_progress", return_value=False)
     @patch(_AGENT_CONFIG, return_value=_STUB_CONFIG)
     @patch(_LOAD_CONFIG, return_value=_STUB_CONFIG)
-    def test_accept_plan_sends_confirmation(
-        self, mock_lc, mock_ac, mock_setup, mock_accept, mock_typing, mock_send
+    def test_accept_plan_sends_info_message(
+        self, mock_lc, mock_ac, mock_setup, mock_typing, mock_send
     ):
-        """POST /accept → accept_weekly_plan called, confirmation sent to user."""
+        """POST /accept → sends info message (plans are auto-saved now)."""
         _post_telegram(self.client, 999, "/accept")
-        mock_accept.assert_called_once()
         mock_send.assert_called()
+        sent_text = mock_send.call_args[0][1] if mock_send.call_args else ""
+        self.assertIn("tự động", sent_text)
 
     @patch(_AGENT_SEND)
     @patch(_AGENT_TYPING)
-    @patch("app.agents.coach.agent.reject_weekly_plan", return_value="🔄 Đang tạo kế hoạch mới...")
     @patch("app.agents.coach.agent.is_setup_in_progress", return_value=False)
     @patch(_AGENT_CONFIG, return_value=_STUB_CONFIG)
     @patch(_LOAD_CONFIG, return_value=_STUB_CONFIG)
-    def test_reject_plan_sends_confirmation(
-        self, mock_lc, mock_ac, mock_setup, mock_reject, mock_typing, mock_send
+    def test_reject_plan_sends_chat_redirect(
+        self, mock_lc, mock_ac, mock_setup, mock_typing, mock_send
     ):
-        """POST /reject → reject_weekly_plan called, reply sent."""
+        """POST /reject → sends redirect message to use chat-based adjustment."""
         _post_telegram(self.client, 999, "/reject too hard")
-        mock_reject.assert_called_once()
-        args = mock_reject.call_args
-        reason = args[1].get("reason") or (args[0][1] if len(args[0]) > 1 else "")
-        self.assertIn("too hard", reason)
         mock_send.assert_called()
+        sent_text = mock_send.call_args[0][1] if mock_send.call_args else ""
+        self.assertIn("coach", sent_text)
 
     @patch(_AGENT_SEND)
     @patch(_AGENT_TYPING)

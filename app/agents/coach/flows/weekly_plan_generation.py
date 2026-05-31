@@ -224,12 +224,13 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
         return None
 
     ai_output = result.model_dump_json(indent=2)
-    upsert_weekly_plan(user_id, week_start, ai_output)
+    plan_id = upsert_weekly_plan(user_id, week_start, ai_output)
+    _write_plan_to_training_plans(user_id, result, plan_id)
 
     chat_id = get_primary_user_id()
     preview = _format_plan_preview(result)
     send_telegram_msg(chat_id, preview)
-    logger.info(f"[WEEKLY_PLAN] Plan generated and sent to {user_id}")
+    logger.info(f"[WEEKLY_PLAN] Plan generated, saved, and sent to {user_id}")
     return result
 
 
@@ -325,7 +326,7 @@ def _format_plan_preview(plan: WeeklyPlanResult) -> str:
     if plan.adaptations_made:
         lines.append("⚡ <i>Điều chỉnh:</i> " + "; ".join(plan.adaptations_made[:2]))
 
-    lines.append("\n[✅ Dùng giáo án này] → /accept\n[❌ Hủy] → /reject &lt;lý do&gt;")
+    lines.append("\n✅ <i>Giáo án đã được lưu. Chat với coach để điều chỉnh nếu cần.</i>")
     preview = "\n".join(lines)
 
     if len(preview) > 3400:

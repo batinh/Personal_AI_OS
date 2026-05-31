@@ -1706,8 +1706,8 @@ def set_athlete_state(
 # ==========================================
 # 📋 WEEKLY PLANS
 # ==========================================
-def upsert_weekly_plan(user_id: str, week_start_date: str, ai_output: str) -> None:
-    """Insert or replace a weekly plan (status='pending')."""
+def upsert_weekly_plan(user_id: str, week_start_date: str, ai_output: str) -> int:
+    """Insert or replace a weekly plan (status='accepted'). Returns the row ID (-1 on error)."""
     try:
         with get_db() as conn:
             conn.execute("""
@@ -1725,15 +1725,21 @@ def upsert_weekly_plan(user_id: str, week_start_date: str, ai_output: str) -> No
                 """)
             conn.execute(
                 """
-                INSERT INTO weekly_plans (user_id, week_start_date, status, ai_output, created_at, updated_at)
-                VALUES (?,?,'pending',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+                INSERT INTO weekly_plans (user_id, week_start_date, status, ai_output)
+                VALUES (?,?,'accepted',?)
                 ON CONFLICT(user_id, week_start_date) DO UPDATE SET
-                    status='pending', ai_output=excluded.ai_output, updated_at=CURRENT_TIMESTAMP
+                    status='accepted', ai_output=excluded.ai_output
                 """,
                 (user_id, week_start_date, ai_output),
             )
+            row = conn.execute(
+                "SELECT id FROM weekly_plans WHERE user_id=? AND week_start_date=?",
+                (user_id, week_start_date),
+            ).fetchone()
+            return row[0] if row else -1
     except Exception as e:
         logger.error(f"[DB_ERROR] upsert_weekly_plan failed: {e}")
+        return -1
 
 
 def get_pending_weekly_plan(user_id: str, week_start_date: str) -> Optional[dict]:
