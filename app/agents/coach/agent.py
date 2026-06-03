@@ -952,8 +952,8 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             f"[CHAT] Tool routing: {'WRITE' if len(selected_tools) > len(_TOOLS_READ_ONLY) else 'READ-ONLY'} ({len(selected_tools)} tools) for message: '{text[:50]}'"
         )
 
-        # Fast path caps output to keep greetings/simple Q&A concise
-        max_tokens = 512 if intent == "fast" else 1200
+        # Fast path caps output for greetings; standard path needs room for full answers
+        max_tokens = 512 if intent == "fast" else 2000
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),
             history=formatted_history[:-1],  # Pass previous history
