@@ -1,0 +1,22 @@
+[
+  {
+    "label": "explicit_like_dislike",
+    "chat": "User: Tôi muốn đọc thêm tin về LLM agents, ít hơn về crypto."
+  },
+  {
+    "label": "style_request",
+    "chat": "User: Tin dài quá. Viết ngắn lại cho dễ đọc trên mobile được không?"
+  },
+  {
+    "label": "implicit_positive",
+    "chat": "User: Tin về open source hôm qua hay. Có thêm tương tự không?"
+  },
+  {
+    "label": "implicit_negative",
+    "chat": "User: Mấy tin showbiz hôm nay không liên quan gì đến mình."
+  },
+  {
+    "label": "small_talk",
+    "chat": "User: Cảm ơn nhé. AI: Không có chi."
+  }
+]

@@ -718,7 +718,6 @@ def build_agent_context(
         actual_volume,
         weekly_decision_context,
         hr_zones_text,
-        pace_zones_text,
     )
 
     return AgentContext(

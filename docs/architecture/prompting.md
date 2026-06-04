@@ -94,6 +94,13 @@ files (`tests/snapshots/prompts/*.txt`) are git-tracked.
 4. Commit the regenerated snapshot files in the same PR as the prompt change.
 5. Bump `PROMPT_VERSION` if the change is significant.
 
+### Eval helper for memory extraction
+
+`scripts/eval_news_memory_extraction.py` renders the news memory-extraction
+prompt against a list of chat samples and prints the parsed JSON. Run with
+`--dry-run` to see the prompt only, or set `GEMINI_API_KEY` to call the model
+and validate `{liked, disliked, notes}` keys. Does not write to any DB.
+
 ### When to add a new snapshot
 
 Whenever you add a new public prompt builder, also add:

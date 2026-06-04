@@ -18,6 +18,12 @@ Architecture:
 # ==========================================
 # SYSTEM INSTRUCTION (Legacy — single-call)
 # ==========================================
+# NOT dead code despite the "legacy" label. Still wired at
+# `news/agent.py::_generate_legacy_briefing` as the fallback when the
+# parallel topic list is empty or all per-topic calls fail. Removing this
+# constant will break that path. If you want to retire it, first delete
+# the `_generate_legacy_briefing` caller and confirm topic coverage is
+# always non-empty in production.
 
 _NEWS_SYSTEM_INSTRUCTION = """Bạn là News Curator, trợ lý tin tức AI chuyên nghiệp.
 

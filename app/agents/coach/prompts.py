@@ -217,9 +217,12 @@ def get_shared_context_block(
     actual_volume: float,
     weekly_decision_context: str,
     hr_zones_text: str = "",
-    pace_zones_text: str = "",
 ) -> str:
-    """Dynamic data block providing sensory context to the AI."""
+    """Dynamic data block providing sensory context to the AI.
+
+    Note: pace zones are injected into build_system_instruction rather than
+    this runtime context block, so they are not a parameter here.
+    """
     zones_block = ""
     if hr_zones_text:
         zones_block = f"""
@@ -259,7 +262,7 @@ DEFAULT_ANALYSIS_REQUIREMENTS = """
 7. NEXT ACTION: Đề xuất cụ thể cho 7 ngày tới, có Power zone target và workout type rõ ràng.
 """
 
-DEFAULT_REPORT_STRUCTURE = """
+DEFAULT_REPORT_STRUCTURE = f"""
 [CẤU TRÚC BÁO CÁO BẮT BUỘC]
 Hãy điền dữ liệu phân tích của bạn vào đúng form dưới đây, không tự ý thêm bớt các mục chính:
 
@@ -292,7 +295,7 @@ Hãy điền dữ liệu phân tích của bạn vào đúng form dưới đây,
 
 ════════════════════════
 {_COACH_SIGNATURE}
-""".replace("{_COACH_SIGNATURE}", _COACH_SIGNATURE)
+"""
 
 # ==========================================
 # 🎨 LAYER 4: PLATFORM FORMATTERS (UI RULES)
@@ -438,7 +441,26 @@ def build_universal_run_analysis_prompt(
     format_rules: str,
     metrics_block: str = "",
 ) -> str:
-    """Flow 3: Omni-channel Run Analysis"""
+    """Flow 3: Omni-channel Run Analysis.
+
+    The 9-parameter signature is intentional: each block is owned by a different
+    layer (L2 context, L3 report definitions, L4 platform format, L7 metrics).
+    Callers select which constants to inject so the same builder serves chat,
+    Strava, and email outputs without per-channel duplication.
+
+    Args:
+        shared_context  : output of ``get_shared_context_block`` (L2).
+        run_name        : human-readable activity name for the heading.
+        meta_text       : pre-formatted splits + HR summary.
+        today_plan      : planned workout text to compare against actual.
+        task_desc       : top-level task description (L3, e.g. DEFAULT_ANALYSIS_TASK).
+        analysis_req    : analysis requirements block (L3).
+        report_structure: required report layout (L3).
+        format_rules    : platform-specific formatter (L4) — pick one of
+                          ``CHAT_FORMAT_RULES`` / ``STRAVA_FORMAT_RULES`` /
+                          ``EMAIL_FORMAT_RULES`` / ``UNIVERSAL_FORMAT_RULES``.
+        metrics_block   : optional running-science metrics (L7).
+    """
     metrics_section = (
         f"\n[RUNNING SCIENCE METRICS]\n{metrics_block}" if metrics_block else ""
     )
