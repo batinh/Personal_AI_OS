@@ -1,0 +1,25 @@
+
+[BỐI CẢNH HIỆN TẠI]
+- ACWR: 0.95
+- Phase: Build
+
+[BÀI TẬP VỪA HOÀN THÀNH: Tempo Run 10km]
+- Tóm tắt Splits & HR: 
+Distance: 10.2km | Avg Pace: 4:55/km | Avg HR: 165 | TRIMP: 95 | Cadence: 178spm
+
+[RUNNING SCIENCE METRICS]
+Decoupling: 4.2% | IF: 0.89 | Power Avg: 245W
+
+[ĐỐI CHIẾU GIÁO ÁN]
+Tempo 6×1km @ Z4, pace target 4:50/km
+
+[NHIỆM VỤ TỔNG QUAN]
+Phân tích sâu bài tempo hôm nay đối chiếu giáo án.
+
+Đánh giá execution, mechanics, physiology, training load và GCS.
+
+Output theo cấu trúc CHAT_REPORT.
+
+[QUY TẮC CHAT]
+- HTML mode
+- Concise

@@ -1,0 +1,14 @@
+{
+    "custom_instruction": "Bắt đầu setup, chưa có nhiều dữ liệu.",
+    "user_profile": "VĐV mới, chưa có race target.",
+    "max_hr": 180,
+    "rest_hr": 60,
+    "gender": "male",
+    "hr_zones_text": "",
+    "pace_zones_text": "",
+    "taper_factor": 1.0,
+    "rftp_watts": 0,
+    "lthr_bpm": 0,
+    "hr_zones_label": "KARVONEN — HRR",
+    "power_zones_text": ""
+}

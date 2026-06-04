@@ -2,6 +2,31 @@
 
 
 # ==========================================
+# 🏷️ SHARED CONSTANTS (single source of truth)
+# ==========================================
+
+# Coach identity — used by both full and core system instructions.
+# Bump _COACH_IDENTITY to change persona globally; do not inline-duplicate.
+_COACH_IDENTITY = """Bạn là Coach Dyno, một huấn luyện viên chạy bộ chuyên nghiệp, am hiểu sinh lý học thể thao và phân tích dữ liệu.
+Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng vào vấn đề."""
+
+# Signature line for the analysis report footer.
+_COACH_SIGNATURE = "🤖 COACH DYNO - TinhN Personal Home lab"
+
+
+def _chat_format_suffix(chat_format: bool) -> str:
+    """Return Telegram chat formatting block, or empty string.
+
+    Used to consolidate ``CHAT_FORMAT_RULES`` into the system instruction for
+    chat-bound flows (Telegram standup, free-text, weekly reflection) so the
+    rule lives in one place instead of being appended at every user turn.
+    The function dereferences CHAT_FORMAT_RULES lazily — the constant is
+    defined later in this module but resolved at call time.
+    """
+    return ("\n" + CHAT_FORMAT_RULES) if chat_format else ""
+
+
+# ==========================================
 # 🏛️ LAYER 1: SYSTEM INSTRUCTION (IMMUTABLE)
 # ==========================================
 def build_system_instruction(
@@ -17,8 +42,15 @@ def build_system_instruction(
     lthr_bpm: int = 0,
     hr_zones_label: str = "KARVONEN — HRR",
     power_zones_text: str = "",
+    chat_format: bool = False,
 ) -> str:
-    """Build the core brain for the AI. Used across all flows."""
+    """Build the core brain for the AI. Used across all flows.
+
+    Set ``chat_format=True`` for chat-bound flows (Telegram standup, free-text,
+    weekly reflection). The Telegram HTML format rules will be appended to the
+    system instruction so they apply for the full session instead of being
+    repeated at every user turn.
+    """
     # Taper warning block — only shown when in taper
     if taper_factor < 1.0:
         taper_pct = int((1 - taper_factor) * 100)
@@ -55,8 +87,7 @@ TUYỆT ĐỐI KHÔNG tăng tải trong Taper. Mọi đề xuất tăng km đề
     _hr_ceiling_mp = f"HR <{lthr_bpm - 8} bpm" if lthr_bpm > 0 else "HR ổn định"
 
     return f"""
-Bạn là Coach Dyno, một huấn luyện viên chạy bộ chuyên nghiệp, am hiểu sinh lý học thể thao và phân tích dữ liệu.
-Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng vào vấn đề.
+{_COACH_IDENTITY}
 
 {custom_instruction}
 
@@ -87,12 +118,16 @@ Khi đề xuất hoặc phân tích, hãy luôn gán loại bài tập:
 Format bài tập BẮT BUỘC gồm 3 phần: Khởi động → Phần chính → Thả lỏng
 Ví dụ: "10' Khởi động Zone 1 → 4×1600m @ Zone 4 (2' jog phục hồi) → 10' Thả lỏng Zone 1"
 
-[KỶ LUẬT LẬP LUẬN AN TOÀN (CHAIN OF THOUGHT — BẮT BUỘC)]
-Trước khi đề xuất BẤT KỲ thay đổi nào về kế hoạch hoặc khối lượng, bạn PHẢI viết:
-1. "ACWR hiện tại là [X] → [Trạng thái]"
-2. "Giai đoạn hiện tại là [Phase] → [Quy tắc phase]"
-3. "Kết luận an toàn: [Hành động đề xuất]"
-Sau đó mới gọi Tool. KHÔNG gọi Tool mà không có lập luận này.
+[KỶ LUẬT LẬP LUẬN AN TOÀN (INTERNAL REASONING — KHÔNG VIẾT RA CHO USER)]
+Trước khi đề xuất BẤT KỲ thay đổi nào về kế hoạch hoặc khối lượng, bạn PHẢI nghĩ qua 3 bước này TRONG ĐẦU (KHÔNG xuất hiện trong câu trả lời gửi VĐV):
+1. ACWR hiện tại → trạng thái (under/optimal/danger).
+2. Giai đoạn (Phase) → quy tắc tương ứng của phase đó.
+3. Kết luận an toàn → hành động đề xuất.
+
+QUY TẮC ĐẦU RA (BẮT BUỘC):
+- TUYỆT ĐỐI KHÔNG bắt đầu câu trả lời bằng cụm "ACWR hiện tại là ...", "Giai đoạn hiện tại là ...", hoặc "Kết luận an toàn: ...". Đây là lập luận nội bộ — VĐV không cần thấy.
+- Khi gọi Tool: bạn vẫn đi qua 3 bước trên trong đầu trước. KHÔNG cần ghi 3 bước ra text.
+- Câu trả lời cho VĐV: CHỈ hành động/kết quả + 1-2 câu giải thích ngắn (vì sao). KHÔNG lặp lại 3 bước lập luận.
 
 [THANG ĐIỂM GCS (GOAL CONFIDENCE SCORE) — POWER-INTEGRATED 4-PILLAR RUBRIC]
 GCS = 0–100% dựa trên 4 trụ cột có trọng số (BẮT BUỘC tính theo Power/IF nếu có dữ liệu Stryd):
@@ -143,17 +178,19 @@ Luôn đánh giá tâm lý VĐV từ tone chat:
 - Nếu một tool trả về lỗi hoặc dữ liệu rỗng: KHÔNG được báo lỗi kỹ thuật cho VĐV. Hãy tiếp tục trả lời dựa trên thông tin tốt nhất hiện có và thông báo nhẹ nhàng rằng một số dữ liệu chi tiết chưa sẵn sàng.
 - Ví dụ: "Hiện tại hệ thống chưa lấy được dữ liệu chi tiết, nhưng dựa trên lịch sử gần đây..."
 - TUYỆT ĐỐI KHÔNG để lỗi tool làm gián đoạn toàn bộ câu trả lời.
-"""
+{_chat_format_suffix(chat_format)}"""
 
 
-def build_core_system_instruction(custom_instruction: str) -> str:
+def build_core_system_instruction(
+    custom_instruction: str, chat_format: bool = False
+) -> str:
     """Lightweight system prompt for the fast-chat path (~300 tokens).
 
     Contains only identity and emotional intelligence — no HR zones,
     no GCS rubric, no taper rules. Keeps token cost low for quick replies.
+    Pass ``chat_format=True`` to append Telegram HTML format rules.
     """
-    return f"""Bạn là Coach Dyno, một huấn luyện viên chạy bộ chuyên nghiệp, am hiểu sinh lý học thể thao và phân tích dữ liệu.
-Phong cách của bạn: Nghiêm khắc nhưng khích lệ. Trả lời thẳng vào vấn đề.
+    return f"""{_COACH_IDENTITY}
 
 {custom_instruction}
 
@@ -165,7 +202,7 @@ Luôn đánh giá tâm lý VĐV từ tone chat:
 
 [XỬ LÝ LỖI TOOL (BẮT BUỘC)]
 Nếu tool trả về lỗi hoặc dữ liệu rỗng: KHÔNG báo lỗi kỹ thuật. Tiếp tục trả lời dựa trên thông tin tốt nhất hiện có.
-"""
+{_chat_format_suffix(chat_format)}"""
 
 
 # ==========================================
@@ -254,8 +291,8 @@ Hãy điền dữ liệu phân tích của bạn vào đúng form dưới đây,
 ▪ T2: ... ▪ T3: ... [Liệt kê ngắn gọn]
 
 ════════════════════════
-🤖 COACH DYNO - TinhN Personal Home lab
-"""
+{_COACH_SIGNATURE}
+""".replace("{_COACH_SIGNATURE}", _COACH_SIGNATURE)
 
 # ==========================================
 # 🎨 LAYER 4: PLATFORM FORMATTERS (UI RULES)
@@ -333,7 +370,8 @@ def build_chat_prompt(
     parts.append(
         "[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu."
     )
-    parts.append(CHAT_FORMAT_RULES)
+    # Format rules live in build_system_instruction(chat_format=True). Callers
+    # must opt in there; this builder no longer appends them.
     return "\n\n".join(parts)
 
 
@@ -386,8 +424,6 @@ Lưu ý: Nếu VĐV đang có chấn thương, BẮT BUỘC phải nhắc nhở 
 - NẾU đã có con số cụ thể (ví dụ 55km), TUYỆT ĐỐI KHÔNG thay đổi trừ khi có rủi ro ACWR > 1.3.
 - KHÔNG thực hiện lại các yêu cầu cũ trong [TÂM LÝ/GIAO TIẾP GẦN ĐÂY] nếu nó mâu thuẫn với số liệu thực tế đang chốt.
 3. TƯƠNG TÁC: Báo cáo số liệu và truyền động lực.
-
-{CHAT_FORMAT_RULES}
 """
 
 
@@ -519,8 +555,6 @@ Lưu ý: BẮT BUỘC xem xét kỹ các chấn thương (nếu có) hoặc sự
 {DEFAULT_REFLECTION_REQUIREMENTS}
 
 {structure_injected}
-
-{CHAT_FORMAT_RULES}
 """
 
 

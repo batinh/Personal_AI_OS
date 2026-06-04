@@ -1,0 +1,72 @@
+
+[BỐI CẢNH HIỆN TẠI]
+- ACWR: 0.98
+- Phase: Build (8 tuần đến race)
+
+[LỊCH SỬ CÁC BÀI CHẠY GẦN NHẤT]
+- T2: Easy 8km @ 5:50/km
+- T3: Tempo 10km @ 4:55/km, GCS 75%
+- T5: Easy 6km
+- T7: Long 22km @ 5:35/km, GCS 82%
+
+[KÝ ỨC NGẮN HẠN & TRẠNG THÁI HIỆN TẠI]
+Các sự thật quan trọng về VĐV đang được lưu trữ:
+- Sở thích long run vào Chủ Nhật
+- Tránh đường nắng
+Lưu ý: BẮT BUỘC xem xét kỹ các chấn thương (nếu có) hoặc sự thay đổi mục tiêu trong phần ký ức này trước khi chốt Target Volume cho tuần tới!
+
+
+[NHIỆM VỤ TỰ PHẢN TỈNH CHUYÊN SÂU]
+Với tư cách là Coach Dyno, hôm nay là Tối Chủ Nhật. Hãy thực hiện "Dual-Horizon Reflection" (Tầm nhìn kép):
+1. Microcycle (7 ngày qua): Đánh giá chi tiết mức độ hoàn thành các bài chạy trong tuần.
+2. Mesocycle (28 ngày qua): Nhìn vào tỷ lệ ACWR và Tải trọng mãn tính (Chronic Load) để quyết định xu hướng tuần tới.
+
+[HÀNH ĐỘNG BẮT BUỘC]
+Dựa trên phân tích, bạn BẮT BUỘC phải gọi tool `set_actual_weekly_target` để chốt Target Volume (Tổng số km) cho tuần mới bắt đầu từ ngày mai: 2026-06-09.
+
+
+
+[YÊU CẦU PHÂN TÍCH 5 TRỤ CỘT & NGÔI SAO PHƯƠNG BẮC (GCS)]
+1. ĐỘ TUÂN THỦ (Compliance): So sánh Thực chạy vs Target. VĐV có lười biếng hay hăng say quá mức không?
+2. CHẤT LƯỢNG (Quality): Đánh giá Pace, HR Zone (đối chiếu với Bảng HR Zones của VĐV), Cadence ở các bài Key.
+3. AN TOÀN (Safety): ACWR hiện tại đang ở đâu? Có dấu hiệu tích lũy mỏi (Cumulative Fatigue) không?
+4. CHU KỲ HUẤN LUYỆN (Periodization): ĐỌC KỸ thông tin "Giai đoạn" (Phase) và "Thời gian đếm ngược đến Race".
+   - Base / Build Phase: Ưu tiên xây dựng nền tảng, có thể tăng tải theo 15% Rule.
+   - Peak Phase: Giữ nguyên Volume, tối đa hóa cường độ.
+   - Taper Phase (BẮT BUỘC tuân thủ cấu trúc giảm tải):
+     • Tuần -3 (taper_factor = 0.75): Target = 75% khối lượng tuần Peak gần nhất.
+     • Tuần -2 (taper_factor = 0.50): Target = 50% khối lượng tuần Peak gần nhất.
+     • Tuần -1 / Race Week (taper_factor = 0.25): Target = 25%. Tập nhẹ, duy trì nhịp chân.
+     • TUYỆT ĐỐI KHÔNG TĂNG TẢI trong bất kỳ tuần Taper nào.
+   - Recovery Phase: Chỉ chạy thả lỏng Zone 1, không có bài Key.
+5. TIẾN ĐỘ MỤC TIÊU (GCS Trend): Nhìn vào điểm GCS của các bài chạy trong tuần. Xu hướng đang tăng lên, giữ nguyên, hay sụt giảm? Đánh giá theo 4 trụ cột: Sức Bền (Decoupling + Power zone), Tốc Độ (Cadence + IF), Sức Khỏe (HR/Power anomalies), Thể Trạng (ACWR). Thể lực hiện tại có đáp ứng FM Sub 4:00 không?
+6. QUYẾT ĐỊNH (Action): Kết hợp cả 5 yếu tố trên để chốt Target (km) cho tuần tới. BẮT BUỘC tính taper_factor vào nếu đang trong Taper Phase.
+
+
+
+[CẤU TRÚC BÁO CÁO BẮT BUỘC]
+Hãy xuất báo cáo gửi cho VĐV theo đúng format dưới đây (BẮT BUỘC dùng HTML <b>...</b> cho các thông số quan trọng):
+
+🏆 WEEKLY REFLECTION: TỔNG KẾT & ĐỊNH HƯỚNG
+-----------------------------
+📍 TỔNG QUAN KHỐI LƯỢNG (MICROCYCLE)
+► Đạt [Thực chạy]/[Target] km ([X]%).
+► Đánh giá tuân thủ: [Nhận xét ngắn]
+
+⚡ CHẤT LƯỢNG & CƠ SINH HỌC
+► Điểm sáng: [Khen ngợi 1-2 yếu tố làm tốt]
+► Cần cải thiện: [Nhắc nhở điểm yếu]
+
+🩺 THỂ TRẠNG & RỦI RO (MESOCYCLE)
+► ACWR: [Giá trị] - [Nhận định mức độ an toàn và tích lũy mỏi].
+
+🎯 TIẾN ĐỘ MỤC TIÊU (GCS)
+► Xu hướng GCS: [Chỉ ra mốc GCS cao nhất đạt được trong tuần].
+► Nhận định: [Đánh giá khoảng cách thực tế giữa năng lực hiện tại và Mục tiêu Race].
+
+🚀 ĐỊNH HƯỚNG TUẦN TỚI (TỪ 2026-06-09)
+► Chu kỳ hiện tại: [Giai đoạn + Đếm ngược đến Race].
+► Quyết định: [Tăng tải / Duy trì / Taper / Phục hồi].
+► Target chốt: [X] km.
+► Trọng tâm: [Giải thích logic chốt Target dựa trên GCS, ACWR và Phase].
+

@@ -45,6 +45,7 @@ from app.agents.coach.daily_suggestion import (
 )
 
 from app.core.logging_conf import get_module_logger
+from app.agents._prompt_telemetry import log_prompt_metrics
 
 logger = get_module_logger("coach")
 client = genai.Client()
@@ -184,6 +185,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         "",
         "",
         taper_factor,
+        chat_format=True,
     )
 
     shared_context = get_shared_context_block(
@@ -272,6 +274,12 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
             # Fall through to LLM-based briefing on error
 
     # Standard LLM-based briefing (when active plan exists or daily suggestion fails)
+    log_prompt_metrics(
+        flow="coach.flows.morning_briefing",
+        system_inst=system_inst,
+        user_prompt=prompt,
+        model=config.get("model_name", "models/gemini-2.0-flash"),
+    )
     try:
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),

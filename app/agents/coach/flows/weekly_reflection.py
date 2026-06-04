@@ -33,6 +33,7 @@ from app.services.rag_memory import rag_db
 from app.core.database import get_training_loads, get_weekly_volume
 
 from app.core.logging_conf import get_module_logger
+from app.agents._prompt_telemetry import log_prompt_metrics
 
 logger = get_module_logger("coach")
 client = genai.Client()
@@ -98,6 +99,7 @@ def generate_weekly_reflection(config: dict):
         "",
         "",
         taper_factor,
+        chat_format=True,
     )
 
     shared_context = get_shared_context_block(
@@ -119,6 +121,12 @@ def generate_weekly_reflection(config: dict):
     )
     debug_log_prompt(
         "DEBUG WEEKLY REFLECTION", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"
+    )
+    log_prompt_metrics(
+        flow="coach.flows.weekly_reflection",
+        system_inst=system_inst,
+        user_prompt=prompt,
+        model=config.get("model_name", "models/gemini-2.0-flash"),
     )
 
     # 3. Call Gemini with Action Tool allowed

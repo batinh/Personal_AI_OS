@@ -1,0 +1,11 @@
+{
+    "shared_context": "[BỐI CẢNH HIỆN TẠI]\n- ACWR: 0.95\n- Phase: Build",
+    "run_name": "Tempo Run 10km",
+    "meta_text": "Distance: 10.2km | Avg Pace: 4:55/km | Avg HR: 165 | TRIMP: 95 | Cadence: 178spm",
+    "today_plan": "Tempo 6×1km @ Z4, pace target 4:50/km",
+    "task_desc": "Phân tích sâu bài tempo hôm nay đối chiếu giáo án.",
+    "analysis_req": "Đánh giá execution, mechanics, physiology, training load và GCS.",
+    "report_structure": "Output theo cấu trúc CHAT_REPORT.",
+    "format_rules": "[QUY TẮC CHAT]\n- HTML mode\n- Concise",
+    "metrics_block": "Decoupling: 4.2% | IF: 0.89 | Power Avg: 245W"
+}

@@ -98,35 +98,57 @@ Tóm tắt 1 câu.
 # SESSION PROMPTS (morning / afternoon / evening)
 # ==========================================
 
-_MORNING_TEMPLATE = """Hôm nay là {date_str}. Tìm tin mới nhất trong 24 giờ qua (ưu tiên) hoặc tối đa 48 giờ.
+# Single source-of-truth for session briefing copy. Each session shares the
+# same skeleton (search instruction + interest/memory injection + heading).
+# Only the highlighted-news adjective, time-of-day reference, and heading
+# emoji/text/tone differ.
+_SESSION_BASE_TEMPLATE = """Hôm nay là {date_str}. Tìm tin mới nhất trong 24 giờ qua (ưu tiên) hoặc tối đa 48 giờ.
 
 {interest_section}
 {memory_section}
-Dùng google_search để tìm và tổng hợp <b>3-5 tin quan trọng nhất</b> buổi sáng theo chủ đề trên.
+Dùng google_search để tìm và tổng hợp <b>3-5 tin {salience} nhất</b> {period} theo chủ đề trên.
 Mỗi tin phải có ngày đăng thực tế (DD/MM) lấy từ kết quả tìm kiếm.
 
-Bắt đầu bằng tiêu đề: 📰 <b>TIN TỨC BUỔI SÁNG — {date_str}</b>
-Tone: Ngắn gọn, rõ ràng để bắt đầu ngày mới."""
+Bắt đầu bằng tiêu đề: {heading_emoji} <b>{heading_text} — {date_str}</b>
+Tone: {tone}"""
 
-_AFTERNOON_TEMPLATE = """Hôm nay là {date_str}. Tìm tin mới nhất trong 24 giờ qua (ưu tiên) hoặc tối đa 48 giờ.
+_SESSION_OVERRIDES = {
+    "morning": {
+        "salience": "quan trọng",
+        "period": "buổi sáng",
+        "heading_emoji": "📰",
+        "heading_text": "TIN TỨC BUỔI SÁNG",
+        "tone": "Ngắn gọn, rõ ràng để bắt đầu ngày mới.",
+    },
+    "afternoon": {
+        "salience": "nổi bật",
+        "period": "buổi chiều",
+        "heading_emoji": "🌆",
+        "heading_text": "CẬP NHẬT CHIỀU",
+        "tone": "Phân tích, trung lập.",
+    },
+    "evening": {
+        "salience": "đáng chú ý",
+        "period": "trong ngày hôm nay",
+        "heading_emoji": "🌙",
+        "heading_text": "ĐIỂM TIN CUỐI NGÀY",
+        "tone": "Tổng quan, nhìn lại ngày.",
+    },
+}
 
-{interest_section}
-{memory_section}
-Dùng google_search để tìm và tổng hợp <b>3-5 tin nổi bật nhất</b> buổi chiều theo chủ đề trên.
-Mỗi tin phải có ngày đăng thực tế (DD/MM) lấy từ kết quả tìm kiếm.
 
-Bắt đầu bằng tiêu đề: 🌆 <b>CẬP NHẬT CHIỀU — {date_str}</b>
-Tone: Phân tích, trung lập."""
+def _render_session_template(session: str) -> str:
+    """Apply the per-session overrides to the base template at module load."""
+    overrides = _SESSION_OVERRIDES.get(session, _SESSION_OVERRIDES["morning"])
+    out = _SESSION_BASE_TEMPLATE
+    for key, value in overrides.items():
+        out = out.replace("{" + key + "}", value)
+    return out
 
-_EVENING_TEMPLATE = """Hôm nay là {date_str}. Tìm tin mới nhất trong 24 giờ qua (ưu tiên) hoặc tối đa 48 giờ.
 
-{interest_section}
-{memory_section}
-Dùng google_search để tìm và tổng hợp <b>3-5 tin đáng chú ý nhất</b> trong ngày hôm nay theo chủ đề trên.
-Mỗi tin phải có ngày đăng thực tế (DD/MM) lấy từ kết quả tìm kiếm.
-
-Bắt đầu bằng tiêu đề: 🌙 <b>ĐIỂM TIN CUỐI NGÀY — {date_str}</b>
-Tone: Tổng quan, nhìn lại ngày."""
+_MORNING_TEMPLATE = _render_session_template("morning")
+_AFTERNOON_TEMPLATE = _render_session_template("afternoon")
+_EVENING_TEMPLATE = _render_session_template("evening")
 
 _SESSION_TEMPLATES = {
     "morning": _MORNING_TEMPLATE,
@@ -283,6 +305,27 @@ Trả về JSON object với format sau (bỏ trống nếu không có tín hi�
   "disliked": ["topic3"],
   "notes": "any free-text preference"
 }
+
+[FEW-SHOT EXAMPLES]
+Example 1 — Like + dislike together:
+  Input: "User: Tôi muốn đọc thêm tin về LLM agents và ít hơn về crypto."
+  Output: {"liked": ["LLM agents"], "disliked": ["crypto"], "notes": ""}
+
+Example 2 — Style request only, no topic signal:
+  Input: "User: Bạn viết ngắn gọn lại được không, tin dài quá khó đọc trên mobile."
+  Output: {"liked": [], "disliked": [], "notes": "Người dùng thích tin ngắn gọn, dễ đọc trên mobile."}
+
+Example 3 — Implicit liking via positive reaction:
+  Input: "User: Tin về open source hôm qua hay quá, có thêm tương tự không?"
+  Output: {"liked": ["open source"], "disliked": [], "notes": ""}
+
+Example 4 — Implicit disliking via negative reaction:
+  Input: "User: Mấy tin về drama người nổi tiếng không liên quan đến mình lắm."
+  Output: {"liked": [], "disliked": ["drama người nổi tiếng"], "notes": ""}
+
+Example 5 — Small talk, no signal:
+  Input: "User: Cảm ơn bạn nhé! AI: Không có chi."
+  Output: {"liked": [], "disliked": [], "notes": ""}
 
 Chỉ trả về JSON, không giải thích thêm."""
 

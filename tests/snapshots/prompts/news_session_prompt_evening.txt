@@ -1,0 +1,18 @@
+Hôm nay là 04/06/2026. Tìm tin mới nhất trong 24 giờ qua (ưu tiên) hoặc tối đa 48 giờ.
+
+Chủ đề và mức độ quan tâm (1-10):
+  • AI & Công nghệ: 9/10
+  • Chạy bộ thể thao: 8/10
+  • Kinh tế Việt Nam: 7/10
+  • Crypto: 4/10
+
+Sở thích học được:
+  - Muốn đọc thêm về: LLM agents, Open source
+  - Ít quan tâm hơn: Sportbike racing
+  - Ghi chú cá nhân: Thích tin có data và biểu đồ.
+
+Dùng google_search để tìm và tổng hợp <b>3-5 tin đáng chú ý nhất</b> trong ngày hôm nay theo chủ đề trên.
+Mỗi tin phải có ngày đăng thực tế (DD/MM) lấy từ kết quả tìm kiếm.
+
+Bắt đầu bằng tiêu đề: 🌙 <b>ĐIỂM TIN CUỐI NGÀY — 04/06/2026</b>
+Tone: Tổng quan, nhìn lại ngày.

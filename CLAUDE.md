@@ -101,6 +101,13 @@ Every code change must pass this gate before deploying to T440:
 (new function in `prompts.py`, new class in a service, new handler). Add an import
 assertion in `tests/test_smoke.py` under the matching class.
 
+**When to update snapshot tests**: any change in `app/agents/coach/prompts.py` or
+`app/agents/news/prompts.py` will trip `tests/test_prompts_snapshot.py`. Workflow:
+1. Run `python -m pytest tests/test_prompts_snapshot.py -v` and EYEBALL the diff.
+2. If intentional → `python scripts/update_prompt_snapshots.py` to re-freeze.
+3. Bump `PROMPT_VERSION` in `app/agents/_prompt_telemetry.py` with a changelog line.
+4. Commit snapshot files together with the prompt change.
+
 **Common failure patterns**:
 - `ImportError` on smoke → function added to `agent.py` import but not implemented in `prompts.py`
 - `pre-deploy-check` fails config → missing key in `config.example.json` or `.env`
@@ -129,6 +136,9 @@ assertion in `tests/test_smoke.py` under the matching class.
 | Config | `app/core/config.py` + `config.example.json` |
 | Log audit | `app/services/log_auditor.py` + `app/routers/audit.py` |
 | Tests | `tests/conftest.py` + `tests/test_<module>.py` |
+| Prompting architecture | `docs/architecture/prompting.md` + `app/agents/coach/prompts.py` |
+| Prompt snapshots | `tests/test_prompts_snapshot.py` + `tests/snapshots/prompts/*.txt` |
+| Prompt telemetry | `app/agents/_prompt_telemetry.py` (PROMPT_VERSION bumps + token metrics) |
 | Test inventory | `docs/testing/specs.md` |
 | Issue tracking | `docs/ISSUES.md` |
 | Coaching science | `docs/engineering/coaching-science.md` |
