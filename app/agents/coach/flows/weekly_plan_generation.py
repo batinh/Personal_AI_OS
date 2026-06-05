@@ -333,7 +333,9 @@ def _format_plan_preview(plan: WeeklyPlanResult) -> str:
     if plan.adaptations_made:
         lines.append("⚡ <i>Điều chỉnh:</i> " + "; ".join(plan.adaptations_made[:2]))
 
-    lines.append("\n✅ <i>Giáo án đã được lưu. Chat với coach để điều chỉnh nếu cần.</i>")
+    lines.append(
+        "\n✅ <i>Giáo án đã được lưu. Chat với coach để điều chỉnh nếu cần.</i>"
+    )
     preview = "\n".join(lines)
 
     if len(preview) > 3400:

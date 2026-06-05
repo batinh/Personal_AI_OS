@@ -29,6 +29,7 @@ _LEVEL_ORDER = ["smoke", "sanity", "e2e", "unit"]
 # Dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class PackageCoverage:
     name: str
@@ -49,10 +50,10 @@ class TestCounts:
 
 @dataclass(frozen=True)
 class TestCase:
-    class_name: str       # "TestCoreImports"
-    name: str             # raw pytest name, e.g. "test_config_importable"
-    label: str            # humanized, e.g. "Config importable"
-    status: str           # "passed" | "failed" | "skipped" | "error"
+    class_name: str  # "TestCoreImports"
+    name: str  # raw pytest name, e.g. "test_config_importable"
+    label: str  # humanized, e.g. "Config importable"
+    status: str  # "passed" | "failed" | "skipped" | "error"
     duration_seconds: float
     failure_message: str | None
 
@@ -60,6 +61,7 @@ class TestCase:
 @dataclass
 class _ClassBucket:
     """Mutable accumulator, converted to dict at serialization time."""
+
     name: str
     cases: list[TestCase] = field(default_factory=list)
 
@@ -109,6 +111,7 @@ class CoverageReport:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _humanize(name: str) -> str:
     """'test_config_importable' → 'Config importable'."""
     return name.removeprefix("test_").replace("_", " ").capitalize()
@@ -135,6 +138,7 @@ def _module_from_classname(classname: str) -> str:
 # ---------------------------------------------------------------------------
 # Parsers
 # ---------------------------------------------------------------------------
+
 
 def _parse_coverage(path: Path) -> tuple[float, int, int, list[PackageCoverage]]:
     tree = ET.parse(str(path))  # nosec B314
@@ -233,11 +237,23 @@ def _parse_junit(
 
         # Level counters (for by_level summary)
         if level not in level_counters:
-            level_counters[level] = {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "duration": 0.0}
+            level_counters[level] = {
+                "total": 0,
+                "passed": 0,
+                "failed": 0,
+                "skipped": 0,
+                "duration": 0.0,
+            }
         b = level_counters[level]
         b["total"] += 1
         b["duration"] += float(tc.get("time", 0))
-        b["passed" if status == "passed" else "failed" if status in ("failed", "error") else "skipped"] += 1
+        b[
+            (
+                "passed"
+                if status == "passed"
+                else "failed" if status in ("failed", "error") else "skipped"
+            )
+        ] += 1
 
         if level == "unit":
             mod = _module_from_classname(classname)
@@ -285,23 +301,25 @@ def _parse_junit(
             continue
         classes_out = []
         for cls_name, bucket in class_buckets[lv].items():
-            classes_out.append({
-                "name": cls_name,
-                "total": bucket.total,
-                "passed": bucket.passed,
-                "failed": bucket.failed,
-                "skipped": bucket.skipped,
-                "cases": [
-                    {
-                        "name": c.name,
-                        "label": c.label,
-                        "status": c.status,
-                        "duration": c.duration_seconds,
-                        "message": c.failure_message,
-                    }
-                    for c in bucket.cases
-                ],
-            })
+            classes_out.append(
+                {
+                    "name": cls_name,
+                    "total": bucket.total,
+                    "passed": bucket.passed,
+                    "failed": bucket.failed,
+                    "skipped": bucket.skipped,
+                    "cases": [
+                        {
+                            "name": c.name,
+                            "label": c.label,
+                            "status": c.status,
+                            "duration": c.duration_seconds,
+                            "message": c.failure_message,
+                        }
+                        for c in bucket.cases
+                    ],
+                }
+            )
         level_drilldown[lv] = {"classes": classes_out}
 
     # Unit drilldown: sorted by module name
@@ -324,6 +342,7 @@ def _parse_junit(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def load_coverage_report(
     coverage_path: Path = _COVERAGE_XML,

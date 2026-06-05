@@ -10,7 +10,6 @@ Covers:
 
 from __future__ import annotations
 
-import logging
 import unittest
 
 from app.agents._prompt_telemetry import (

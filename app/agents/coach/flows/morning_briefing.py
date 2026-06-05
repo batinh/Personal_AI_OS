@@ -231,18 +231,26 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         try:
             # Check if race_date is configured; if not, show setup prompt
             if not race_date_str:
-                setup_prompt = "ℹ️ Anh chưa thiết lập mục tiêu đua. Dùng /setup để bắt đầu."
+                setup_prompt = (
+                    "ℹ️ Anh chưa thiết lập mục tiêu đua. Dùng /setup để bắt đầu."
+                )
                 if chat_id:
                     send_telegram_msg(chat_id, setup_prompt)
                     save_message(
                         user_id_str, "model", f"[MORNING BRIEFING] {setup_prompt}"
                     )
-                logger.info("[MORNING_BRIEFING] Race date not configured, showing setup prompt")
+                logger.info(
+                    "[MORNING_BRIEFING] Race date not configured, showing setup prompt"
+                )
                 return
 
             # Compute daily suggestion (pure function, no LLM)
-            garmin_data = get_garmin_daily_metrics(user_id_str, now.strftime("%Y-%m-%d"))
-            readiness_score = garmin_data.get("training_readiness_score") if garmin_data else None
+            garmin_data = get_garmin_daily_metrics(
+                user_id_str, now.strftime("%Y-%m-%d")
+            )
+            readiness_score = (
+                garmin_data.get("training_readiness_score") if garmin_data else None
+            )
             athlete_state = get_athlete_state(user_id_str)
             recent_runs = _get_recent_runs(user_id_str, days=7)
             days_since_last = _days_since_last_run(user_id_str)
@@ -257,7 +265,9 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
             )
 
             # Format suggestion for briefing
-            suggestion_text = format_daily_suggestion_for_briefing(suggestion, garmin_data)
+            suggestion_text = format_daily_suggestion_for_briefing(
+                suggestion, garmin_data
+            )
             reply = (
                 f"🌅 Chào buổi sáng! Hôm nay ({now.strftime('%A')})\n\n"
                 + suggestion_text

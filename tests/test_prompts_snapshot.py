@@ -246,7 +246,9 @@ class TestNewsPromptSnapshots(unittest.TestCase):
         from app.agents.news.prompts import build_on_demand_prompt
 
         inputs = _load_fixture("news_on_demand_inputs")
-        _assert_snapshot(self, "news_on_demand_prompt", build_on_demand_prompt(**inputs))
+        _assert_snapshot(
+            self, "news_on_demand_prompt", build_on_demand_prompt(**inputs)
+        )
 
     def test_session_prompt_morning(self):
         from app.agents.news.prompts import build_session_prompt

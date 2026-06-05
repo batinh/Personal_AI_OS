@@ -26,6 +26,7 @@ _TG_TAG_RE = re.compile(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _strip_html(text: str) -> str:
     """Remove all HTML tags and unescape entities."""
     return html_lib.unescape(re.sub(r"<[^>]+>", "", text))
@@ -109,7 +110,10 @@ def _split_html_naive(text: str, limit: int) -> list[str]:
 # Core send logic
 # ---------------------------------------------------------------------------
 
-def _send_chunks(chat_id: str, chunks: list[str], parse_mode: str | None, token: str) -> bool:
+
+def _send_chunks(
+    chat_id: str, chunks: list[str], parse_mode: str | None, token: str
+) -> bool:
     """Send a list of text chunks with 429-retry.
 
     Returns True if any chunk failed with 400 (HTML parse error) — caller
@@ -129,17 +133,19 @@ def _send_chunks(chat_id: str, chunks: list[str], parse_mode: str | None, token:
 
             if resp.status_code == 429:
                 try:
-                    retry_after = int(resp.json().get("parameters", {}).get("retry_after", 5))
+                    retry_after = int(
+                        resp.json().get("parameters", {}).get("retry_after", 5)
+                    )
                 except Exception:
                     retry_after = 5
-                logger.warning(f"[TELEGRAM] Rate-limited on {label}; retry after {retry_after}s")
+                logger.warning(
+                    f"[TELEGRAM] Rate-limited on {label}; retry after {retry_after}s"
+                )
                 time.sleep(retry_after)
                 resp = requests.post(send_url, json=payload, timeout=15)
 
             if resp.status_code == 400 and parse_mode == "HTML":
-                logger.warning(
-                    f"[TELEGRAM] HTML parse failed on {label}: {resp.text}"
-                )
+                logger.warning(f"[TELEGRAM] HTML parse failed on {label}: {resp.text}")
                 return True  # signal top-level to retry as plain
 
             if resp.status_code != 200:
@@ -159,13 +165,21 @@ def _send_telegram_impl(chat_id, text: str, parse_mode: str | None) -> None:
         return
 
     limit = int(os.getenv("TELEGRAM_LIMIT", "4000"))
-    logger.info(f"[TELEGRAM] len={len(text)} parse_mode={parse_mode}; head={text[:80]!r}")
+    logger.info(
+        f"[TELEGRAM] len={len(text)} parse_mode={parse_mode}; head={text[:80]!r}"
+    )
 
-    chunks = _split_html_naive(text, limit) if parse_mode == "HTML" else _split_plain(text, limit)
+    chunks = (
+        _split_html_naive(text, limit)
+        if parse_mode == "HTML"
+        else _split_plain(text, limit)
+    )
     had_400 = _send_chunks(chat_id, chunks, parse_mode, token)
 
     if had_400 and parse_mode == "HTML":
-        logger.warning("[TELEGRAM] HTML parse failed; retrying entire message as plain text")
+        logger.warning(
+            "[TELEGRAM] HTML parse failed; retrying entire message as plain text"
+        )
         plain_chunks = _split_plain(_strip_html(text), limit)
         _send_chunks(chat_id, plain_chunks, None, token)
 
@@ -173,6 +187,7 @@ def _send_telegram_impl(chat_id, text: str, parse_mode: str | None) -> None:
 # ---------------------------------------------------------------------------
 # Public API — same call signature as before
 # ---------------------------------------------------------------------------
+
 
 def send_telegram_msg(chat_id, text) -> None:
     """Send a plain-text Telegram message.
@@ -271,10 +286,14 @@ def send_inline_keyboard_menu(
 
         if resp.status_code == 429:
             try:
-                retry_after = int(resp.json().get("parameters", {}).get("retry_after", 5))
+                retry_after = int(
+                    resp.json().get("parameters", {}).get("retry_after", 5)
+                )
             except Exception:
                 retry_after = 5
-            logger.warning(f"[TELEGRAM] Rate-limited on keyboard menu; retry after {retry_after}s")
+            logger.warning(
+                f"[TELEGRAM] Rate-limited on keyboard menu; retry after {retry_after}s"
+            )
             time.sleep(retry_after)
             resp = requests.post(send_url, json=payload, timeout=15)
 

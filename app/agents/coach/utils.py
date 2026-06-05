@@ -508,13 +508,13 @@ _RETRYABLE_ERRORS = (
     "503",
     "504",
     "429",
-    "Unavailable",       # Google server overload
-    "DEADLINE_EXCEEDED", # Google server deadline (504 variant)
+    "Unavailable",  # Google server overload
+    "DEADLINE_EXCEEDED",  # Google server deadline (504 variant)
     "timed out",
-    "timeout",           # Network/SSL timeout
+    "timeout",  # Network/SSL timeout
     "ssl",
     "SSL",
-    "handshake",         # TLS handshake failure
+    "handshake",  # TLS handshake failure
 )
 
 
@@ -582,8 +582,13 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             if any(token in error_msg for token in _RETRYABLE_ERRORS):
                 if attempt < max_retries - 1:
                     # Server-side overload (504/503) needs longer back-off than network blips
-                    _server_error = any(t in error_msg for t in ("503", "504", "DEADLINE_EXCEEDED", "Unavailable"))
-                    wait_time = min(5 * (2**attempt) if _server_error else 2**attempt, 60)
+                    _server_error = any(
+                        t in error_msg
+                        for t in ("503", "504", "DEADLINE_EXCEEDED", "Unavailable")
+                    )
+                    wait_time = min(
+                        5 * (2**attempt) if _server_error else 2**attempt, 60
+                    )
                     logger.warning(
                         "[API RESILIENCE] Transient error %s: %s. Retrying in %ds... (Attempt %d/%d)",
                         exc_type,

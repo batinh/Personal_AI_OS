@@ -273,8 +273,13 @@ class TestCallGeminiWithSearchRetry:
         with patch("app.agents.news.agent.client") as mock_client:
             mock_client.models.generate_content.side_effect = fake_generate
             with patch("app.agents.news.agent.time.sleep") as mock_sleep:
-                with patch("app.agents.news.agent._extract_text", return_value="news text"):
-                    with patch("app.agents.news.agent._extract_grounding_urls", return_value=[("T", "http://example.com")]):
+                with patch(
+                    "app.agents.news.agent._extract_text", return_value="news text"
+                ):
+                    with patch(
+                        "app.agents.news.agent._extract_grounding_urls",
+                        return_value=[("T", "http://example.com")],
+                    ):
                         result_text, result_urls = _call_gemini_with_search(
                             "model", "sys", "prompt"
                         )

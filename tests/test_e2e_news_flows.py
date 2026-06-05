@@ -17,7 +17,6 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
-
 _STUB_CONFIG = {
     "scheduler": {},
     "telegram_bot_token": "test-token",
@@ -41,9 +40,7 @@ class TestNewsPerTopicTimeout(unittest.TestCase):
 
     @patch("app.agents.news.agent.send_telegram_html")
     @patch("app.agents.news.agent._call_gemini_with_search")
-    def test_topic_timeout_does_not_block_other_topics(
-        self, mock_call, mock_send
-    ):
+    def test_topic_timeout_does_not_block_other_topics(self, mock_call, mock_send):
         """generate_news_briefing must continue after one topic raises TimeoutError."""
         from concurrent.futures import TimeoutError as FuturesTimeoutError
         import app.agents.news.agent as news_agent
@@ -147,6 +144,7 @@ class TestNewsCommandE2E(unittest.TestCase):
     def setUp(self):
         from app.main import app
         from fastapi.testclient import TestClient
+
         self.client = TestClient(app, raise_server_exceptions=False)
 
     @patch("app.routers.webhooks.load_config", return_value=_STUB_CONFIG)

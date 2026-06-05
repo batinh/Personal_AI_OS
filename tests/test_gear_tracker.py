@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestFetchGearStats:
     """Test GarminClient.fetch_gear_stats() for gear mileage tracking."""
@@ -123,16 +121,12 @@ class TestGearCheckScheduler:
 
     def test_gear_check_sends_warning_at_threshold(self):
         """Gear mileage at warn threshold sends warning alert."""
-        with patch(
-            "app.services.scheduler.get_primary_user_id", return_value="123"
-        ):
+        with patch("app.services.scheduler.get_primary_user_id", return_value="123"):
             with patch("app.services.scheduler.load_config") as mock_config:
                 with patch(
                     "app.services.scheduler.get_garmin_client"
                 ) as mock_garmin_factory:
-                    with patch(
-                        "app.services.scheduler.send_telegram_msg"
-                    ) as mock_send:
+                    with patch("app.services.scheduler.send_telegram_msg") as mock_send:
                         mock_config.return_value = {
                             "garmin": {
                                 "gear_warn_km": 550,
@@ -158,16 +152,12 @@ class TestGearCheckScheduler:
 
     def test_gear_check_sends_critical_at_threshold(self):
         """Gear mileage at critical threshold sends urgent alert."""
-        with patch(
-            "app.services.scheduler.get_primary_user_id", return_value="123"
-        ):
+        with patch("app.services.scheduler.get_primary_user_id", return_value="123"):
             with patch("app.services.scheduler.load_config") as mock_config:
                 with patch(
                     "app.services.scheduler.get_garmin_client"
                 ) as mock_garmin_factory:
-                    with patch(
-                        "app.services.scheduler.send_telegram_msg"
-                    ) as mock_send:
+                    with patch("app.services.scheduler.send_telegram_msg") as mock_send:
                         mock_config.return_value = {
                             "garmin": {
                                 "gear_warn_km": 550,
@@ -193,16 +183,12 @@ class TestGearCheckScheduler:
 
     def test_gear_check_no_alert_below_threshold(self):
         """Gear mileage below warn threshold sends no alert."""
-        with patch(
-            "app.services.scheduler.get_primary_user_id", return_value="123"
-        ):
+        with patch("app.services.scheduler.get_primary_user_id", return_value="123"):
             with patch("app.services.scheduler.load_config") as mock_config:
                 with patch(
                     "app.services.scheduler.get_garmin_client"
                 ) as mock_garmin_factory:
-                    with patch(
-                        "app.services.scheduler.send_telegram_msg"
-                    ) as mock_send:
+                    with patch("app.services.scheduler.send_telegram_msg") as mock_send:
                         mock_config.return_value = {
                             "garmin": {
                                 "gear_warn_km": 550,
@@ -225,16 +211,12 @@ class TestGearCheckScheduler:
 
     def test_gear_check_handles_empty_gear_list(self):
         """Handles case when no gear data is available."""
-        with patch(
-            "app.services.scheduler.get_primary_user_id", return_value="123"
-        ):
+        with patch("app.services.scheduler.get_primary_user_id", return_value="123"):
             with patch("app.services.scheduler.load_config") as mock_config:
                 with patch(
                     "app.services.scheduler.get_garmin_client"
                 ) as mock_garmin_factory:
-                    with patch(
-                        "app.services.scheduler.send_telegram_msg"
-                    ) as mock_send:
+                    with patch("app.services.scheduler.send_telegram_msg") as mock_send:
                         mock_config.return_value = {
                             "garmin": {
                                 "gear_warn_km": 550,
@@ -255,12 +237,8 @@ class TestGearCheckScheduler:
 
     def test_gear_check_handles_no_user_id(self):
         """Handles case when primary user ID is not set."""
-        with patch(
-            "app.services.scheduler.get_primary_user_id", return_value=None
-        ):
-            with patch(
-                "app.services.scheduler.send_telegram_msg"
-            ) as mock_send:
+        with patch("app.services.scheduler.get_primary_user_id", return_value=None):
+            with patch("app.services.scheduler.send_telegram_msg") as mock_send:
                 from app.services.scheduler import task_gear_check
 
                 task_gear_check()

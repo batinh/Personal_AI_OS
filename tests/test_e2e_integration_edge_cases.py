@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 os.environ.setdefault("ADMIN_USERNAME", "testadmin")
 os.environ.setdefault("ADMIN_PASSWORD", "testpassword123")
@@ -57,6 +57,7 @@ _STUB_CONFIG = {
 def _make_client():
     from app.main import app
     from fastapi.testclient import TestClient
+
     return TestClient(app, raise_server_exceptions=False)
 
 

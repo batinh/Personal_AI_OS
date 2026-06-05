@@ -118,8 +118,13 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             )
             if any(token in error_msg for token in _RETRYABLE):
                 if attempt < max_retries - 1:
-                    _server_error = any(t in error_msg for t in ("503", "504", "DEADLINE_EXCEEDED", "Unavailable"))
-                    wait_time = min(5 * (2**attempt) if _server_error else 2**attempt, 60)
+                    _server_error = any(
+                        t in error_msg
+                        for t in ("503", "504", "DEADLINE_EXCEEDED", "Unavailable")
+                    )
+                    wait_time = min(
+                        5 * (2**attempt) if _server_error else 2**attempt, 60
+                    )
                     logger.warning(
                         f"[API RESILIENCE] Transient error ({error_msg[:80]}). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
                     )
@@ -171,7 +176,9 @@ def _run_agentic_loop(chat_session, initial_message: str, max_rounds: int = 5) -
             fc = part.function_call
             fn_name = fc.name
             fn_args = dict(fc.args) if fc.args else {}
-            logger.info(f"[AGENTIC] Executing tool '{fn_name}' args={list(fn_args.keys())}")
+            logger.info(
+                f"[AGENTIC] Executing tool '{fn_name}' args={list(fn_args.keys())}"
+            )
 
             fn_callable = _TOOL_DISPATCH.get(fn_name)
             if fn_callable is None:
@@ -824,7 +831,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         send_telegram_msg(
             chat_id,
             "ℹ️ Chat trực tiếp với coach để điều chỉnh giáo án.\n"
-            "Ví dụ: \"Thứ Tư đổi thành nghỉ\", \"Giảm quãng đường Long Run xuống 18km\"",
+            'Ví dụ: "Thứ Tư đổi thành nghỉ", "Giảm quãng đường Long Run xuống 18km"',
         )
         return
 

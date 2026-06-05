@@ -218,6 +218,7 @@ class TestSplitPlain(unittest.TestCase):
 
     def _split(self, text, limit):
         from app.core.notification import _split_plain
+
         return _split_plain(text, limit)
 
     def test_short_text_returns_single_chunk(self):
@@ -253,6 +254,7 @@ class TestSplitHtmlNaive(unittest.TestCase):
 
     def _split(self, text, limit):
         from app.core.notification import _split_html_naive
+
         return _split_html_naive(text, limit)
 
     def test_short_html_single_chunk(self):
@@ -268,11 +270,12 @@ class TestSplitHtmlNaive(unittest.TestCase):
 
     def test_all_content_preserved(self):
         import re
+
         para = "Para text " * 10 + "\n\n"
         text = para * 5
         chunks = self._split(text, 100)
-        combined_flat = re.sub(r'\s+', '', "".join(chunks))
-        original_flat = re.sub(r'\s+', '', text)
+        combined_flat = re.sub(r"\s+", "", "".join(chunks))
+        original_flat = re.sub(r"\s+", "", text)
         self.assertEqual(combined_flat, original_flat)
 
     def test_oversized_para_stripped_and_word_split(self):

@@ -377,16 +377,22 @@ class TestE2EIntegrationEdgeCasesImports(unittest.TestCase):
     """New E2E test classes for integration edge cases."""
 
     def test_TestGeminiTimeout_importable(self):
-        from tests.test_e2e_integration_edge_cases import TestGeminiTimeout  # noqa: F401
+        from tests.test_e2e_integration_edge_cases import (
+            TestGeminiTimeout,  # noqa: F401
+        )
 
     def test_TestConfigReload_importable(self):
         from tests.test_e2e_integration_edge_cases import TestConfigReload  # noqa: F401
 
     def test_TestStravaThreeChannelOutput_importable(self):
-        from tests.test_e2e_integration_edge_cases import TestStravaThreeChannelOutput  # noqa: F401
+        from tests.test_e2e_integration_edge_cases import (
+            TestStravaThreeChannelOutput,  # noqa: F401
+        )
 
     def test_TestStravaErrorHandling_importable(self):
-        from tests.test_e2e_integration_edge_cases import TestStravaErrorHandling  # noqa: F401
+        from tests.test_e2e_integration_edge_cases import (
+            TestStravaErrorHandling,  # noqa: F401
+        )
 
 
 if __name__ == "__main__":

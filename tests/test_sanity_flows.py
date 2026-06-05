@@ -20,9 +20,8 @@ Coverage goals:
 """
 
 import json
-import os
 import unittest
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 from fastapi.testclient import TestClient
 
@@ -48,13 +47,17 @@ def _make_config(**overrides):
 
 def _make_client():
     from app.main import app
+
     return TestClient(app, raise_server_exceptions=False)
 
 
 def _db_patches_for_briefing():
     """Common DB patches required before Guard 2 in generate_morning_briefing."""
     return [
-        patch(f"{_BASE}.get_training_loads", return_value={"acute_load_7d": 60, "chronic_load_28d": 240}),
+        patch(
+            f"{_BASE}.get_training_loads",
+            return_value={"acute_load_7d": 60, "chronic_load_28d": 240},
+        ),
         patch(f"{_BASE}.get_weekly_volume", return_value="35 km"),
         patch(f"{_BASE}.get_plan_for_date", return_value=None),
         patch(f"{_BASE}.get_formatted_weekly_context", return_value="Tuần 3/12"),
@@ -76,6 +79,7 @@ class TestMorningBriefingGuard1(unittest.TestCase):
         uid_mock.start()
         try:
             from app.agents.coach import agent as ag
+
             ag.generate_morning_briefing(_make_config(race_date=""))
             return tg_mock
         finally:
@@ -127,6 +131,7 @@ class TestMorningBriefingGuard2(unittest.TestCase):
             patch(f"{_BASE}.save_message") as mock_save,
         ):
             from app.agents.coach import agent as ag
+
             # Must NOT raise — this is the regression assertion
             ag.generate_morning_briefing(_make_config())
             collected["tg"] = mock_tg
@@ -181,7 +186,10 @@ class TestMorningBriefingGuard2(unittest.TestCase):
             patch.dict("os.environ", {}, clear=True),
             patch(f"{_BASE}.has_active_plan_this_week", return_value=False),
             patch(f"{_BASE}.get_athlete_state", return_value="healthy"),
-            patch(f"{_BASE}.get_training_loads", return_value={"acute_load_7d": 60, "chronic_load_28d": 240}),
+            patch(
+                f"{_BASE}.get_training_loads",
+                return_value={"acute_load_7d": 60, "chronic_load_28d": 240},
+            ),
             patch(f"{_BASE}.get_weekly_volume", return_value="20 km"),
             patch(f"{_BASE}.get_plan_for_date", return_value=None),
             patch(f"{_BASE}.get_formatted_weekly_context", return_value=""),
@@ -189,6 +197,7 @@ class TestMorningBriefingGuard2(unittest.TestCase):
             patch(f"{_BASE}.save_message"),
         ):
             from app.agents.coach import agent as ag
+
             ag.generate_morning_briefing(_make_config())
             mock_tg.assert_not_called()
 
@@ -209,9 +218,15 @@ class TestMorningBriefingFullAIPath(unittest.TestCase):
         with (
             patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "99999"}),
             patch(f"{_BASE}.has_active_plan_this_week", return_value=True),
-            patch(f"{_BASE}.get_training_loads", return_value={"acute_load_7d": 60, "chronic_load_28d": 240}),
+            patch(
+                f"{_BASE}.get_training_loads",
+                return_value={"acute_load_7d": 60, "chronic_load_28d": 240},
+            ),
             patch(f"{_BASE}.get_weekly_volume", return_value="30 km"),
-            patch(f"{_BASE}.get_plan_for_date", return_value={"workout_title": "Easy Run", "description": "45 min"}),
+            patch(
+                f"{_BASE}.get_plan_for_date",
+                return_value={"workout_title": "Easy Run", "description": "45 min"},
+            ),
             patch(f"{_BASE}.get_formatted_weekly_context", return_value="Week 3"),
             patch(f"{_BASE}.load_history_for_gemini", return_value=[]),
             patch(f"{_BASE}.get_all_active_memories", return_value=[]),
@@ -223,9 +238,12 @@ class TestMorningBriefingFullAIPath(unittest.TestCase):
         ):
             mock_client.chats.create.return_value = mock_chat
             from app.agents.coach import agent as ag
+
             ag.generate_morning_briefing(_make_config())
 
-        mock_tg.assert_called_once_with("99999", "Chào buổi sáng! ACWR ổn định, hôm nay chạy nhẹ nhé.")
+        mock_tg.assert_called_once_with(
+            "99999", "Chào buổi sáng! ACWR ổn định, hôm nay chạy nhẹ nhé."
+        )
 
     def test_empty_gemini_reply_sends_fallback(self):
         mock_response = MagicMock()
@@ -235,7 +253,10 @@ class TestMorningBriefingFullAIPath(unittest.TestCase):
         with (
             patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "99999"}),
             patch(f"{_BASE}.has_active_plan_this_week", return_value=True),
-            patch(f"{_BASE}.get_training_loads", return_value={"acute_load_7d": 60, "chronic_load_28d": 240}),
+            patch(
+                f"{_BASE}.get_training_loads",
+                return_value={"acute_load_7d": 60, "chronic_load_28d": 240},
+            ),
             patch(f"{_BASE}.get_weekly_volume", return_value="30 km"),
             patch(f"{_BASE}.get_plan_for_date", return_value=None),
             patch(f"{_BASE}.get_formatted_weekly_context", return_value=""),
@@ -249,6 +270,7 @@ class TestMorningBriefingFullAIPath(unittest.TestCase):
         ):
             mock_client.chats.create.return_value = MagicMock()
             from app.agents.coach import agent as ag
+
             ag.generate_morning_briefing(_make_config())
 
         mock_tg.assert_called_once()
@@ -266,20 +288,27 @@ class TestSchedulerTaskWrappers(unittest.TestCase):
         with (
             patch("app.services.scheduler.load_config", return_value=_make_config()),
             patch("app.services.scheduler.get_primary_user_id", return_value="99999"),
-            patch("app.services.scheduler.get_today_weather", return_value="Sunny 28°C"),
+            patch(
+                "app.services.scheduler.get_today_weather", return_value="Sunny 28°C"
+            ),
             patch("app.services.scheduler.generate_morning_briefing") as mock_gen,
         ):
             from app.services.scheduler import task_morning_briefing
+
             task_morning_briefing()
             mock_gen.assert_called_once()
 
     def test_task_morning_briefing_exception_does_not_propagate(self):
         """Any exception inside must be caught — scheduler thread must not die."""
         with (
-            patch("app.services.scheduler.load_config", side_effect=RuntimeError("cfg fail")),
+            patch(
+                "app.services.scheduler.load_config",
+                side_effect=RuntimeError("cfg fail"),
+            ),
             patch("app.services.scheduler.get_primary_user_id", return_value="99999"),
         ):
             from app.services.scheduler import task_morning_briefing
+
             # Must not raise
             task_morning_briefing()
 
@@ -289,25 +318,33 @@ class TestSchedulerTaskWrappers(unittest.TestCase):
             patch("app.services.scheduler.generate_news_briefing") as mock_news,
         ):
             from app.services.scheduler import task_morning_news
+
             task_morning_news()
             mock_news.assert_called_once()
 
     def test_task_morning_news_exception_does_not_propagate(self):
         with (
             patch("app.services.scheduler.load_config", return_value=_make_config()),
-            patch("app.services.scheduler.generate_news_briefing", side_effect=Exception("news fail")),
+            patch(
+                "app.services.scheduler.generate_news_briefing",
+                side_effect=Exception("news fail"),
+            ),
         ):
             from app.services.scheduler import task_morning_news
+
             task_morning_news()  # must not raise
 
     def test_task_morning_briefing_passes_weather_to_generate(self):
         with (
             patch("app.services.scheduler.load_config", return_value=_make_config()),
             patch("app.services.scheduler.get_primary_user_id", return_value="99999"),
-            patch("app.services.scheduler.get_today_weather", return_value="Rainy 22°C"),
+            patch(
+                "app.services.scheduler.get_today_weather", return_value="Rainy 22°C"
+            ),
             patch("app.services.scheduler.generate_morning_briefing") as mock_gen,
         ):
             from app.services.scheduler import task_morning_briefing
+
             task_morning_briefing()
             args = mock_gen.call_args[0]
             self.assertEqual(args[1], "Rainy 22°C")
@@ -351,20 +388,20 @@ class TestTelegramCommandRouting(unittest.TestCase):
 
     @patch("app.routers.webhooks.get_primary_user_id", return_value=99999)
     def test_news_command_triggers_news_handler(self, mock_uid):
-        with patch("app.agents.news.telegram_handler.handle_news_command") as mock_news:
+        with patch("app.agents.news.telegram_handler.handle_news_command"):
             resp = self._post("/news")
             self.assertEqual(resp.status_code, 200)
             self.assertEqual(resp.json(), {"status": "ok"})
 
     @patch("app.routers.webhooks.get_primary_user_id", return_value=99999)
     def test_free_text_routes_to_coach(self, mock_uid):
-        with patch("app.routers.webhooks.handle_telegram_chat") as mock_coach:
+        with patch("app.routers.webhooks.handle_telegram_chat"):
             resp = self._post("Hôm nay tôi chạy được 10km")
             self.assertEqual(resp.status_code, 200)
 
     @patch("app.routers.webhooks.get_primary_user_id", return_value=99999)
     def test_news_prefix_routes_to_news_agent(self, mock_uid):
-        with patch("app.agents.news.telegram_handler.handle_news_chat") as mock_news:
+        with patch("app.agents.news.telegram_handler.handle_news_chat"):
             resp = self._post("@news crypto market update")
             self.assertEqual(resp.status_code, 200)
 
@@ -409,9 +446,14 @@ class TestDailySuggestionAllBranches(unittest.TestCase):
             compute_daily_suggestion,
             format_daily_suggestion_for_briefing,
         )
+
         defaults = dict(
-            readiness_score=70, acwr=1.0, recent_runs=[], athlete_state="healthy",
-            day_of_week=1, days_since_last_run=1,
+            readiness_score=70,
+            acwr=1.0,
+            recent_runs=[],
+            athlete_state="healthy",
+            day_of_week=1,
+            days_since_last_run=1,
         )
         defaults.update(kwargs)
         suggestion = compute_daily_suggestion(**defaults)
@@ -463,11 +505,16 @@ class TestDailySuggestionAllBranches(unittest.TestCase):
             compute_daily_suggestion,
             format_daily_suggestion_for_briefing,
         )
+
         for state in ("healthy", "sick", "injured"):
             for acwr in (0.8, 1.0, 1.2, 1.5):
                 s = compute_daily_suggestion(
-                    readiness_score=65, acwr=acwr, recent_runs=[],
-                    athlete_state=state, day_of_week=1, days_since_last_run=1,
+                    readiness_score=65,
+                    acwr=acwr,
+                    recent_runs=[],
+                    athlete_state=state,
+                    day_of_week=1,
+                    days_since_last_run=1,
                 )
                 result = format_daily_suggestion_for_briefing(s)
                 self.assertIsInstance(result, str)
@@ -502,13 +549,16 @@ class TestNewsBriefingFlow(unittest.TestCase):
 
         with (
             patch("app.agents.news.agent.genai") as mock_genai,
-            patch("app.agents.news.agent.send_telegram_msg") as mock_tg,
+            patch("app.agents.news.agent.send_telegram_msg"),
             patch("app.agents.news.memory.load_news_memory", return_value={}),
             patch("app.agents.news.memory.save_news_memory"),
             patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "99999"}),
         ):
-            mock_genai.Client.return_value.models.generate_content.return_value = mock_response
+            mock_genai.Client.return_value.models.generate_content.return_value = (
+                mock_response
+            )
             from app.agents.news.agent import generate_news_briefing
+
             # Should not raise
             generate_news_briefing(_make_config())
 
@@ -520,13 +570,19 @@ class TestNewsBriefingFlow(unittest.TestCase):
 
         with (
             patch("app.agents.news.agent.genai") as mock_genai,
-            patch("app.agents.news.agent.send_telegram_msg", side_effect=Exception("Telegram down")),
+            patch(
+                "app.agents.news.agent.send_telegram_msg",
+                side_effect=Exception("Telegram down"),
+            ),
             patch("app.agents.news.memory.load_news_memory", return_value={}),
             patch("app.agents.news.memory.save_news_memory"),
             patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "99999"}),
         ):
-            mock_genai.Client.return_value.models.generate_content.return_value = mock_response
+            mock_genai.Client.return_value.models.generate_content.return_value = (
+                mock_response
+            )
             from app.agents.news.agent import generate_news_briefing
+
             try:
                 generate_news_briefing(_make_config())
             except Exception as e:
@@ -547,7 +603,11 @@ class TestStravaWebhookRouting(unittest.TestCase):
     def test_create_event_queues_workflow(self, mock_wf):
         resp = self.client.post(
             "/webhook",
-            json={"object_type": "activity", "aspect_type": "create", "object_id": 123456},
+            json={
+                "object_type": "activity",
+                "aspect_type": "create",
+                "object_id": 123456,
+            },
         )
         self.assertEqual(resp.status_code, 200)
         mock_wf.assert_called_once_with("123456")
@@ -619,6 +679,7 @@ class TestBriefCommandInCoachAgent(unittest.TestCase):
             patch(f"{_BASE}.is_setup_in_progress", return_value=False),
         ):
             from app.agents.coach.agent import handle_telegram_chat
+
             handle_telegram_chat("99999", "/brief", _make_config())
             mock_brief.assert_called_once()
 
@@ -630,6 +691,7 @@ class TestBriefCommandInCoachAgent(unittest.TestCase):
             patch(f"{_BASE}.is_setup_in_progress", return_value=False),
         ):
             from app.agents.coach.agent import handle_telegram_chat
+
             handle_telegram_chat("99999", "/standup", _make_config())
             mock_brief.assert_called_once()
 
@@ -647,6 +709,7 @@ class TestNotificationPipeline(unittest.TestCase):
         ):
             mock_post.return_value.status_code = 200
             from app.core.notification import send_telegram_msg
+
             send_telegram_msg("99999", "Hello!")
             self.assertEqual(mock_post.call_count, 1)
 
@@ -658,6 +721,7 @@ class TestNotificationPipeline(unittest.TestCase):
         ):
             mock_post.return_value.status_code = 200
             from app.core.notification import send_telegram_msg
+
             send_telegram_msg("99999", long_msg)
             self.assertGreater(mock_post.call_count, 1)
 
@@ -668,10 +732,12 @@ class TestNotificationPipeline(unittest.TestCase):
         ):
             mock_post.return_value.status_code = 200
             from app.core.notification import send_telegram_msg
+
             send_telegram_msg("99999", "")
 
     def test_sanitize_md_to_tg_html_handles_none(self):
         from app.core.notification import sanitize_md_to_tg_html
+
         result = sanitize_md_to_tg_html("")
         self.assertIsInstance(result, str)
 
@@ -689,8 +755,8 @@ class TestAgenticLoopFlow(unittest.TestCase):
         resp = MagicMock()
         resp.text = text
         part = MagicMock()
-        part.text = text         # extract_text reads this
-        part.thought = False     # must be falsy or part gets skipped
+        part.text = text  # extract_text reads this
+        part.thought = False  # must be falsy or part gets skipped
         part.function_call = None
         content = MagicMock()
         content.parts = [part]
@@ -721,6 +787,7 @@ class TestAgenticLoopFlow(unittest.TestCase):
         mock_resp = self._make_text_response("ACWR = 1.2, trạng thái ổn.")
         with patch(f"{_BASE}.send_message_with_retry", return_value=mock_resp):
             from app.agents.coach.agent import _run_agentic_loop
+
             result = _run_agentic_loop(MagicMock(), "How is my ACWR?")
             self.assertIn("ACWR", result)
 
@@ -728,8 +795,12 @@ class TestAgenticLoopFlow(unittest.TestCase):
         """An unknown tool name must be handled gracefully — loop continues to text reply."""
         mock_tool_resp = self._make_tool_response("nonexistent_tool", {})
         mock_text_resp = self._make_text_response("Xin lỗi, không tìm thấy tool.")
-        with patch(f"{_BASE}.send_message_with_retry", side_effect=[mock_tool_resp, mock_text_resp]):
+        with patch(
+            f"{_BASE}.send_message_with_retry",
+            side_effect=[mock_tool_resp, mock_text_resp],
+        ):
             from app.agents.coach.agent import _run_agentic_loop
+
             # Must not raise — error is sent back as function response
             result = _run_agentic_loop(MagicMock(), "Do something")
             self.assertIsInstance(result, str)
@@ -737,6 +808,7 @@ class TestAgenticLoopFlow(unittest.TestCase):
     def test_tool_dispatch_map_has_all_read_tools(self):
         """_TOOL_DISPATCH must contain all read tools so agent can call them."""
         from app.agents.coach.agent import _TOOL_DISPATCH
+
         required = [
             "get_run_stream_csv",
             "get_run_computed_metrics",
@@ -745,25 +817,37 @@ class TestAgenticLoopFlow(unittest.TestCase):
             "get_volume_summary",
         ]
         for tool in required:
-            self.assertIn(tool, _TOOL_DISPATCH, f"Missing tool in _TOOL_DISPATCH: {tool}")
+            self.assertIn(
+                tool, _TOOL_DISPATCH, f"Missing tool in _TOOL_DISPATCH: {tool}"
+            )
 
     def test_tool_dispatch_map_has_write_tools(self):
         from app.agents.coach.agent import _TOOL_DISPATCH
+
         required = [
             "save_bulk_workout_plan",
             "set_workout_plan",
             "update_todays_plan",
         ]
         for tool in required:
-            self.assertIn(tool, _TOOL_DISPATCH, f"Missing write tool in _TOOL_DISPATCH: {tool}")
+            self.assertIn(
+                tool, _TOOL_DISPATCH, f"Missing write tool in _TOOL_DISPATCH: {tool}"
+            )
 
     def test_loop_terminates_after_max_rounds(self):
         """Loop must not hang — must stop after max_rounds even if tools keep firing."""
-        mock_tool_resp = self._make_tool_response("get_volume_for_week", {"user_id": "99", "week_offset": 0})
+        mock_tool_resp = self._make_tool_response(
+            "get_volume_for_week", {"user_id": "99", "week_offset": 0}
+        )
         with patch(f"{_BASE}.send_message_with_retry", return_value=mock_tool_resp):
-            with patch(f"{_BASE}._TOOL_DISPATCH", {"get_volume_for_week": lambda **kw: "50km"}):
+            with patch(
+                f"{_BASE}._TOOL_DISPATCH", {"get_volume_for_week": lambda **kw: "50km"}
+            ):
                 from app.agents.coach.agent import _run_agentic_loop
-                result = _run_agentic_loop(MagicMock(), "How much did I run?", max_rounds=3)
+
+                result = _run_agentic_loop(
+                    MagicMock(), "How much did I run?", max_rounds=3
+                )
                 self.assertIsInstance(result, str)
 
 

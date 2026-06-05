@@ -81,7 +81,9 @@ class TestGenerateMorningBriefing(unittest.TestCase):
 
         # Mock daily suggestion path (Phase 3.5)
         mocks["_has_active_plan_this_week"].return_value = has_active_plan
-        mocks["get_garmin_daily_metrics"].return_value = {"training_readiness_score": 70}
+        mocks["get_garmin_daily_metrics"].return_value = {
+            "training_readiness_score": 70
+        }
         mocks["get_athlete_state"].return_value = "healthy"
         mocks["_get_recent_runs"].return_value = []
         mocks["_days_since_last_run"].return_value = 0

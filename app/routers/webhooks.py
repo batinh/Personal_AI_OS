@@ -210,7 +210,9 @@ def run_strava_workflow(activity_id: str):
                 send_inline_keyboard_menu(str(chat_id), rpe_text, rpe_buttons)
                 logger.info(f"[*] Sent RPE keyboard for Activity {activity_id}")
             except Exception as e:
-                logger.error(f"[*] Failed to send RPE keyboard for Activity {activity_id}: {e}")
+                logger.error(
+                    f"[*] Failed to send RPE keyboard for Activity {activity_id}: {e}"
+                )
     elif chat_id:
         # Gemini analysis failed (timeout/API error) — still notify user the run was saved
         dist_km = round(meta_data.get("distance", 0) / 1000, 2)
@@ -223,7 +225,9 @@ def run_strava_workflow(activity_id: str):
             f"🔗 https://www.strava.com/activities/{activity_id}"
         )
         send_telegram_msg(chat_id, fallback_msg)
-        logger.warning(f"[*] Sent fallback Telegram (no analysis) for Activity {activity_id}")
+        logger.warning(
+            f"[*] Sent fallback Telegram (no analysis) for Activity {activity_id}"
+        )
 
 
 @router.post("/webhook")
@@ -276,7 +280,6 @@ def handle_telegram_callback(callback_query: dict) -> None:
                 score = int(parts[2])
 
                 # Save RPE to run_activities table
-                config = load_config()
                 from app.core.database import get_db
 
                 with get_db() as conn:
@@ -318,7 +321,9 @@ def handle_telegram_callback(callback_query: dict) -> None:
                 answer_callback_query(callback_id, text=f"RPE {score} đã lưu ✓")
 
             except (ValueError, IndexError) as e:
-                logger.error(f"[TELEGRAM] Invalid RPE callback data: {callback_data} - {e}")
+                logger.error(
+                    f"[TELEGRAM] Invalid RPE callback data: {callback_data} - {e}"
+                )
                 answer_callback_query(callback_id, text="Lỗi lưu RPE")
 
     elif callback_data == "plan:accept":
