@@ -74,11 +74,16 @@ def _make_mock_conn():
 _CONSOLE_PATCHES = [
     patch("app.routers.console.load_config", return_value=_STUB_CONFIG),
     patch("app.routers.console.get_db_connection", return_value=_make_mock_conn()),
-    patch("app.routers.console.get_training_loads", return_value={"acute_load_7d": 0, "chronic_load_28d": 0}),
+    patch(
+        "app.routers.console.get_training_loads",
+        return_value={"acute_load_7d": 0, "chronic_load_28d": 0},
+    ),
     patch("app.routers.console.get_historical_training_loads", return_value=[]),
     patch("app.routers.console.get_all_active_memories", return_value=[]),
     patch("app.routers.console.load_coverage_report", side_effect=FileNotFoundError),
-    patch("app.routers.console.load_requirements_matrix", side_effect=Exception("no yaml")),
+    patch(
+        "app.routers.console.load_requirements_matrix", side_effect=Exception("no yaml")
+    ),
 ]
 
 
@@ -91,6 +96,7 @@ def _apply_patches(test_method):
 def _make_client():
     from app.main import app
     from fastapi.testclient import TestClient
+
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -114,7 +120,10 @@ class TestConsoleRoutes(unittest.TestCase):
 
     @patch("app.routers.console.load_config", return_value=_STUB_CONFIG)
     @patch("app.routers.console.get_db_connection", return_value=_make_mock_conn())
-    @patch("app.routers.console.get_training_loads", return_value={"acute_load_7d": 0, "chronic_load_28d": 0})
+    @patch(
+        "app.routers.console.get_training_loads",
+        return_value={"acute_load_7d": 0, "chronic_load_28d": 0},
+    )
     @patch("app.routers.console.get_historical_training_loads", return_value=[])
     @patch("app.routers.console.get_all_active_memories", return_value=[])
     @patch("app.routers.console.load_coverage_report", side_effect=FileNotFoundError)
@@ -128,7 +137,9 @@ class TestConsoleRoutes(unittest.TestCase):
     @patch("app.routers.console.save_config")
     @patch("app.routers.console.reload_scheduler")
     @patch("app.routers.console.load_config", return_value=_STUB_CONFIG)
-    def test_save_persists_config_and_reloads_scheduler(self, mock_load, mock_reload, mock_save):
+    def test_save_persists_config_and_reloads_scheduler(
+        self, mock_load, mock_reload, mock_save
+    ):
         """REQ-H03: POST /console/save must save config and reload scheduler, then redirect."""
         form_data = {
             "system_instruction": "Test coach",
@@ -165,7 +176,9 @@ class TestConsoleRoutes(unittest.TestCase):
         from app.core.state import state
 
         original = state.service_active
-        resp = self.client.post("/console/toggle", auth=_VALID_AUTH, follow_redirects=False)
+        resp = self.client.post(
+            "/console/toggle", auth=_VALID_AUTH, follow_redirects=False
+        )
         self.assertIn(resp.status_code, [302, 303])
         self.assertNotEqual(state.service_active, original)
         # Restore
@@ -189,7 +202,10 @@ class TestConsoleTestingTab(unittest.TestCase):
 
     @patch("app.routers.console.load_config", return_value=_STUB_CONFIG)
     @patch("app.routers.console.get_db_connection", return_value=_make_mock_conn())
-    @patch("app.routers.console.get_training_loads", return_value={"acute_load_7d": 0, "chronic_load_28d": 0})
+    @patch(
+        "app.routers.console.get_training_loads",
+        return_value={"acute_load_7d": 0, "chronic_load_28d": 0},
+    )
     @patch("app.routers.console.get_historical_training_loads", return_value=[])
     @patch("app.routers.console.get_all_active_memories", return_value=[])
     @patch("app.routers.console.load_coverage_report", side_effect=FileNotFoundError)
@@ -204,7 +220,10 @@ class TestConsoleTestingTab(unittest.TestCase):
 
     @patch("app.routers.console.load_config", return_value=_STUB_CONFIG)
     @patch("app.routers.console.get_db_connection", return_value=_make_mock_conn())
-    @patch("app.routers.console.get_training_loads", return_value={"acute_load_7d": 0, "chronic_load_28d": 0})
+    @patch(
+        "app.routers.console.get_training_loads",
+        return_value={"acute_load_7d": 0, "chronic_load_28d": 0},
+    )
     @patch("app.routers.console.get_historical_training_loads", return_value=[])
     @patch("app.routers.console.get_all_active_memories", return_value=[])
     @patch("app.routers.console.load_coverage_report", side_effect=FileNotFoundError)

@@ -45,6 +45,7 @@ from app.agents.coach.daily_suggestion import (
 )
 
 from app.core.logging_conf import get_module_logger
+from app.agents._prompt_telemetry import log_prompt_metrics
 
 logger = get_module_logger("coach")
 client = genai.Client()
@@ -184,6 +185,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         "",
         "",
         taper_factor,
+        chat_format=True,
     )
 
     shared_context = get_shared_context_block(
@@ -229,18 +231,26 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         try:
             # Check if race_date is configured; if not, show setup prompt
             if not race_date_str:
-                setup_prompt = "ℹ️ Anh chưa thiết lập mục tiêu đua. Dùng /setup để bắt đầu."
+                setup_prompt = (
+                    "ℹ️ Anh chưa thiết lập mục tiêu đua. Dùng /setup để bắt đầu."
+                )
                 if chat_id:
                     send_telegram_msg(chat_id, setup_prompt)
                     save_message(
                         user_id_str, "model", f"[MORNING BRIEFING] {setup_prompt}"
                     )
-                logger.info("[MORNING_BRIEFING] Race date not configured, showing setup prompt")
+                logger.info(
+                    "[MORNING_BRIEFING] Race date not configured, showing setup prompt"
+                )
                 return
 
             # Compute daily suggestion (pure function, no LLM)
-            garmin_data = get_garmin_daily_metrics(user_id_str, now.strftime("%Y-%m-%d"))
-            readiness_score = garmin_data.get("training_readiness_score") if garmin_data else None
+            garmin_data = get_garmin_daily_metrics(
+                user_id_str, now.strftime("%Y-%m-%d")
+            )
+            readiness_score = (
+                garmin_data.get("training_readiness_score") if garmin_data else None
+            )
             athlete_state = get_athlete_state(user_id_str)
             recent_runs = _get_recent_runs(user_id_str, days=7)
             days_since_last = _days_since_last_run(user_id_str)
@@ -255,7 +265,9 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
             )
 
             # Format suggestion for briefing
-            suggestion_text = format_daily_suggestion_for_briefing(suggestion, garmin_data)
+            suggestion_text = format_daily_suggestion_for_briefing(
+                suggestion, garmin_data
+            )
             reply = (
                 f"🌅 Chào buổi sáng! Hôm nay ({now.strftime('%A')})\n\n"
                 + suggestion_text
@@ -272,6 +284,12 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
             # Fall through to LLM-based briefing on error
 
     # Standard LLM-based briefing (when active plan exists or daily suggestion fails)
+    log_prompt_metrics(
+        flow="coach.flows.morning_briefing",
+        system_inst=system_inst,
+        user_prompt=prompt,
+        model=config.get("model_name", "models/gemini-2.0-flash"),
+    )
     try:
         chat_session = client.chats.create(
             model=config.get("model_name", "models/gemini-2.0-flash"),

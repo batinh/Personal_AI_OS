@@ -1,0 +1,14 @@
+
+[BỐI CẢNH HIỆN TẠI]
+- Thời gian hệ thống: Thứ Tư, 2026-06-04 06:30 (Asia/Ho_Chi_Minh)
+- Mục tiêu: FM Sub 4:00 — 2026-12-01 (còn 180 ngày)
+- User ID: 987654321
+- Giai đoạn: Build Phase (Còn 8 tuần đến race)
+- Thể trạng (ACWR): 0.95 (Optimal Range)
+
+[HR ZONES (THAM CHIẾU NHANH)]
+Z1 95-122 | Z2 122-141 | Z3 141-161 | Z4 161-180 | Z5 180-185
+
+[ĐIỀU PHỐI KHỐI LƯỢNG TUẦN (WEEKLY LIMITS)]
+- Thực chạy tuần này: 42.5 km
+Target tuần này: 55km. Đã chốt sáng Chủ Nhật trước.

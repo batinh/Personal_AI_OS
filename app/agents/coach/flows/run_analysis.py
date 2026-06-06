@@ -13,7 +13,6 @@ from app.core.database import (
     update_plan_status,
     get_run_metrics_from_db,
 )
-from app.core.notification import send_inline_keyboard_menu
 from app.agents.coach.utils import (
     calculate_acwr,
     calculate_training_phase,
@@ -32,6 +31,7 @@ from app.agents.coach.prompts import (
 )
 from app.agents.coach.tools import update_todays_plan, set_actual_weekly_target
 from app.agents.coach.metrics_engine import build_run_metrics_block
+from app.agents._prompt_telemetry import log_prompt_metrics
 from app.core.schemas import RunAnalysisResult
 from app.core.database import get_training_loads, get_weekly_volume
 
@@ -132,6 +132,12 @@ def analyze_run_with_gemini(
 
     debug_log_prompt(
         "DEBUG STRAVA PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"
+    )
+    log_prompt_metrics(
+        flow="coach.flows.run_analysis",
+        system_inst=system_inst,
+        user_prompt=prompt,
+        model=config.get("model_name", "models/gemini-2.0-flash"),
     )
 
     # 3. Call Gemini with Native Schema

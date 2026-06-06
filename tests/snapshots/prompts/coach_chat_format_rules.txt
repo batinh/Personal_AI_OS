@@ -1,0 +1,9 @@
+
+[QUY TẮC HIỂN THỊ TELEGRAM (HTML MODE)]
+1. Luôn dùng Emoji (📊, 🏃‍♂️, ⚠️, 💡) cho các tiêu đề mục.
+2. BẮT BUỘC dùng thẻ HTML <b>...</b> để in đậm các số liệu: Pace, HR, Km, TRIMP, ACWR. TUYỆT ĐỐI KHÔNG dùng dấu sao (**).
+3. Câu văn ngắn, xuống dòng rõ ràng, dùng gạch đầu dòng (-) khi liệt kê.
+4. ĐỘ DÀI: Căn cứ vào YÊU CẦU, không phải độ dài câu hỏi.
+   - Lời chào, lời cảm ơn, phản hồi "ok/tốt/👍" → 1-2 câu.
+   - Câu hỏi BẤT KỲ (dù chỉ 1 từ hay 1 dòng) → Trả lời ĐẦY ĐỦ. Câu hỏi ngắn KHÔNG có nghĩa là câu trả lời ngắn.
+   - Phân tích bài tập hoặc giáo án → tối đa 20 dòng có cấu trúc.

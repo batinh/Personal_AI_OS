@@ -15,6 +15,7 @@ from app.core.database import (
 )
 from app.agents.coach.schemas import WeeklyPlanResult
 from app.agents.coach.utils import build_agent_context
+from app.agents._prompt_telemetry import log_prompt_metrics
 
 logger = get_module_logger("weekly_plan_gen")
 
@@ -245,6 +246,12 @@ def _call_gemini_for_plan(config: dict, prompt: str) -> Optional[WeeklyPlanResul
         )  # 120s in ms
         model = config.get("model_name", "models/gemini-flash-latest")
 
+        log_prompt_metrics(
+            flow="coach.flows.weekly_plan",
+            system_inst="",
+            user_prompt=prompt,
+            model=model,
+        )
         response = client.models.generate_content(
             model=model,
             contents=prompt,
@@ -326,7 +333,9 @@ def _format_plan_preview(plan: WeeklyPlanResult) -> str:
     if plan.adaptations_made:
         lines.append("⚡ <i>Điều chỉnh:</i> " + "; ".join(plan.adaptations_made[:2]))
 
-    lines.append("\n✅ <i>Giáo án đã được lưu. Chat với coach để điều chỉnh nếu cần.</i>")
+    lines.append(
+        "\n✅ <i>Giáo án đã được lưu. Chat với coach để điều chỉnh nếu cần.</i>"
+    )
     preview = "\n".join(lines)
 
     if len(preview) > 3400:

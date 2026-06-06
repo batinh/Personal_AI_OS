@@ -1,0 +1,14 @@
+{
+    "custom_instruction": "Tuần Taper — tuyệt đối không tăng tải.",
+    "user_profile": "VĐV nữ 28t, mục tiêu HM Sub 1:45 vào 2026-07-15. Race Week.",
+    "max_hr": 192,
+    "rest_hr": 55,
+    "gender": "female",
+    "hr_zones_text": "Z1 100-130 | Z2 130-150 | Z3 150-170 | Z4 170-186 | Z5 186-192",
+    "pace_zones_text": "Z1 6:00-6:30 | Z2 5:20-5:50 | Z3 4:55-5:10 | Z4 4:35-4:50 | Z5 4:10-4:25",
+    "taper_factor": 0.5,
+    "rftp_watts": 0,
+    "lthr_bpm": 0,
+    "hr_zones_label": "KARVONEN — HRR",
+    "power_zones_text": ""
+}

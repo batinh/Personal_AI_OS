@@ -136,7 +136,9 @@ def task_morning_news():
     try:
         config = load_config()
         if not _is_session_enabled(config, "morning"):
-            logger.info("[SCHEDULER] Morning news session disabled in config. Skipping.")
+            logger.info(
+                "[SCHEDULER] Morning news session disabled in config. Skipping."
+            )
             return
         logger.info("[SCHEDULER] Triggering morning news briefing...")
         generate_news_briefing(config, session="morning")
@@ -149,7 +151,9 @@ def task_afternoon_news():
     try:
         config = load_config()
         if not _is_session_enabled(config, "afternoon"):
-            logger.info("[SCHEDULER] Afternoon news session disabled in config. Skipping.")
+            logger.info(
+                "[SCHEDULER] Afternoon news session disabled in config. Skipping."
+            )
             return
         logger.info("[SCHEDULER] Triggering afternoon news briefing...")
         generate_news_briefing(config, session="afternoon")
@@ -162,7 +166,9 @@ def task_evening_news():
     try:
         config = load_config()
         if not _is_session_enabled(config, "evening"):
-            logger.info("[SCHEDULER] Evening news session disabled in config. Skipping.")
+            logger.info(
+                "[SCHEDULER] Evening news session disabled in config. Skipping."
+            )
             return
         logger.info("[SCHEDULER] Triggering evening news briefing...")
         generate_news_briefing(config, session="evening")
@@ -305,7 +311,14 @@ def task_cleanup_stale_setup():
 # ==========================================
 # 🔄 AUTO-RESCHEDULE (INCOMPLETE HARD SESSIONS)
 # ==========================================
-_HARD_WORKOUT_KEYWORDS = ("interval", "tempo", "race pace", "tốc độ", "cường độ cao", "threshold")
+_HARD_WORKOUT_KEYWORDS = (
+    "interval",
+    "tempo",
+    "race pace",
+    "tốc độ",
+    "cường độ cao",
+    "threshold",
+)
 
 
 def task_auto_reschedule():
@@ -337,7 +350,9 @@ def task_auto_reschedule():
             plan_row = c.fetchone()
 
             if not plan_row:
-                logger.info("[SCHEDULER] No training plan for today. Skipping reschedule.")
+                logger.info(
+                    "[SCHEDULER] No training plan for today. Skipping reschedule."
+                )
                 return
 
             workout_title = plan_row["workout_title"] or ""
@@ -345,7 +360,9 @@ def task_auto_reschedule():
 
             is_hard = any(kw in workout_title.lower() for kw in _HARD_WORKOUT_KEYWORDS)
             if not (is_hard and status.lower() != "completed"):
-                logger.info(f"[SCHEDULER] Today's plan '{workout_title}' ({status}) — no reschedule needed.")
+                logger.info(
+                    f"[SCHEDULER] Today's plan '{workout_title}' ({status}) — no reschedule needed."
+                )
                 return
 
             # Check readiness from garmin_daily_metrics
@@ -355,13 +372,19 @@ def task_auto_reschedule():
                 (user_id, today_str),
             )
             readiness_row = c.fetchone()
-            readiness_score = readiness_row["training_readiness_score"] if readiness_row else None
+            readiness_score = (
+                readiness_row["training_readiness_score"] if readiness_row else None
+            )
 
             if readiness_score is None or readiness_score >= 30:
-                logger.info(f"[SCHEDULER] Readiness {readiness_score} >= 30. No reschedule needed.")
+                logger.info(
+                    f"[SCHEDULER] Readiness {readiness_score} >= 30. No reschedule needed."
+                )
                 return
 
-            logger.info(f"[SCHEDULER] Readiness {readiness_score} < 30. Deferring '{workout_title}'...")
+            logger.info(
+                f"[SCHEDULER] Readiness {readiness_score} < 30. Deferring '{workout_title}'..."
+            )
 
             # Find next available day (no plan yet)
             for offset in range(1, 8):
@@ -384,12 +407,18 @@ def task_auto_reschedule():
                         f"📅 Giáo án điều chỉnh: Thể trạng hôm nay thấp (readiness {readiness_score}%). "
                         f"Bài '{workout_title}' đã dời sang {future_date}. Hôm nay tập Easy hoặc nghỉ.",
                     )
-                    logger.info(f"[SCHEDULER] Deferred '{workout_title}' from {today_str} to {future_date}.")
+                    logger.info(
+                        f"[SCHEDULER] Deferred '{workout_title}' from {today_str} to {future_date}."
+                    )
                     return
 
             # No available day found — reduce weekly target by 5%
-            logger.warning("[SCHEDULER] No available day to reschedule. Reducing weekly target by 5%.")
-            week_start = (date.today() - timedelta(days=date.today().weekday())).isoformat()
+            logger.warning(
+                "[SCHEDULER] No available day to reschedule. Reducing weekly target by 5%."
+            )
+            week_start = (
+                date.today() - timedelta(days=date.today().weekday())
+            ).isoformat()
             c.execute(
                 """SELECT actual_target_km FROM user_weekly_targets
                    WHERE user_id = ? ORDER BY week_start_date DESC LIMIT 1""",
@@ -449,17 +478,23 @@ def task_nutrition_alert():
             plan_row = c.fetchone()
 
             if not plan_row:
-                logger.info("[SCHEDULER] No training plan for tomorrow. Skipping nutrition alert.")
+                logger.info(
+                    "[SCHEDULER] No training plan for tomorrow. Skipping nutrition alert."
+                )
                 return
 
             distance_km = plan_row.get("target_distance_km")
 
             # Only alert for LongRun > 15km
             if distance_km is None or distance_km <= 15:
-                logger.info(f"[SCHEDULER] Tomorrow's distance {distance_km}km <= 15km. No alert.")
+                logger.info(
+                    f"[SCHEDULER] Tomorrow's distance {distance_km}km <= 15km. No alert."
+                )
                 return
 
-            logger.info(f"[SCHEDULER] Tomorrow has LongRun {distance_km}km. Sending nutrition alert...")
+            logger.info(
+                f"[SCHEDULER] Tomorrow has LongRun {distance_km}km. Sending nutrition alert..."
+            )
 
             chat_id = get_primary_user_id()
             send_telegram_msg(
@@ -508,7 +543,9 @@ def task_gear_check():
                     f"Khuyến nghị: Thay giày ngay, giày cũ có thể gây chấn thương."
                 )
                 send_telegram_msg(str(chat_id), msg)
-                logger.info(f"[SCHEDULER] Critical gear alert: {gear_name} at {total_km}km")
+                logger.info(
+                    f"[SCHEDULER] Critical gear alert: {gear_name} at {total_km}km"
+                )
 
             elif total_km >= warn_threshold_km:
                 msg = (
@@ -552,13 +589,17 @@ def task_retry_pending_analyses():
 
             raw = get_run_activity_raw(activity_id)
             if not raw:
-                logger.warning(f"[SCHEDULER] No raw data for activity {activity_id}. Skipping.")
+                logger.warning(
+                    f"[SCHEDULER] No raw data for activity {activity_id}. Skipping."
+                )
                 continue
 
             meta_data = raw.get("full_meta", {})
             logger.info(f"[SCHEDULER] Retrying analysis: {act_name} ({activity_id})")
 
-            analysis_text = analyze_run_with_gemini(activity_id, act_name, meta_data, config)
+            analysis_text = analyze_run_with_gemini(
+                activity_id, act_name, meta_data, config
+            )
             if analysis_text:
                 telegram_msg = (
                     f"🔁 <b>Phân tích bài chạy (retry):</b> {act_name}\n\n"
@@ -568,10 +609,14 @@ def task_retry_pending_analyses():
                 send_telegram_msg(user_id, telegram_msg)
                 logger.info(f"[SCHEDULER] Retry analysis sent for {activity_id}")
             else:
-                logger.warning(f"[SCHEDULER] Retry analysis still failed for {activity_id}")
+                logger.warning(
+                    f"[SCHEDULER] Retry analysis still failed for {activity_id}"
+                )
 
     except Exception as e:
-        logger.error("[SCHEDULER] task_retry_pending_analyses failed: %s", e, exc_info=True)
+        logger.error(
+            "[SCHEDULER] task_retry_pending_analyses failed: %s", e, exc_info=True
+        )
 
 
 # ==========================================

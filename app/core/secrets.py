@@ -1,4 +1,5 @@
 """Encrypted credential storage for sensitive third-party credentials (Garmin, etc.)."""
+
 import base64
 import hashlib
 import json

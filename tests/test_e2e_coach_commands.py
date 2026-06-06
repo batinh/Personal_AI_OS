@@ -15,20 +15,15 @@ Run:
 
 from __future__ import annotations
 
-import json
-import os
-import sqlite3
-import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_telegram_update(chat_id: int, text: str, message_id: int = 1) -> dict:
     """Build a minimal Telegram Update payload matching the real API shape."""
@@ -46,6 +41,7 @@ def _make_telegram_update(chat_id: int, text: str, message_id: int = 1) -> dict:
 
 def _make_app_client() -> TestClient:
     from app.main import app
+
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -83,6 +79,7 @@ _STUB_CONFIG = {
 # ---------------------------------------------------------------------------
 # Phase 1-A: /brief command
 # ---------------------------------------------------------------------------
+
 
 class TestCoachBriefCommand(unittest.TestCase):
     """REQ-C01, REQ-C04 — /brief triggers morning briefing pipeline."""
@@ -136,6 +133,7 @@ class TestCoachBriefCommand(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Phase 1-B: /sick and /recover state commands
 # ---------------------------------------------------------------------------
+
 
 class TestCoachStateCommands(unittest.TestCase):
     """REQ-C07, REQ-C08 — /sick and /recover update athlete state."""
@@ -199,6 +197,7 @@ class TestCoachStateCommands(unittest.TestCase):
 # Phase 1-C: /accept, /reject, /plan
 # ---------------------------------------------------------------------------
 
+
 class TestCoachPlanCommands(unittest.TestCase):
     """REQ-C05, REQ-C06, REQ-C09 — plan management commands."""
 
@@ -237,16 +236,32 @@ class TestCoachPlanCommands(unittest.TestCase):
     @patch(_AGENT_TYPING)
     @patch("app.agents.coach.agent.get_upcoming_plans", return_value="")
     @patch("app.agents.coach.agent.compute_daily_suggestion")
-    @patch("app.agents.coach.agent.format_daily_suggestion_for_briefing", return_value="💡 Hôm nay: chạy nhẹ 30'")
-    @patch("app.agents.coach.agent.get_training_loads", return_value={"acute_load_7d": 100, "chronic_load_28d": 120})
+    @patch(
+        "app.agents.coach.agent.format_daily_suggestion_for_briefing",
+        return_value="💡 Hôm nay: chạy nhẹ 30'",
+    )
+    @patch(
+        "app.agents.coach.agent.get_training_loads",
+        return_value={"acute_load_7d": 100, "chronic_load_28d": 120},
+    )
     @patch("app.agents.coach.agent.get_runs_in_last_days", return_value=[])
     @patch("app.agents.coach.agent.get_athlete_state", return_value={})
     @patch("app.agents.coach.agent.is_setup_in_progress", return_value=False)
     @patch(_AGENT_CONFIG, return_value=_STUB_CONFIG)
     @patch(_LOAD_CONFIG, return_value=_STUB_CONFIG)
     def test_plan_command_with_no_active_plan(
-        self, mock_lc, mock_ac, mock_setup, mock_state, mock_runs, mock_loads,
-        mock_fmt, mock_sugg, mock_plans, mock_typing, mock_send
+        self,
+        mock_lc,
+        mock_ac,
+        mock_setup,
+        mock_state,
+        mock_runs,
+        mock_loads,
+        mock_fmt,
+        mock_sugg,
+        mock_plans,
+        mock_typing,
+        mock_send,
     ):
         """POST /plan with no active plan → daily suggestion sent."""
         _post_telegram(self.client, 999, "/plan")
@@ -259,7 +274,10 @@ class TestCoachPlanCommands(unittest.TestCase):
 
     @patch(_AGENT_SEND)
     @patch(_AGENT_TYPING)
-    @patch("app.agents.coach.agent.get_upcoming_plans", return_value="- Thứ Hai: Chạy dài 12km\n- Thứ Ba: Nghỉ")
+    @patch(
+        "app.agents.coach.agent.get_upcoming_plans",
+        return_value="- Thứ Hai: Chạy dài 12km\n- Thứ Ba: Nghỉ",
+    )
     @patch("app.agents.coach.agent.is_setup_in_progress", return_value=False)
     @patch(_AGENT_CONFIG, return_value=_STUB_CONFIG)
     @patch(_LOAD_CONFIG, return_value=_STUB_CONFIG)
@@ -276,6 +294,7 @@ class TestCoachPlanCommands(unittest.TestCase):
 # Phase 1-D: free-text chat routing
 # ---------------------------------------------------------------------------
 
+
 class TestCoachFreeTextChat(unittest.TestCase):
     """REQ-C14 — free-text message routes to AI coach, Gemini stub responds."""
 
@@ -285,7 +304,9 @@ class TestCoachFreeTextChat(unittest.TestCase):
     @patch(_AGENT_SEND)
     @patch(_AGENT_TYPING)
     @patch("app.agents.coach.agent.is_setup_in_progress", return_value=False)
-    @patch("app.agents.coach.agent._run_agentic_loop", return_value="Tốc độ pace tốt rồi!")
+    @patch(
+        "app.agents.coach.agent._run_agentic_loop", return_value="Tốc độ pace tốt rồi!"
+    )
     @patch(_AGENT_CONFIG, return_value=_STUB_CONFIG)
     @patch(_LOAD_CONFIG, return_value=_STUB_CONFIG)
     def test_free_text_routes_to_coach(
@@ -304,7 +325,14 @@ class TestCoachFreeTextChat(unittest.TestCase):
     @patch(_AGENT_CONFIG, return_value=_STUB_CONFIG)
     @patch(_LOAD_CONFIG, return_value=_STUB_CONFIG)
     def test_degenerate_response_sends_fallback(
-        self, mock_lc, mock_ac, mock_degen, mock_loop, mock_setup, mock_typing, mock_send
+        self,
+        mock_lc,
+        mock_ac,
+        mock_degen,
+        mock_loop,
+        mock_setup,
+        mock_typing,
+        mock_send,
     ):
         """Empty/degenerate Gemini response must not crash — fallback sent."""
         _post_telegram(self.client, 999, "xin chào")
@@ -315,6 +343,7 @@ class TestCoachFreeTextChat(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Phase 1-E: /sync command routing
 # ---------------------------------------------------------------------------
+
 
 class TestCoachSyncCommand(unittest.TestCase):
     """REQ-CS02 — /sync triggers manual Strava harvest."""
@@ -357,6 +386,7 @@ class TestCoachSyncCommand(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Phase 1-F: Telegram webhook endpoint robustness
 # ---------------------------------------------------------------------------
+
 
 class TestTelegramWebhookRobustness(unittest.TestCase):
     """Webhook must survive malformed payloads."""

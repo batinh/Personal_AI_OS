@@ -60,6 +60,37 @@ fi
 # --- 2. Config validation ---
 check "Config loads" python -c "from app.core.config import load_config; c = load_config(); assert c is not None"
 
+# --- 3a. Lint (ruff) ---
+# Gated unless --quick is passed. Mirrors GitHub Actions CI to keep parity.
+if [ "$QUICK" = "false" ]; then
+    TOTAL=$((TOTAL + 1))
+    if command -v ruff &>/dev/null; then
+        if ruff check app/ tests/ >/dev/null 2>&1; then
+            echo -e "  ${GREEN}PASS${NC} Ruff lint"
+            PASS=$((PASS + 1))
+        else
+            echo -e "  ${RED}FAIL${NC} Ruff lint — run: ruff check app/ tests/ --fix"
+        fi
+    else
+        echo -e "  ${YELLOW}SKIP${NC} Ruff lint (ruff not installed: pip install ruff)"
+        PASS=$((PASS + 1))
+    fi
+
+    # --- 3b. Format (black --check) ---
+    TOTAL=$((TOTAL + 1))
+    if command -v black &>/dev/null; then
+        if black --check app/ tests/ >/dev/null 2>&1; then
+            echo -e "  ${GREEN}PASS${NC} Black format"
+            PASS=$((PASS + 1))
+        else
+            echo -e "  ${RED}FAIL${NC} Black format — run: black app/ tests/"
+        fi
+    else
+        echo -e "  ${YELLOW}SKIP${NC} Black format (black not installed: pip install black)"
+        PASS=$((PASS + 1))
+    fi
+fi
+
 # --- 3. Docker compose syntax ---
 TOTAL=$((TOTAL + 1))
 if command -v docker &>/dev/null && docker info &>/dev/null; then

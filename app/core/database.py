@@ -306,10 +306,17 @@ def init_db():
         cur = c.execute("PRAGMA table_info(garmin_daily_metrics)")
         cols = [r[1] for r in cur.fetchall()]
         if cols:
-            for col, coltype in [("daily_steps", "INTEGER"), ("avg_stress_level", "INTEGER")]:
+            for col, coltype in [
+                ("daily_steps", "INTEGER"),
+                ("avg_stress_level", "INTEGER"),
+            ]:
                 if col not in cols:
-                    logger.info(f"[DATABASE] Migrating garmin_daily_metrics: adding {col}")
-                    c.execute(f"ALTER TABLE garmin_daily_metrics ADD COLUMN {col} {coltype}")
+                    logger.info(
+                        f"[DATABASE] Migrating garmin_daily_metrics: adding {col}"
+                    )
+                    c.execute(
+                        f"ALTER TABLE garmin_daily_metrics ADD COLUMN {col} {coltype}"
+                    )
     except Exception as e:
         logger.error(f"[DATABASE] garmin_daily_metrics migration error: {e}")
 

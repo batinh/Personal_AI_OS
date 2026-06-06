@@ -42,6 +42,7 @@ from app.agents.news.prompts import (
     build_on_demand_system_instruction,
     build_on_demand_prompt,
 )
+from app.agents._prompt_telemetry import log_prompt_metrics
 from app.agents.news.memory import load_news_memory
 from app.agents.news.telegram_handler import ERR_001, ERR_002
 from app.core.gemini_utils import (
@@ -51,7 +52,9 @@ from app.core.gemini_utils import (
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
-client = genai.Client(http_options=types.HttpOptions(timeout=90000))  # 90s in ms — grounded search needs more time than regular calls
+client = genai.Client(
+    http_options=types.HttpOptions(timeout=90000)
+)  # 90s in ms — grounded search needs more time than regular calls
 
 # Briefings with links use send_telegram_html(); plain notifications use send_telegram_msg().
 # Do NOT truncate here — chunking is handled inside notification.py.
@@ -186,7 +189,11 @@ def _inject_inline_links(body: str, urls: list[tuple[str, str]]) -> str:
 
 
 def _call_gemini_with_search(
-    model: str, system_inst: str, prompt: str, max_tokens: int = 1500
+    model: str,
+    system_inst: str,
+    prompt: str,
+    max_tokens: int = 1500,
+    flow: str = "news.unknown",
 ) -> tuple[str | None, list[tuple[str, str]]]:
     """
     Call Gemini with google_search grounding.
@@ -202,6 +209,13 @@ def _call_gemini_with_search(
             system_inst,
             prompt,
         )
+    log_prompt_metrics(
+        flow=flow,
+        system_inst=system_inst,
+        user_prompt=prompt,
+        model=model,
+        extra={"max_tokens": max_tokens},
+    )
 
     config_kwargs: dict = dict(
         system_instruction=system_inst,
@@ -336,7 +350,11 @@ def _call_topic(
 
     logger.info(f"[NEWS-TOPIC] Fetching '{topic_name}'...")
     block, grounding_urls = _call_gemini_with_search(
-        model, system_inst, prompt, max_tokens=6000
+        model,
+        system_inst,
+        prompt,
+        max_tokens=6000,
+        flow=f"news.topic.{session}",
     )
 
     if not block:
@@ -510,7 +528,11 @@ def generate_on_demand_briefing(query: str, chat_id: str, config: dict) -> str |
     prompt = build_on_demand_prompt(query, date_str)
 
     reply, grounding_urls = _call_gemini_with_search(
-        model, system_inst, prompt, max_tokens=8000
+        model,
+        system_inst,
+        prompt,
+        max_tokens=8000,
+        flow="news.on_demand",
     )
 
     if not reply or len(reply) < 100:
@@ -551,7 +573,7 @@ def _generate_legacy_briefing(
     system_inst = build_news_system_instruction()
 
     reply, grounding_urls = _call_gemini_with_search(
-        model, system_inst, prompt, max_tokens=2000
+        model, system_inst, prompt, max_tokens=2000, flow=f"news.legacy.{session}"
     )
     if not reply:
         logger.error(f"[NEWS] Grounded call failed for {session}. Skipping send.")

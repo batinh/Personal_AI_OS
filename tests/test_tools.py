@@ -484,9 +484,15 @@ class TestSaveBulkWorkoutPlan(unittest.TestCase):
         from app.agents.coach.tools import save_bulk_workout_plan
         import json
 
-        mock_db.return_value = "✅ Đã cập nhật giáo án ngày 2026-05-01: Easy Run (Pending)"
+        mock_db.return_value = (
+            "✅ Đã cập nhật giáo án ngày 2026-05-01: Easy Run (Pending)"
+        )
         entries = [
-            {"date": "2026-05-01", "workout_title": "Easy Run", "description": "6km Z2"},
+            {
+                "date": "2026-05-01",
+                "workout_title": "Easy Run",
+                "description": "6km Z2",
+            },
             {"date": "2026-05-02", "workout_title": "Rest Day", "description": "nghỉ"},
         ]
         result = save_bulk_workout_plan("u1", json.dumps(entries))
@@ -503,7 +509,7 @@ class TestSaveBulkWorkoutPlan(unittest.TestCase):
         entries = [
             {"date": "2026-05-01", "workout_title": "Run", "description": "6km"},
             {"workout_title": "Missing date"},  # no date
-            {"date": "2026-05-03"},              # no title
+            {"date": "2026-05-03"},  # no title
         ]
         result = save_bulk_workout_plan("u1", json.dumps(entries))
         self.assertIn("1/3", result)
@@ -544,7 +550,6 @@ class TestAgenticLoop(unittest.TestCase):
     def _make_text_response(self, text: str):
         """Stub Gemini response that returns text only (no tool calls)."""
         from unittest.mock import MagicMock
-        from google.genai import types
 
         part = MagicMock()
         part.text = text
@@ -562,7 +567,9 @@ class TestAgenticLoop(unittest.TestCase):
         response.text = text
         return response
 
-    def _make_fn_call_then_text_response(self, fn_name: str, fn_args: dict, reply_text: str):
+    def _make_fn_call_then_text_response(
+        self, fn_name: str, fn_args: dict, reply_text: str
+    ):
         """
         First call returns a function_call part; second call returns text.
         Returns (first_response, second_response).
@@ -594,7 +601,7 @@ class TestAgenticLoop(unittest.TestCase):
         return r1, r2
 
     def test_text_only_response_returns_immediately(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
         from app.agents.coach.agent import _run_agentic_loop
 
         chat = MagicMock()
@@ -614,9 +621,10 @@ class TestAgenticLoop(unittest.TestCase):
         chat = MagicMock()
         chat.send_message.side_effect = [r1, r2]
 
-        with patch("app.agents.coach.agent._TOOL_DISPATCH", {
-            "check_training_status": lambda user_id: "ACWR 1.0 sweet spot"
-        }):
+        with patch(
+            "app.agents.coach.agent._TOOL_DISPATCH",
+            {"check_training_status": lambda user_id: "ACWR 1.0 sweet spot"},
+        ):
             result = _run_agentic_loop(chat, "status?")
 
         self.assertIn("ACWR", result)
@@ -639,7 +647,11 @@ class TestAgenticLoop(unittest.TestCase):
         self.assertEqual(chat.send_message.call_count, 2)
 
     def test_dispatch_map_contains_all_tools(self):
-        from app.agents.coach.agent import _TOOL_DISPATCH, _TOOLS_READ_ONLY, _TOOLS_WRITE
+        from app.agents.coach.agent import (
+            _TOOL_DISPATCH,
+            _TOOLS_READ_ONLY,
+            _TOOLS_WRITE,
+        )
 
         all_tools = _TOOLS_READ_ONLY + _TOOLS_WRITE
         for tool_fn in all_tools:
@@ -650,12 +662,15 @@ class TestAgenticLoop(unittest.TestCase):
             )
 
     def test_write_keywords_trigger_write_tools(self):
-        from app.agents.coach.agent import _select_tools_for_message, _TOOLS_READ_ONLY, _TOOLS_WRITE
+        from app.agents.coach.agent import (
+            _select_tools_for_message,
+            _TOOLS_READ_ONLY,
+            _TOOLS_WRITE,
+        )
 
         write_len = len(_TOOLS_READ_ONLY) + len(_TOOLS_WRITE)
         for kw in ["lưu", "lập kế hoạch", "tạo giáo án", "lịch tập tuần này", "save"]:
             tools = _select_tools_for_message(kw)
             self.assertEqual(
-                len(tools), write_len,
-                f"Expected write tools for keyword '{kw}'"
+                len(tools), write_len, f"Expected write tools for keyword '{kw}'"
             )

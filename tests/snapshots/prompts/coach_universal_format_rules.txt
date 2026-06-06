@@ -1,0 +1,8 @@
+
+[QUY TẮC ĐỊNH DẠNG DÙNG CHUNG (STRAVA & EMAIL PLAIN-TEXT MODE)]
+Áp dụng KHI KHÔNG có platform-specific format rules:
+1. TUYỆT ĐỐI KHÔNG DÙNG KÝ TỰ MARKDOWN (*, **, #, ```) VÀ THẺ HTML. Nền tảng đích chỉ hỗ trợ Plain-text.
+2. TẠO ĐIỂM NHẤN BẰNG CHỮ IN HOA (Ví dụ: ZONE 4, VƯỢT CHỈ TIÊU) thay vì in đậm.
+3. Giữ nguyên các dải ký tự `-----------------------------` và `════════════════════════` như trong Cấu trúc yêu cầu.
+4. Mỗi ý chỉ dài 1-2 dòng, xuống dòng liên tục để dễ đọc trên thiết bị di động.
+5. KHÔNG bao gồm lập luận nội bộ (ACWR hiện tại, Giai đoạn hiện tại, Kết luận an toàn) vào nội dung xuất bản. Đây là bước suy luận nội bộ — KHÔNG xuất hiện trong văn bản cuối gửi lên Strava hoặc thiết bị.

@@ -79,6 +79,7 @@ from app.agents.coach.tools import (
     get_volume_summary,
 )
 from app.agents.coach.metrics_engine import build_run_metrics_block
+from app.agents._prompt_telemetry import log_prompt_metrics
 
 # [ARCHITECTURE UPDATE] Import Strict Data Contracts
 from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
@@ -117,8 +118,13 @@ def send_message_with_retry(chat_session, message, max_retries=3):
             )
             if any(token in error_msg for token in _RETRYABLE):
                 if attempt < max_retries - 1:
-                    _server_error = any(t in error_msg for t in ("503", "504", "DEADLINE_EXCEEDED", "Unavailable"))
-                    wait_time = min(5 * (2**attempt) if _server_error else 2**attempt, 60)
+                    _server_error = any(
+                        t in error_msg
+                        for t in ("503", "504", "DEADLINE_EXCEEDED", "Unavailable")
+                    )
+                    wait_time = min(
+                        5 * (2**attempt) if _server_error else 2**attempt, 60
+                    )
                     logger.warning(
                         f"[API RESILIENCE] Transient error ({error_msg[:80]}). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
                     )
@@ -170,7 +176,9 @@ def _run_agentic_loop(chat_session, initial_message: str, max_rounds: int = 5) -
             fc = part.function_call
             fn_name = fc.name
             fn_args = dict(fc.args) if fc.args else {}
-            logger.info(f"[AGENTIC] Executing tool '{fn_name}' args={list(fn_args.keys())}")
+            logger.info(
+                f"[AGENTIC] Executing tool '{fn_name}' args={list(fn_args.keys())}"
+            )
 
             fn_callable = _TOOL_DISPATCH.get(fn_name)
             if fn_callable is None:
@@ -513,6 +521,12 @@ def analyze_run_with_gemini(
     debug_log_prompt(
         "DEBUG STRAVA PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"
     )
+    log_prompt_metrics(
+        flow="coach.run_analysis",
+        system_inst=system_inst,
+        user_prompt=prompt,
+        model=config.get("model_name", "models/gemini-2.0-flash"),
+    )
 
     # 3. Call Gemini with Native Schema
     try:
@@ -645,6 +659,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         config.get("user_profile", ""),
         int(config.get("max_hr", 185)),
         int(config.get("rest_hr", 55)),
+        chat_format=True,
     )
 
     shared_context = get_shared_context_block(
@@ -682,6 +697,12 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
 
     debug_log_prompt(
         "DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"
+    )
+    log_prompt_metrics(
+        flow="coach.standup",
+        system_inst=system_inst,
+        user_prompt=prompt,
+        model=config.get("model_name", "models/gemini-2.0-flash"),
     )
 
     # 3. Execution (Resilience Pattern)
@@ -810,7 +831,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         send_telegram_msg(
             chat_id,
             "ℹ️ Chat trực tiếp với coach để điều chỉnh giáo án.\n"
-            "Ví dụ: \"Thứ Tư đổi thành nghỉ\", \"Giảm quãng đường Long Run xuống 18km\"",
+            'Ví dụ: "Thứ Tư đổi thành nghỉ", "Giảm quãng đường Long Run xuống 18km"',
         )
         return
 
@@ -891,7 +912,8 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     # Standard path uses full system prompt (zones, GCS rubric, tool discipline, ~2000 tokens).
     if intent == "fast":
         system_inst = build_core_system_instruction(
-            config.get("system_instruction", "")
+            config.get("system_instruction", ""),
+            chat_format=True,
         )
     else:
         system_inst = build_system_instruction(
@@ -899,6 +921,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             config.get("user_profile", ""),
             int(config.get("max_hr", 185)),
             int(config.get("rest_hr", 55)),
+            chat_format=True,
         )
 
     if intent != "fast":
@@ -923,6 +946,13 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     debug_log_prompt(
         "DEBUG CHAT INPUT",
         f"[SYSTEM]:\n{system_inst}\n[TASK_CONTEXT]:\n{task_prompt}\n[USER TEXT]: {text}",
+    )
+    log_prompt_metrics(
+        flow="coach.chat",
+        system_inst=system_inst,
+        user_prompt=f"{task_prompt}\n{text}",
+        intent=intent,
+        model=config.get("model_name", "models/gemini-2.0-flash"),
     )
 
     try:
@@ -977,6 +1007,14 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
                 config.get("user_profile", ""),
                 int(config.get("max_hr", 185)),
                 int(config.get("rest_hr", 55)),
+                chat_format=True,
+            )
+            log_prompt_metrics(
+                flow="coach.chat.retry",
+                system_inst=standard_inst,
+                user_prompt=f"{task_prompt}\n{text}",
+                intent="standard",
+                model=config.get("model_name", "models/gemini-2.0-flash"),
             )
             retry_session = client.chats.create(
                 model=config.get("model_name", "models/gemini-2.0-flash"),
@@ -1061,6 +1099,7 @@ def generate_weekly_reflection(config: dict):
         config.get("user_profile", ""),
         int(config.get("max_hr", 185)),
         int(config.get("rest_hr", 55)),
+        chat_format=True,
     )
 
     shared_context = get_shared_context_block(
@@ -1082,6 +1121,12 @@ def generate_weekly_reflection(config: dict):
     )
     debug_log_prompt(
         "DEBUG WEEKLY REFLECTION", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"
+    )
+    log_prompt_metrics(
+        flow="coach.weekly_reflection",
+        system_inst=system_inst,
+        user_prompt=prompt,
+        model=config.get("model_name", "models/gemini-2.0-flash"),
     )
 
     # 3. Call Gemini with Action Tool allowed
@@ -1174,6 +1219,12 @@ def extract_implicit_memory(user_id_str: str):
 
         cfg = load_config()
 
+        log_prompt_metrics(
+            flow="coach.memory_extraction",
+            system_inst="",
+            user_prompt=prompt,
+            model=cfg.get("model_name", "models/gemini-2.0-flash"),
+        )
         chat_session = client.chats.create(
             model=cfg.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(

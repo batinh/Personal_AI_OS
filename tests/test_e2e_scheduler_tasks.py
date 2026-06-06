@@ -13,14 +13,14 @@ Run:
 
 from __future__ import annotations
 
-import os
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 def _make_client():
     from app.main import app
     from fastapi.testclient import TestClient
+
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -30,7 +30,9 @@ class TestBackupTask(unittest.TestCase):
     @patch("shutil.make_archive")
     @patch("os.makedirs")
     @patch("os.listdir", return_value=[])
-    def test_backup_task_creates_zip_file(self, mock_listdir, mock_makedirs, mock_archive):
+    def test_backup_task_creates_zip_file(
+        self, mock_listdir, mock_makedirs, mock_archive
+    ):
         """perform_backup() must call make_archive targeting the backups/ directory."""
         from app.services.backup import perform_backup
 
@@ -75,7 +77,10 @@ class TestSetupCleanupTask(unittest.TestCase):
 
         mock_cleanup.assert_called_once()
 
-    @patch("app.services.scheduler.cleanup_stale_setup_sessions", side_effect=RuntimeError("db error"))
+    @patch(
+        "app.services.scheduler.cleanup_stale_setup_sessions",
+        side_effect=RuntimeError("db error"),
+    )
     def test_cleanup_exception_does_not_propagate(self, mock_cleanup):
         """task_cleanup_stale_setup() must catch exceptions — BackgroundScheduler requires this."""
         from app.services.scheduler import task_cleanup_stale_setup

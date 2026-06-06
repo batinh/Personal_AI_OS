@@ -85,10 +85,11 @@ class TestContentPreservation(unittest.TestCase):
 
     def _assert_no_content_loss(self, original: str, limit: int = 4000):
         import re
+
         chunks = split_html_preserving_tags(original, limit)
         # Strip whitespace for comparison (split points consume word-boundary spaces)
-        combined_flat = re.sub(r'\s+', '', _plain("".join(chunks)))
-        original_flat = re.sub(r'\s+', '', _plain(original))
+        combined_flat = re.sub(r"\s+", "", _plain("".join(chunks)))
+        original_flat = re.sub(r"\s+", "", _plain(original))
         self.assertEqual(
             combined_flat,
             original_flat,
@@ -213,10 +214,11 @@ class TestEdgeCases(unittest.TestCase):
     def test_single_token_longer_than_limit(self):
         """A single text token longer than limit must not lose content."""
         import re
+
         long_text = "Đây là đoạn văn rất dài: " + "A" * 5000
         chunks = split_html_preserving_tags(long_text, 1000)
-        combined_flat = re.sub(r'\s+', '', _plain("".join(chunks)))
-        original_flat = re.sub(r'\s+', '', _plain(long_text))
+        combined_flat = re.sub(r"\s+", "", _plain("".join(chunks)))
+        original_flat = re.sub(r"\s+", "", _plain(long_text))
         self.assertEqual(combined_flat, original_flat)
 
     def test_message_at_exact_limit(self):
@@ -236,12 +238,13 @@ class TestEdgeCases(unittest.TestCase):
 
     def test_vietnamese_text_preserved(self):
         import re
+
         text = "Chạy bộ 10km với nhịp tim < 150 bpm. Kết quả: tốt. " * 100
         # Escape for HTML context (simulate sanitize_md_to_tg_html output)
         safe_text = text.replace("<", "&lt;").replace(">", "&gt;")
         chunks = split_html_preserving_tags(safe_text, 1000)
-        combined_flat = re.sub(r'\s+', '', _plain("".join(chunks)))
-        original_flat = re.sub(r'\s+', '', _plain(safe_text))
+        combined_flat = re.sub(r"\s+", "", _plain("".join(chunks)))
+        original_flat = re.sub(r"\s+", "", _plain(safe_text))
         self.assertEqual(combined_flat, original_flat)
 
 
@@ -256,6 +259,7 @@ class TestContentLossGuarantee(unittest.TestCase):
 
     def _assert_no_loss(self, text: str, limit: int) -> None:
         import re
+
         chunks = split_html_preserving_tags(text, limit)
         combined = re.sub(r"\s+", "", _plain("".join(chunks)))
         original = re.sub(r"\s+", "", _plain(text))
@@ -278,7 +282,9 @@ class TestContentLossGuarantee(unittest.TestCase):
                 self._assert_no_loss(text, limit)
 
     def test_guarantee_oversized_single_paragraph_all_limits(self):
-        big_para = "<b>Phân tích chi tiết:</b> " + ("Đây là nội dung phân tích dài. " * 200)
+        big_para = "<b>Phân tích chi tiết:</b> " + (
+            "Đây là nội dung phân tích dài. " * 200
+        )
         for limit in self.LIMITS:
             with self.subTest(limit=limit):
                 self._assert_no_loss(big_para, limit)
@@ -287,7 +293,9 @@ class TestContentLossGuarantee(unittest.TestCase):
         text = (
             "## Buổi sáng hôm nay\n\n"
             + "**Cự ly:** 10km — <b>tốt</b> — HR < 150 bpm\n\n"
-            + "Phân tích: " + "nội dung " * 300 + "\n\n"
+            + "Phân tích: "
+            + "nội dung " * 300
+            + "\n\n"
             + '<a href="https://example.com/run">Xem chi tiết</a>'
         )
         for limit in self.LIMITS:
@@ -352,7 +360,6 @@ class TestSendTelegramMsgRateLimit(unittest.TestCase):
     @unittest.mock.patch("app.core.notification.time.sleep")
     @unittest.mock.patch("app.core.notification.requests.post")
     def test_retries_on_429(self, mock_post, mock_sleep):
-        import os
         import unittest.mock
 
         rate_limit_resp = unittest.mock.MagicMock()
@@ -395,6 +402,7 @@ class TestPlainTextChunking(unittest.TestCase):
 
     def _split(self, text: str, limit: int = 200) -> list[str]:
         from app.core.notification import _split_plain
+
         return _split_plain(text, limit)
 
     def test_oversized_single_token_is_force_split(self):
@@ -402,7 +410,9 @@ class TestPlainTextChunking(unittest.TestCase):
         big_token = "X" * 500
         chunks = self._split(big_token, limit=200)
         for chunk in chunks:
-            self.assertLessEqual(len(chunk), 200, f"Chunk exceeds limit: len={len(chunk)}")
+            self.assertLessEqual(
+                len(chunk), 200, f"Chunk exceeds limit: len={len(chunk)}"
+            )
         self.assertEqual("".join(chunks), big_token)
 
     def test_no_content_loss(self):

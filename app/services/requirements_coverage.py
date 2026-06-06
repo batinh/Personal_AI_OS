@@ -276,9 +276,7 @@ def _resolve_test_case(
     )
 
 
-def _extract_docstring(
-    test_file_path: Path, class_name: str, method_name: str
-) -> str:
+def _extract_docstring(test_file_path: Path, class_name: str, method_name: str) -> str:
     """Extract docstring from test file using AST.
 
     Returns:
@@ -315,9 +313,7 @@ def _extract_docstring(
 
             return ""
 
-    logger.warning(
-        f"Class {class_name} not found in {test_file_path.name}"
-    )
+    logger.warning(f"Class {class_name} not found in {test_file_path.name}")
     return ""
 
 

@@ -13,6 +13,7 @@ from app.core.database import (
 from app.agents.coach.utils import send_message_with_retry
 from app.agents.coach.prompts import build_memory_extraction_prompt
 from app.core.schemas import MemoryExtractionResult
+from app.agents._prompt_telemetry import log_prompt_metrics
 
 from app.core.logging_conf import get_module_logger
 
@@ -61,6 +62,12 @@ def extract_implicit_memory(user_id_str: str):
 
         cfg = load_config()
 
+        log_prompt_metrics(
+            flow="coach.flows.memory_extraction",
+            system_inst="",
+            user_prompt=prompt,
+            model=cfg.get("model_name", "models/gemini-2.0-flash"),
+        )
         chat_session = client.chats.create(
             model=cfg.get("model_name", "models/gemini-2.0-flash"),
             config=types.GenerateContentConfig(

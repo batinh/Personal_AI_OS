@@ -1,0 +1,14 @@
+{
+    "interest_profile": {
+        "AI & Công nghệ": 9,
+        "Kinh tế Việt Nam": 7,
+        "Chạy bộ thể thao": 8,
+        "Crypto": 4
+    },
+    "date_str": "04/06/2026",
+    "memory": {
+        "liked_topics": ["LLM agents", "Open source"],
+        "disliked_topics": ["Sportbike racing"],
+        "extra_notes": "Thích tin có data và biểu đồ."
+    }
+}

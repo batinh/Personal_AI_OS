@@ -123,7 +123,9 @@ class GarminClient:
                 logger.info("[GARMIN] Session restored from OAuth token (no SSO)")
                 return client
             except Exception as e:
-                logger.warning(f"[GARMIN] OAuth token restore failed ({e}), trying other methods")
+                logger.warning(
+                    f"[GARMIN] OAuth token restore failed ({e}), trying other methods"
+                )
 
         client = Garmin(self._email, self._password)
 
@@ -300,9 +302,14 @@ class GarminClient:
             timeout_sec = min(timeout_sec, 15)  # token path is fast; cap at 15s
 
         if not has_oauth_token() and not self._email:
-            return False, "Chưa có OAuth token hoặc credentials. Tải token từ script local."
+            return (
+                False,
+                "Chưa có OAuth token hoặc credentials. Tải token từ script local.",
+            )
 
-        logger.info(f"[GARMIN] test_connection start — has_token={has_oauth_token()} email={self._email[:3] if self._email else '(none)'}*** timeout={timeout_sec}s")
+        logger.info(
+            f"[GARMIN] test_connection start — has_token={has_oauth_token()} email={self._email[:3] if self._email else '(none)'}*** timeout={timeout_sec}s"
+        )
 
         def _do_connect() -> str:
             client = self._get_client()
@@ -317,8 +324,13 @@ class GarminClient:
             logger.info(f"[GARMIN] test_connection success — user={name}")
             return True, ""
         except concurrent.futures.TimeoutError:
-            logger.warning(f"[GARMIN] test_connection timed out after {timeout_sec}s — Garmin is blocking server IP")
-            return False, f"Kết nối timeout sau {timeout_sec}s — Garmin đang giới hạn server IP. Dùng env vars GARMIN_EMAIL/GARMIN_PASSWORD hoặc thử lại sau."
+            logger.warning(
+                f"[GARMIN] test_connection timed out after {timeout_sec}s — Garmin is blocking server IP"
+            )
+            return (
+                False,
+                f"Kết nối timeout sau {timeout_sec}s — Garmin đang giới hạn server IP. Dùng env vars GARMIN_EMAIL/GARMIN_PASSWORD hoặc thử lại sau.",
+            )
         except Exception as e:
             logger.error(f"[GARMIN] test_connection failed: {e}")
             return False, str(e)

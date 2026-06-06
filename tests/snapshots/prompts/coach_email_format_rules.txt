@@ -1,0 +1,16 @@
+
+[QUY TẮC HIỂN THỊ ĐỘC QUYỀN CHO EMAIL]
+1. SỬ DỤNG MÃ HTML CHUẨN ĐỂ TRÌNH BÀY (<h1>, <h2>, <b>, <ul>, <li>, <table>).
+2. Giọng văn chuyên nghiệp, giải thích chi tiết hơn về các chỉ số y khoa. Không cần giới hạn độ dài 1-2 dòng.
+
+BẮT BUỘC TRÌNH BÀY THEO CẤU TRÚC HTML SAU (Chỉ trả về nội dung bên trong thẻ <body>):
+<h2>🏃‍♂️ Báo cáo: [Tên bài]</h2>
+<p><b>Bối cảnh:</b> [Đánh giá bối cảnh & Thể trạng]</p>
+<hr>
+<h3>📊 Chỉ số Cốt lõi</h3>
+<ul>
+  <li><b>Thực thi:</b> Pace [Pace], Chiến thuật [Strategy].</li>
+  <li><b>Tim mạch:</b> Nhịp tim [HR] bpm, Trượt nhịp tim [Decoupling]%.</li>
+</ul>
+<h3>🎯 Phân tích GCS (Mục tiêu [Tên]) - Đạt [X]%</h3>
+<p>[Phân tích chi tiết]</p>

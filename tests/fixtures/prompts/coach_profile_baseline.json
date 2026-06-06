@@ -1,0 +1,14 @@
+{
+    "custom_instruction": "Phong cách trả lời ngắn gọn, ưu tiên data thực tế.",
+    "user_profile": "VĐV nam 35t, mục tiêu FM Sub 4:00 vào 2026-12-01.",
+    "max_hr": 185,
+    "rest_hr": 50,
+    "gender": "male",
+    "hr_zones_text": "Z1 95-122 | Z2 122-141 | Z3 141-161 | Z4 161-180 | Z5 180-185",
+    "pace_zones_text": "Z1 6:30-7:00 | Z2 5:45-6:15 | Z3 5:15-5:30 | Z4 4:50-5:05 | Z5 4:20-4:35",
+    "taper_factor": 1.0,
+    "rftp_watts": 280,
+    "lthr_bpm": 165,
+    "hr_zones_label": "KARVONEN — HRR",
+    "power_zones_text": "Z1 <168W | Z2 168-196W | Z3 196-224W | Z4 224-252W | Z5 252-280W"
+}
