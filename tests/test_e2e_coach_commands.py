@@ -418,5 +418,51 @@ class TestTelegramWebhookRobustness(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
 
 
+class TestUpcomingMondayHelper(unittest.TestCase):
+    """Unit tests for _upcoming_monday() — the week_start fix for Sunday scheduling.
+
+    Root cause: scheduler runs Sunday 20:30; _current_week_monday() returned the
+    ENDING week's Monday, so plans were stored for the wrong week and the Monday
+    morning briefing couldn't find them.  _upcoming_monday() fixes this.
+    """
+
+    def _call(self, fake_date) -> str:
+        from app.agents.coach.flows.weekly_plan_generation import _upcoming_monday
+
+        with patch(
+            "app.agents.coach.flows.weekly_plan_generation.date"
+        ) as mock_date:
+            mock_date.today.return_value = fake_date
+            return _upcoming_monday()
+
+    def test_sunday_returns_next_monday(self):
+        import datetime
+
+        sunday = datetime.date(2026, 6, 14)  # Sun June 14
+        self.assertEqual(sunday.weekday(), 6)
+        self.assertEqual(self._call(sunday), "2026-06-15")
+
+    def test_monday_returns_this_monday(self):
+        import datetime
+
+        monday = datetime.date(2026, 6, 15)  # Mon June 15
+        self.assertEqual(monday.weekday(), 0)
+        self.assertEqual(self._call(monday), "2026-06-15")
+
+    def test_wednesday_returns_this_monday(self):
+        import datetime
+
+        wednesday = datetime.date(2026, 6, 17)  # Wed June 17
+        self.assertEqual(wednesday.weekday(), 2)
+        self.assertEqual(self._call(wednesday), "2026-06-15")
+
+    def test_saturday_returns_this_monday(self):
+        import datetime
+
+        saturday = datetime.date(2026, 6, 20)  # Sat June 20
+        self.assertEqual(saturday.weekday(), 5)
+        self.assertEqual(self._call(saturday), "2026-06-15")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

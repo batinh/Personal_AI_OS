@@ -28,6 +28,18 @@ def _current_week_monday() -> str:
     return (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
 
 
+def _upcoming_monday() -> str:
+    """Return the Monday of the week that is about to start.
+
+    On Sunday the scheduler generates next week's plan, so we return next Monday.
+    Any other day of the week we return this week's Monday (plan is for the current week).
+    """
+    today = date.today()
+    if today.weekday() == 6:  # Sunday → next Monday is tomorrow
+        return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    return (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+
+
 def _calculate_acwr(user_id: str) -> float:
     """Compute ACWR (7-day / 28-day load ratio) from run_activities."""
     try:
@@ -153,7 +165,7 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
     Stores the result in weekly_plans as 'pending'.
     Returns None if plan should be skipped (sick, duplicate, etc.).
     """
-    week_start = _current_week_monday()
+    week_start = _upcoming_monday()
 
     existing = get_pending_weekly_plan(user_id, week_start)
     if existing or has_active_plan_this_week(user_id, week_start):
