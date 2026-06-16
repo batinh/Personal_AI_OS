@@ -10,6 +10,7 @@ from app.core.database import (
     save_message,
     get_recent_runs_log,
     get_all_active_memories,
+    get_planned_weekly_volume,
 )
 from app.agents.coach.utils import (
     calculate_acwr,
@@ -72,6 +73,24 @@ def generate_weekly_reflection(config: dict):
     # Fetch recent runs directly from DB (No AI Tool needed)
     recent_logs = get_recent_runs_log(user_id_str)
 
+    # Fetch planned vs. actual volume for the current week
+    days_since_monday = now.weekday()
+    current_week_start = (now - timedelta(days=days_since_monday)).strftime("%Y-%m-%d")
+    planned_volume = get_planned_weekly_volume(user_id_str, current_week_start)
+    volume_adherence_text = ""
+    if planned_volume > 0:
+        diff = actual_volume - planned_volume
+        pct = (diff / planned_volume * 100) if planned_volume else 0
+        direction = "vượt" if diff > 0 else "thiếu"
+        volume_adherence_text = (
+            f"Kế hoạch: {planned_volume:.1f}km | Thực tế: {actual_volume:.1f}km | "
+            f"{'±' if diff == 0 else direction} {abs(pct):.0f}%"
+        )
+    else:
+        volume_adherence_text = (
+            f"Thực tế: {actual_volume:.1f}km (không có giáo án tuần này)"
+        )
+
     # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
     memories = get_all_active_memories(user_id_str)
 
@@ -112,12 +131,12 @@ def generate_weekly_reflection(config: dict):
         weekly_decision_context,
     )
 
-    # [NEW FIX] Inject active_memories_text into the builder
     prompt = build_weekly_reflection_prompt(
         shared_context,
         recent_logs,
         next_monday_str,
         active_memories=active_memories_text,
+        volume_adherence=volume_adherence_text,
     )
     debug_log_prompt(
         "DEBUG WEEKLY REFLECTION", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"

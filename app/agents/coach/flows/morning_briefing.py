@@ -17,6 +17,7 @@ from app.core.database import (
     has_active_plan_this_week,
     get_athlete_state,
     get_garmin_daily_metrics,
+    get_pending_weekly_plan,
 )
 from app.agents.coach.utils import (
     calculate_acwr,
@@ -244,6 +245,11 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
                 )
                 return
 
+            # Check for pending plan (not yet accepted)
+            days_since_monday = now.weekday()
+            week_start = (now - timedelta(days=days_since_monday)).strftime("%Y-%m-%d")
+            pending_plan = get_pending_weekly_plan(user_id_str, week_start)
+
             # Compute daily suggestion (pure function, no LLM)
             garmin_data = get_garmin_daily_metrics(
                 user_id_str, now.strftime("%Y-%m-%d")
@@ -262,11 +268,12 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
                 athlete_state=athlete_state,
                 day_of_week=now.weekday(),
                 days_since_last_run=days_since_last,
+                today_plan=today_plan,
             )
 
             # Format suggestion for briefing
             suggestion_text = format_daily_suggestion_for_briefing(
-                suggestion, garmin_data
+                suggestion, garmin_data, has_pending_plan=bool(pending_plan)
             )
             reply = (
                 f"🌅 Chào buổi sáng! Hôm nay ({now.strftime('%A')})\n\n"

@@ -79,6 +79,30 @@ def analyze_run_with_gemini(
         else "Chạy tự do."
     )
 
+    # Compute plan-vs-actual deviation for coach awareness
+    actual_km = meta_data.get("distance_km") or meta_data.get("distance", 0) / 1000
+    plan_deviation_note = ""
+    if today_plan:
+        planned_km = today_plan.get("target_distance_km")
+        planned_type = today_plan.get("workout_type", "")
+        actual_type = meta_data.get("workout_type_detected", "")
+        if planned_km and actual_km:
+            delta_pct = (actual_km - planned_km) / planned_km * 100
+            if abs(delta_pct) >= 15:
+                direction = "vượt" if delta_pct > 0 else "thiếu"
+                plan_deviation_note = (
+                    f"\n⚠️ [SO SÁNH KẾ HOẠCH VS THỰC TẾ] "
+                    f"Kế hoạch {planned_km}km, thực tế {actual_km:.1f}km "
+                    f"({direction} {abs(delta_pct):.0f}%). "
+                    "Hãy đánh giá tác động đến ACWR và đề xuất điều chỉnh nếu cần."
+                )
+        if planned_type and actual_type and planned_type.lower() != actual_type.lower():
+            plan_deviation_note += (
+                f"\n📋 Loại bài: kế hoạch '{planned_type}', thực tế '{actual_type}'."
+            )
+    if plan_deviation_note:
+        plan_context += plan_deviation_note
+
     # 2. BUILD PROMPT (Lego Architecture)
     max_hr = int(config.get("max_hr", 185))
     rest_hr = int(config.get("rest_hr", 55))

@@ -204,6 +204,26 @@ def init_db():
             )
         """)
 
+    # [MIGRATION] Add extended columns to training_plans if missing (added in weekly_plan_generation phase)
+    _training_plan_migrations = [
+        "ALTER TABLE training_plans ADD COLUMN workout_type TEXT",
+        "ALTER TABLE training_plans ADD COLUMN target_distance_km REAL",
+        "ALTER TABLE training_plans ADD COLUMN target_duration_min REAL",
+        "ALTER TABLE training_plans ADD COLUMN target_pace_range TEXT",
+        "ALTER TABLE training_plans ADD COLUMN target_hr_zone TEXT",
+        "ALTER TABLE training_plans ADD COLUMN target_hr_range TEXT",
+        "ALTER TABLE training_plans ADD COLUMN rpe_target INTEGER",
+        "ALTER TABLE training_plans ADD COLUMN nutrition_alert TEXT",
+        "ALTER TABLE training_plans ADD COLUMN weekly_plan_id INTEGER",
+        "ALTER TABLE training_plans ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE training_plans ADD COLUMN updated_at TEXT DEFAULT CURRENT_TIMESTAMP",
+    ]
+    for _sql in _training_plan_migrations:
+        try:
+            c.execute(_sql)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     # 5. [SPRINT A] Table: user_weekly_targets (Ledger Pattern for Weekly Volume)
     c.execute("""
         CREATE TABLE IF NOT EXISTS user_weekly_targets (
@@ -966,6 +986,28 @@ def get_plan_for_date(user_id: str, target_date: str) -> dict:
     except Exception as e:
         logger.error(f"[DB_ERROR] get_plan_for_date Error: {e}")
         return None
+
+
+def get_planned_weekly_volume(user_id: str, week_start_date: str) -> float:
+    """Return total planned km from training_plans for the given week (Mon–Sun)."""
+    try:
+        from datetime import date, timedelta
+
+        week_start = date.fromisoformat(week_start_date)
+        week_end = (week_start + timedelta(days=6)).isoformat()
+        with get_db() as conn:
+            row = conn.execute(
+                """
+                SELECT COALESCE(SUM(target_distance_km), 0) as total
+                FROM training_plans
+                WHERE user_id=? AND date>=? AND date<=?
+                """,
+                (user_id, week_start_date, week_end),
+            ).fetchone()
+            return float(row[0]) if row else 0.0
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_planned_weekly_volume failed: {e}")
+        return 0.0
 
 
 def update_plan_status(user_id: str, target_date: str, status: str):

@@ -63,6 +63,7 @@ def compute_daily_suggestion(
     athlete_state: str,
     day_of_week: int = 0,
     days_since_last_run: int = 1,
+    today_plan: Optional[dict] = None,
 ) -> dict:
     """
     Pure function — no I/O, no LLM, deterministic.
@@ -81,6 +82,8 @@ def compute_daily_suggestion(
     9. readiness 60–79 → Easy
     10. fallback → Easy
     """
+    planned_type = today_plan.get("workout_type") if today_plan else None
+
     if athlete_state in ("sick", "injured"):
         s = dict(_SUGGESTION_TYPES["rest"])
         if athlete_state == "sick":
@@ -153,11 +156,20 @@ def compute_daily_suggestion(
 
     s = dict(_SUGGESTION_TYPES["easy"])
     s["reason"] = f"readiness={eff_readiness} (good/default)"
+
+    if planned_type and planned_type not in ("Rest", "Recovery"):
+        s["plan_conflict"] = (
+            f"Giáo án: {today_plan.get('workout_title', planned_type)}. "
+            "Dữ liệu cơ thể hôm nay cho thấy nên chạy nhẹ hơn — coach sẽ điều chỉnh trong buổi sáng."
+        )
+
     return s
 
 
 def format_daily_suggestion_for_briefing(
-    suggestion: dict, garmin_data: Optional[dict] = None
+    suggestion: dict,
+    garmin_data: Optional[dict] = None,
+    has_pending_plan: bool = False,
 ) -> str:
     """Format a daily suggestion dict into a Vietnamese Telegram message block."""
     lines = ["💡 <b>Gợi ý hôm nay (chưa có giáo án):</b>"]
@@ -167,6 +179,7 @@ def format_daily_suggestion_for_briefing(
     target_km = suggestion.get("target_km")
     pace_zone = suggestion.get("target_pace_zone")
     rpe = suggestion.get("rpe_target")
+    plan_conflict = suggestion.get("plan_conflict")
 
     details = []
     if target_km:
@@ -185,6 +198,12 @@ def format_daily_suggestion_for_briefing(
     if desc:
         lines.append(f"   {desc}")
 
+    if plan_conflict:
+        lines.append(f"\n⚠️ {plan_conflict}")
+
     lines.append("")
-    lines.append("ℹ️ Chưa có giáo án tuần này. Dùng /plan để tạo giáo án AI ngay.")
+    if has_pending_plan:
+        lines.append("⏳ Anh có giáo án đang chờ xác nhận. Dùng /accept để bắt đầu.")
+    else:
+        lines.append("ℹ️ Chưa có giáo án tuần này. Dùng /plan để tạo giáo án AI ngay.")
     return "\n".join(lines)

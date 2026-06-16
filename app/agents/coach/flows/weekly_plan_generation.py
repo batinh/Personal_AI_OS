@@ -28,6 +28,18 @@ def _current_week_monday() -> str:
     return (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
 
 
+def _upcoming_monday() -> str:
+    """Return the Monday of the week that is about to start.
+
+    On Sunday the scheduler generates next week's plan, so we return next Monday.
+    Any other day of the week we return this week's Monday (plan is for the current week).
+    """
+    today = date.today()
+    if today.weekday() == 6:  # Sunday → next Monday is tomorrow
+        return (today + timedelta(days=1)).strftime("%Y-%m-%d")
+    return (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+
+
 def _calculate_acwr(user_id: str) -> float:
     """Compute ACWR (7-day / 28-day load ratio) from run_activities."""
     try:
@@ -153,7 +165,7 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
     Stores the result in weekly_plans as 'pending'.
     Returns None if plan should be skipped (sick, duplicate, etc.).
     """
-    week_start = _current_week_monday()
+    week_start = _upcoming_monday()
 
     existing = get_pending_weekly_plan(user_id, week_start)
     if existing or has_active_plan_this_week(user_id, week_start):
@@ -361,12 +373,35 @@ def accept_weekly_plan(user_id: str, week_start: Optional[str] = None) -> str:
         logger.error(f"[WEEKLY_PLAN] Failed to parse plan for accept: {e}")
         return "❌ Dữ liệu giáo án bị lỗi. Dùng /plan để tạo lại."
 
+    # Validate plan volume against current ACWR ceiling before writing
+    current_acwr = _calculate_acwr(user_id)
+    try:
+        with get_db() as conn:
+            weekly_km_row = conn.execute(
+                "SELECT COALESCE(SUM(distance_km), 0) FROM run_activities WHERE user_id=? AND start_date >= date('now','-7 days')",
+                (user_id,),
+            ).fetchone()
+        current_weekly_km = float(weekly_km_row[0]) if weekly_km_row else 0.0
+    except Exception:
+        current_weekly_km = 0.0
+
+    phase = "Build"
+    max_allowed_km = _compute_max_weekly_km(current_acwr, current_weekly_km, phase)
+    acwr_warning = ""
+    if result.week_total_km > max_allowed_km and max_allowed_km > 0:
+        acwr_warning = (
+            f"\n\n⚠️ <b>Cảnh báo ACWR:</b> Giáo án {result.week_total_km}km vượt ngưỡng an toàn "
+            f"({max_allowed_km:.0f}km dựa trên ACWR={current_acwr:.2f}). "
+            "Chat với coach để điều chỉnh nếu cảm giác mệt."
+        )
+
     _write_plan_to_training_plans(user_id, result, plan_row["id"])
     update_weekly_plan_status(user_id, week_start, "accepted")
     logger.info(f"[WEEKLY_PLAN] Plan accepted for {user_id}/{week_start}")
     return (
         f"✅ <b>Giáo án tuần đã được xác nhận!</b>\n"
         f"📊 {result.week_total_km}km trong 7 ngày. Chúc anh tập tốt! 💪"
+        f"{acwr_warning}"
     )
 
 
