@@ -429,9 +429,7 @@ class TestUpcomingMondayHelper(unittest.TestCase):
     def _call(self, fake_date) -> str:
         from app.agents.coach.flows.weekly_plan_generation import _upcoming_monday
 
-        with patch(
-            "app.agents.coach.flows.weekly_plan_generation.date"
-        ) as mock_date:
+        with patch("app.agents.coach.flows.weekly_plan_generation.date") as mock_date:
             mock_date.today.return_value = fake_date
             return _upcoming_monday()
 
