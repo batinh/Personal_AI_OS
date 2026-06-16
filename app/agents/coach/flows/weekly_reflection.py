@@ -87,7 +87,9 @@ def generate_weekly_reflection(config: dict):
             f"{'±' if diff == 0 else direction} {abs(pct):.0f}%"
         )
     else:
-        volume_adherence_text = f"Thực tế: {actual_volume:.1f}km (không có giáo án tuần này)"
+        volume_adherence_text = (
+            f"Thực tế: {actual_volume:.1f}km (không có giáo án tuần này)"
+        )
 
     # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
     memories = get_all_active_memories(user_id_str)

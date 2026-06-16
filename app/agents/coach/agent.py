@@ -934,7 +934,9 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             actual_volume,
             weekly_decision_context,
         )
-        today_plan_row = get_plan_for_date(str(chat_id), datetime.now(tz).strftime("%Y-%m-%d"))
+        today_plan_row = get_plan_for_date(
+            str(chat_id), datetime.now(tz).strftime("%Y-%m-%d")
+        )
         today_plan_text = (
             f"{today_plan_row['workout_title']}: {today_plan_row['description']}"
             if today_plan_row
