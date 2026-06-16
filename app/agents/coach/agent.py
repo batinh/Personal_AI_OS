@@ -934,10 +934,17 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             actual_volume,
             weekly_decision_context,
         )
+        today_plan_row = get_plan_for_date(str(chat_id), datetime.now(tz).strftime("%Y-%m-%d"))
+        today_plan_text = (
+            f"{today_plan_row['workout_title']}: {today_plan_row['description']}"
+            if today_plan_row
+            else ""
+        )
         task_prompt = build_chat_prompt(
             shared_context,
             get_upcoming_plans(chat_id, limit_days=7),
             active_memories_text,
+            today_plan_text=today_plan_text,
         )
     else:
         # Fast path: skip heavy context — casual chat doesn't need training block

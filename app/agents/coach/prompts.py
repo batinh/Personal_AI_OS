@@ -354,14 +354,20 @@ UNIVERSAL_FORMAT_RULES = """
 # 🏗️ LAYER 5: TASK BUILDERS (FINAL PROMPT ASSEMBLY)
 # ==========================================
 def build_chat_prompt(
-    shared_context: str, current_plans: str, active_memories: str = ""
+    shared_context: str,
+    current_plans: str,
+    active_memories: str = "",
+    today_plan_text: str = "",
 ) -> str:
     """Flow 1: Handle Telegram Chat.
     Fast path passes empty shared_context/current_plans to keep the prompt minimal.
+    today_plan_text: explicit block for today's specific workout (separate from 7-day lookahead).
     """
     parts = []
     if shared_context:
         parts.append(shared_context)
+    if today_plan_text:
+        parts.append(f"[GIÁO ÁN HÔM NAY]\n{today_plan_text}")
     if current_plans:
         parts.append(f"[GIÁO ÁN SẮP TỚI]\n{current_plans}")
     if active_memories:
@@ -551,6 +557,7 @@ def build_weekly_reflection_prompt(
     recent_logs: str,
     next_monday_str: str,
     active_memories: str = "Không có ghi chú đặc biệt.",
+    volume_adherence: str = "",
 ) -> str:
     """
     Builds the modular prompt for the Sunday Weekly Reflection Cronjob.
@@ -561,9 +568,14 @@ def build_weekly_reflection_prompt(
         next_monday_str=next_monday_str
     )
 
+    adherence_block = (
+        f"\n[KỊCH BẢN TUẦN NÀY: KẾ HOẠCH VS THỰC TẾ]\n{volume_adherence}\n"
+        if volume_adherence
+        else ""
+    )
     return f"""
 {shared_context}
-
+{adherence_block}
 [LỊCH SỬ CÁC BÀI CHẠY GẦN NHẤT]
 {recent_logs}
 
