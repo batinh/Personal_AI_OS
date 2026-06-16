@@ -40,6 +40,7 @@ chroma_cache/
 data/*.json
 data/*.sqlite
 data/streams/
+app/data/*.json
 backups/
 
 # --- Snapshot / generated files ---
