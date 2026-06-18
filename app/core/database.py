@@ -1845,17 +1845,37 @@ def update_weekly_plan_status(
 
 
 def has_active_plan_this_week(user_id: str, week_start_date: str = "") -> bool:
-    """Return True if there is an accepted plan for the given week (defaults to current week Monday)."""
+    """Return True if there is an accepted plan for the given week (defaults to current week Monday).
+
+    Checks two sources:
+    1. weekly_plans table (approval flow — AI proposes, user accepts)
+    2. training_plans table (direct save via save_bulk_workout_plan)
+    """
     if not week_start_date:
         from datetime import date, timedelta
 
         today = date.today()
         week_start_date = (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")
+
+    from datetime import date as date_cls, timedelta
+
+    week_end_date = (
+        date_cls.fromisoformat(week_start_date) + timedelta(days=6)
+    ).strftime("%Y-%m-%d")
+
     try:
         with get_db() as conn:
             row = conn.execute(
                 "SELECT 1 FROM weekly_plans WHERE user_id=? AND week_start_date=? AND status='accepted' LIMIT 1",
                 (user_id, week_start_date),
+            ).fetchone()
+            if row:
+                return True
+
+            # Also check training_plans populated directly via save_bulk_workout_plan
+            row = conn.execute(
+                "SELECT 1 FROM training_plans WHERE user_id=? AND date >= ? AND date <= ? LIMIT 1",
+                (user_id, week_start_date, week_end_date),
             ).fetchone()
             return row is not None
     except Exception as e:

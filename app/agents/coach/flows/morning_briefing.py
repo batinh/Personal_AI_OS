@@ -75,10 +75,10 @@ def _get_recent_runs(user_id: str, days: int = 7) -> list:
             since_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
             cursor.execute(
                 """
-                SELECT date, distance_km, workout_type_detected, gcs_score, rpe_score
+                SELECT start_date as date, distance_km, workout_type_detected, gcs_score
                 FROM run_activities
-                WHERE user_id = ? AND date >= ?
-                ORDER BY date DESC
+                WHERE user_id = ? AND start_date >= ?
+                ORDER BY start_date DESC
                 """,
                 (user_id, since_date),
             )
@@ -100,7 +100,7 @@ def _days_since_last_run(user_id: str) -> int:
             cursor = conn.cursor()
 
             cursor.execute(
-                "SELECT date FROM run_activities WHERE user_id = ? ORDER BY date DESC LIMIT 1",
+                "SELECT start_date as date FROM run_activities WHERE user_id = ? ORDER BY start_date DESC LIMIT 1",
                 (user_id,),
             )
             row = cursor.fetchone()
@@ -108,7 +108,7 @@ def _days_since_last_run(user_id: str) -> int:
             if not row:
                 return 999  # No runs recorded
 
-            last_run_date = datetime.strptime(row["date"], "%Y-%m-%d").date()
+            last_run_date = datetime.strptime(row["date"][:10], "%Y-%m-%d").date()
             today = datetime.now().date()
             delta = today - last_run_date
             return delta.days
