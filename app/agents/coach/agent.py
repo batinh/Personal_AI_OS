@@ -518,13 +518,13 @@ def analyze_run_with_gemini(
         flow="coach.run_analysis",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.0-flash"),
+        model=config.get("model_name", "models/gemini-2.5-flash"),
     )
 
     # 3. Call Gemini with Native Schema
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-2.5-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,  # Explicit System Instruction separation
                 temperature=0.7,
@@ -534,6 +534,7 @@ def analyze_run_with_gemini(
                     update_todays_plan,
                     set_actual_weekly_target,
                 ],  # Grant AI permission to adjust schedule post-run
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         response = send_message_with_retry(chat_session, prompt)
@@ -789,7 +790,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         system_inst=system_inst,
         user_prompt=f"{task_prompt}\n{text}",
         intent=intent,
-        model=config.get("model_name", "models/gemini-2.0-flash"),
+        model=config.get("model_name", "models/gemini-2.5-flash"),
     )
 
     try:
@@ -822,12 +823,13 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         # Fast path caps output for greetings; standard path needs room for full answers
         max_tokens = 512 if intent == "fast" else 2000
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-2.5-flash"),
             history=formatted_history[:-1],  # Pass previous history
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 max_output_tokens=max_tokens,
                 tools=selected_tools,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         reply = _run_agentic_loop(
@@ -851,15 +853,16 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
                 system_inst=standard_inst,
                 user_prompt=f"{task_prompt}\n{text}",
                 intent="standard",
-                model=config.get("model_name", "models/gemini-2.0-flash"),
+                model=config.get("model_name", "models/gemini-2.5-flash"),
             )
             retry_session = client.chats.create(
-                model=config.get("model_name", "models/gemini-2.0-flash"),
+                model=config.get("model_name", "models/gemini-2.5-flash"),
                 history=formatted_history[:-1],
                 config=types.GenerateContentConfig(
                     system_instruction=standard_inst,
                     max_output_tokens=1200,
                     tools=selected_tools,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             reply = _run_agentic_loop(
@@ -963,19 +966,20 @@ def generate_weekly_reflection(config: dict):
         flow="coach.weekly_reflection",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.0-flash"),
+        model=config.get("model_name", "models/gemini-2.5-flash"),
     )
 
     # 3. Call Gemini with Action Tool allowed
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-2.5-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,
                 tools=[
                     set_actual_weekly_target
                 ],  # Crucial: Let AI act on its reflection
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
 
@@ -1060,14 +1064,15 @@ def extract_implicit_memory(user_id_str: str):
             flow="coach.memory_extraction",
             system_inst="",
             user_prompt=prompt,
-            model=cfg.get("model_name", "models/gemini-2.0-flash"),
+            model=cfg.get("model_name", "models/gemini-2.5-flash"),
         )
         chat_session = client.chats.create(
-            model=cfg.get("model_name", "models/gemini-2.0-flash"),
+            model=cfg.get("model_name", "models/gemini-2.5-flash"),
             config=types.GenerateContentConfig(
                 temperature=0.2,  # Lowered temperature to minimize hallucinations
                 response_mime_type="application/json",
                 response_schema=MemoryExtractionResult,  # [ARCHITECTURE UPDATE] Strict Pydantic Enforcement
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         response = send_message_with_retry(chat_session, prompt)

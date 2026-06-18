@@ -295,11 +295,11 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         flow="coach.flows.morning_briefing",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.0-flash"),
+        model=config.get("model_name", "models/gemini-2.5-flash"),
     )
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-2.5-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 # [FIX BUG] Cung cấp đầy đủ các Tool mà System Prompt yêu cầu để tránh KeyError
@@ -312,6 +312,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
                     get_volume_summary,
                     get_metric_trend,
                 ],
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         response = send_message_with_retry(chat_session, prompt)

@@ -270,6 +270,7 @@ def _call_gemini_for_plan(config: dict, prompt: str) -> Optional[WeeklyPlanResul
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=WeeklyPlanResult,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         result = WeeklyPlanResult.model_validate_json(response.text)

@@ -66,14 +66,15 @@ def extract_implicit_memory(user_id_str: str):
             flow="coach.flows.memory_extraction",
             system_inst="",
             user_prompt=prompt,
-            model=cfg.get("model_name", "models/gemini-2.0-flash"),
+            model=cfg.get("model_name", "models/gemini-2.5-flash"),
         )
         chat_session = client.chats.create(
-            model=cfg.get("model_name", "models/gemini-2.0-flash"),
+            model=cfg.get("model_name", "models/gemini-2.5-flash"),
             config=types.GenerateContentConfig(
                 temperature=0.2,  # Lowered temperature to minimize hallucinations
                 response_mime_type="application/json",
                 response_schema=MemoryExtractionResult,  # [ARCHITECTURE UPDATE] Strict Pydantic Enforcement
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         response = send_message_with_retry(chat_session, prompt)

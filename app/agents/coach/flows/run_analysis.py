@@ -161,13 +161,13 @@ def analyze_run_with_gemini(
         flow="coach.flows.run_analysis",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.0-flash"),
+        model=config.get("model_name", "models/gemini-2.5-flash"),
     )
 
     # 3. Call Gemini with Native Schema
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-2.5-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,  # Explicit System Instruction separation
                 temperature=0.7,
@@ -177,6 +177,7 @@ def analyze_run_with_gemini(
                     update_todays_plan,
                     set_actual_weekly_target,
                 ],  # Grant AI permission to adjust schedule post-run
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
         response = send_message_with_retry(chat_session, prompt)

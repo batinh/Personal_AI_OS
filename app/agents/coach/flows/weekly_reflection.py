@@ -145,13 +145,13 @@ def generate_weekly_reflection(config: dict):
         flow="coach.flows.weekly_reflection",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.0-flash"),
+        model=config.get("model_name", "models/gemini-2.5-flash"),
     )
 
     # 3. Call Gemini with Action Tool allowed
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.0-flash"),
+            model=config.get("model_name", "models/gemini-2.5-flash"),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,
@@ -161,6 +161,7 @@ def generate_weekly_reflection(config: dict):
                     get_volume_summary,
                     get_metric_trend,
                 ],
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
 
