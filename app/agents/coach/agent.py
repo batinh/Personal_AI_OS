@@ -24,23 +24,16 @@ from app.core.database import (
     get_plan_for_date,
     update_plan_status,
     get_weekly_volume,
-    get_runs_in_last_days,
     insert_memory,
     get_all_active_memories,
     get_run_metrics_from_db,
-    get_athlete_state,
     set_athlete_state,
-    has_active_plan_this_week,
 )
 from app.agents.coach.setup_flow import is_setup_in_progress, advance_setup, start_setup
 from app.agents.coach.flows.weekly_plan_generation import (
     generate_weekly_plan,
 )
 from app.agents.coach.flows.morning_briefing import generate_morning_briefing
-from app.agents.coach.daily_suggestion import (
-    compute_daily_suggestion,
-    format_daily_suggestion_for_briefing,
-)
 from app.agents.coach.utils import (
     calculate_acwr,
     calculate_training_phase,
@@ -61,7 +54,6 @@ from app.agents.coach.prompts import (
     DEFAULT_REPORT_STRUCTURE,
     UNIVERSAL_FORMAT_RULES,
     build_weekly_reflection_prompt,
-    build_standup_prompt,
     build_memory_extraction_prompt,
 )
 from app.agents.coach.tools import (

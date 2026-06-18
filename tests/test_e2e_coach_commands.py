@@ -235,17 +235,7 @@ class TestCoachPlanCommands(unittest.TestCase):
     @patch(_AGENT_SEND)
     @patch(_AGENT_TYPING)
     @patch("app.agents.coach.agent.get_upcoming_plans", return_value="")
-    @patch("app.agents.coach.agent.compute_daily_suggestion")
-    @patch(
-        "app.agents.coach.agent.format_daily_suggestion_for_briefing",
-        return_value="💡 Hôm nay: chạy nhẹ 30'",
-    )
-    @patch(
-        "app.agents.coach.agent.get_training_loads",
-        return_value={"acute_load_7d": 100, "chronic_load_28d": 120},
-    )
-    @patch("app.agents.coach.agent.get_runs_in_last_days", return_value=[])
-    @patch("app.agents.coach.agent.get_athlete_state", return_value={})
+    @patch("app.agents.coach.agent.generate_weekly_plan", return_value=None)
     @patch("app.agents.coach.agent.is_setup_in_progress", return_value=False)
     @patch(_AGENT_CONFIG, return_value=_STUB_CONFIG)
     @patch(_LOAD_CONFIG, return_value=_STUB_CONFIG)
@@ -254,22 +244,17 @@ class TestCoachPlanCommands(unittest.TestCase):
         mock_lc,
         mock_ac,
         mock_setup,
-        mock_state,
-        mock_runs,
-        mock_loads,
-        mock_fmt,
-        mock_sugg,
+        mock_weekly_plan,
         mock_plans,
         mock_typing,
         mock_send,
     ):
-        """POST /plan with no active plan → daily suggestion sent."""
+        """POST /plan with no active plan → attempts to generate weekly plan."""
         _post_telegram(self.client, 999, "/plan")
-        # Two messages expected: loading ack + suggestion
         self.assertGreaterEqual(mock_send.call_count, 1)
         all_texts = " ".join(str(c) for c in mock_send.call_args_list)
         self.assertTrue(
-            "kế hoạch" in all_texts.lower() or "💡" in all_texts or mock_fmt.called
+            "kế hoạch" in all_texts.lower() or "giáo án" in all_texts.lower()
         )
 
     @patch(_AGENT_SEND)
