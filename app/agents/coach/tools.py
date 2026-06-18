@@ -340,8 +340,15 @@ def save_bulk_workout_plan(user_id: str, plan_json: str) -> str:
     Use when the athlete shares a structured training plan (multiple days/weeks) and asks to
     save it to the database. Call ONCE with the full plan rather than set_workout_plan per day.
     plan_json: JSON array of objects, each with keys:
-      date (YYYY-MM-DD), workout_title (str), description (str).
-    Example: '[{"date":"2026-05-01","workout_title":"Easy Run","description":"6km Zone 2"}]'
+      date (YYYY-MM-DD, required)
+      workout_title (str, required)
+      description (str, optional)
+      workout_type (str, optional) — e.g. "Easy", "Tempo", "LongRun", "Rest", "Interval", "Recovery"
+      target_distance_km (float, optional) — target distance in km
+      target_pace_range (str, optional) — e.g. "4:10-4:20/km"
+      target_hr_zone (int, optional) — 1-5
+      rpe_target (int, optional) — 1-10
+    Example: '[{"date":"2026-05-01","workout_title":"Easy Run","description":"6km Zone 2","workout_type":"Easy","target_distance_km":6.0}]'
     Returns a summary of how many days were saved and any errors.
     """
     logger.info(f"[TOOL-USE] 🤖 AI saving bulk plan for user {user_id}")
@@ -361,7 +368,18 @@ def save_bulk_workout_plan(user_id: str, plan_json: str) -> str:
         if not date or not title:
             errors.append(f"Bỏ qua entry thiếu date/title: {entry}")
             continue
-        result = update_daily_plan(str(user_id), date, title, desc, status="Pending")
+        result = update_daily_plan(
+            str(user_id),
+            date,
+            title,
+            desc,
+            status="Pending",
+            workout_type=entry.get("workout_type"),
+            target_distance_km=entry.get("target_distance_km"),
+            target_pace_range=entry.get("target_pace_range"),
+            target_hr_zone=entry.get("target_hr_zone"),
+            rpe_target=entry.get("rpe_target"),
+        )
         if result.startswith("✅"):
             saved += 1
         else:

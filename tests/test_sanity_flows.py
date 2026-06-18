@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 _BASE = "app.agents.coach.agent"
+_BRIEF_BASE = "app.agents.coach.flows.morning_briefing"
 
 
 def _make_config(**overrides):
@@ -55,12 +56,12 @@ def _db_patches_for_briefing():
     """Common DB patches required before Guard 2 in generate_morning_briefing."""
     return [
         patch(
-            f"{_BASE}.get_training_loads",
+            f"{_BRIEF_BASE}.get_training_loads",
             return_value={"acute_load_7d": 60, "chronic_load_28d": 240},
         ),
-        patch(f"{_BASE}.get_weekly_volume", return_value="35 km"),
-        patch(f"{_BASE}.get_plan_for_date", return_value=None),
-        patch(f"{_BASE}.get_formatted_weekly_context", return_value="Tuần 3/12"),
+        patch(f"{_BRIEF_BASE}.get_weekly_volume", return_value="35 km"),
+        patch(f"{_BRIEF_BASE}.get_plan_for_date", return_value=None),
+        patch(f"{_BRIEF_BASE}.get_formatted_weekly_context", return_value="Tuần 3/12"),
     ]
 
 
@@ -74,7 +75,7 @@ class TestMorningBriefingGuard1(unittest.TestCase):
         db = _db_patches_for_briefing()
         for p in db:
             p.start()
-        tg_mock = patch(f"{_BASE}.send_telegram_msg").start()
+        tg_mock = patch(f"{_BRIEF_BASE}.send_telegram_msg").start()
         uid_mock = patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "99999"})
         uid_mock.start()
         try:
@@ -121,14 +122,14 @@ class TestMorningBriefingGuard2(unittest.TestCase):
 
         with (
             patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "99999"}),
-            patch(f"{_BASE}.has_active_plan_this_week", return_value=False),
-            patch(f"{_BASE}.get_athlete_state", return_value=athlete_state),
-            patch(f"{_BASE}.get_training_loads", return_value=loads),
-            patch(f"{_BASE}.get_weekly_volume", return_value="20 km"),
-            patch(f"{_BASE}.get_plan_for_date", return_value=None),
-            patch(f"{_BASE}.get_formatted_weekly_context", return_value=""),
-            patch(f"{_BASE}.send_telegram_msg") as mock_tg,
-            patch(f"{_BASE}.save_message") as mock_save,
+            patch(f"{_BRIEF_BASE}.has_active_plan_this_week", return_value=False),
+            patch(f"{_BRIEF_BASE}.get_athlete_state", return_value=athlete_state),
+            patch(f"{_BRIEF_BASE}.get_training_loads", return_value=loads),
+            patch(f"{_BRIEF_BASE}.get_weekly_volume", return_value="20 km"),
+            patch(f"{_BRIEF_BASE}.get_plan_for_date", return_value=None),
+            patch(f"{_BRIEF_BASE}.get_formatted_weekly_context", return_value=""),
+            patch(f"{_BRIEF_BASE}.send_telegram_msg") as mock_tg,
+            patch(f"{_BRIEF_BASE}.save_message") as mock_save,
         ):
             from app.agents.coach import agent as ag
 
@@ -184,17 +185,17 @@ class TestMorningBriefingGuard2(unittest.TestCase):
         """If TELEGRAM_CHAT_ID is missing, no Telegram call must be made."""
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch(f"{_BASE}.has_active_plan_this_week", return_value=False),
-            patch(f"{_BASE}.get_athlete_state", return_value="healthy"),
+            patch(f"{_BRIEF_BASE}.has_active_plan_this_week", return_value=False),
+            patch(f"{_BRIEF_BASE}.get_athlete_state", return_value="healthy"),
             patch(
-                f"{_BASE}.get_training_loads",
+                f"{_BRIEF_BASE}.get_training_loads",
                 return_value={"acute_load_7d": 60, "chronic_load_28d": 240},
             ),
-            patch(f"{_BASE}.get_weekly_volume", return_value="20 km"),
-            patch(f"{_BASE}.get_plan_for_date", return_value=None),
-            patch(f"{_BASE}.get_formatted_weekly_context", return_value=""),
-            patch(f"{_BASE}.send_telegram_msg") as mock_tg,
-            patch(f"{_BASE}.save_message"),
+            patch(f"{_BRIEF_BASE}.get_weekly_volume", return_value="20 km"),
+            patch(f"{_BRIEF_BASE}.get_plan_for_date", return_value=None),
+            patch(f"{_BRIEF_BASE}.get_formatted_weekly_context", return_value=""),
+            patch(f"{_BRIEF_BASE}.send_telegram_msg") as mock_tg,
+            patch(f"{_BRIEF_BASE}.save_message"),
         ):
             from app.agents.coach import agent as ag
 
@@ -217,24 +218,24 @@ class TestMorningBriefingFullAIPath(unittest.TestCase):
 
         with (
             patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "99999"}),
-            patch(f"{_BASE}.has_active_plan_this_week", return_value=True),
+            patch(f"{_BRIEF_BASE}.has_active_plan_this_week", return_value=True),
             patch(
-                f"{_BASE}.get_training_loads",
+                f"{_BRIEF_BASE}.get_training_loads",
                 return_value={"acute_load_7d": 60, "chronic_load_28d": 240},
             ),
-            patch(f"{_BASE}.get_weekly_volume", return_value="30 km"),
+            patch(f"{_BRIEF_BASE}.get_weekly_volume", return_value="30 km"),
             patch(
-                f"{_BASE}.get_plan_for_date",
+                f"{_BRIEF_BASE}.get_plan_for_date",
                 return_value={"workout_title": "Easy Run", "description": "45 min"},
             ),
-            patch(f"{_BASE}.get_formatted_weekly_context", return_value="Week 3"),
-            patch(f"{_BASE}.load_history_for_gemini", return_value=[]),
-            patch(f"{_BASE}.get_all_active_memories", return_value=[]),
-            patch(f"{_BASE}.client") as mock_client,
-            patch(f"{_BASE}.send_message_with_retry", return_value=mock_response),
-            patch(f"{_BASE}.send_telegram_msg") as mock_tg,
-            patch(f"{_BASE}.save_message"),
-            patch(f"{_BASE}.debug_log_prompt"),
+            patch(f"{_BRIEF_BASE}.get_formatted_weekly_context", return_value="Week 3"),
+            patch(f"{_BRIEF_BASE}.load_history_for_gemini", return_value=[]),
+            patch(f"{_BRIEF_BASE}.get_all_active_memories", return_value=[]),
+            patch(f"{_BRIEF_BASE}.client") as mock_client,
+            patch(f"{_BRIEF_BASE}.send_message_with_retry", return_value=mock_response),
+            patch(f"{_BRIEF_BASE}.send_telegram_msg") as mock_tg,
+            patch(f"{_BRIEF_BASE}.save_message"),
+            patch(f"{_BRIEF_BASE}.debug_log_prompt"),
         ):
             mock_client.chats.create.return_value = mock_chat
             from app.agents.coach import agent as ag
@@ -252,21 +253,21 @@ class TestMorningBriefingFullAIPath(unittest.TestCase):
 
         with (
             patch.dict("os.environ", {"TELEGRAM_CHAT_ID": "99999"}),
-            patch(f"{_BASE}.has_active_plan_this_week", return_value=True),
+            patch(f"{_BRIEF_BASE}.has_active_plan_this_week", return_value=True),
             patch(
-                f"{_BASE}.get_training_loads",
+                f"{_BRIEF_BASE}.get_training_loads",
                 return_value={"acute_load_7d": 60, "chronic_load_28d": 240},
             ),
-            patch(f"{_BASE}.get_weekly_volume", return_value="30 km"),
-            patch(f"{_BASE}.get_plan_for_date", return_value=None),
-            patch(f"{_BASE}.get_formatted_weekly_context", return_value=""),
-            patch(f"{_BASE}.load_history_for_gemini", return_value=[]),
-            patch(f"{_BASE}.get_all_active_memories", return_value=[]),
-            patch(f"{_BASE}.client") as mock_client,
-            patch(f"{_BASE}.send_message_with_retry", return_value=mock_response),
-            patch(f"{_BASE}.send_telegram_msg") as mock_tg,
-            patch(f"{_BASE}.save_message"),
-            patch(f"{_BASE}.debug_log_prompt"),
+            patch(f"{_BRIEF_BASE}.get_weekly_volume", return_value="30 km"),
+            patch(f"{_BRIEF_BASE}.get_plan_for_date", return_value=None),
+            patch(f"{_BRIEF_BASE}.get_formatted_weekly_context", return_value=""),
+            patch(f"{_BRIEF_BASE}.load_history_for_gemini", return_value=[]),
+            patch(f"{_BRIEF_BASE}.get_all_active_memories", return_value=[]),
+            patch(f"{_BRIEF_BASE}.client") as mock_client,
+            patch(f"{_BRIEF_BASE}.send_message_with_retry", return_value=mock_response),
+            patch(f"{_BRIEF_BASE}.send_telegram_msg") as mock_tg,
+            patch(f"{_BRIEF_BASE}.save_message"),
+            patch(f"{_BRIEF_BASE}.debug_log_prompt"),
         ):
             mock_client.chats.create.return_value = MagicMock()
             from app.agents.coach import agent as ag

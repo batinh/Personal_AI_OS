@@ -18,10 +18,10 @@ from app.agents.coach.utils import calculate_training_phase
 from app.services.backup import perform_backup
 from app.agents.coach.agent import (
     generate_weekly_reflection,
-    generate_morning_briefing,
     extract_implicit_memory,
     analyze_run_with_gemini,
 )
+from app.agents.coach.flows.morning_briefing import generate_morning_briefing
 from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
 from app.services.log_auditor import run_audit

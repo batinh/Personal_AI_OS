@@ -917,6 +917,11 @@ def update_daily_plan(
     workout_title: str,
     description: str,
     status: str = "Pending",
+    workout_type: str | None = None,
+    target_distance_km: float | None = None,
+    target_pace_range: str | None = None,
+    target_hr_zone: int | None = None,
+    rpe_target: int | None = None,
 ) -> str:
     """[TOOL] Update or insert a new training plan for a specific date."""
     try:
@@ -924,14 +929,34 @@ def update_daily_plan(
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO training_plans (user_id, date, workout_title, description, status)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO training_plans (
+                user_id, date, workout_title, description, status,
+                workout_type, target_distance_km, target_pace_range,
+                target_hr_zone, rpe_target
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, date) DO UPDATE SET
                 workout_title=excluded.workout_title,
                 description=excluded.description,
-                status=excluded.status
+                status=excluded.status,
+                workout_type=COALESCE(excluded.workout_type, workout_type),
+                target_distance_km=COALESCE(excluded.target_distance_km, target_distance_km),
+                target_pace_range=COALESCE(excluded.target_pace_range, target_pace_range),
+                target_hr_zone=COALESCE(excluded.target_hr_zone, target_hr_zone),
+                rpe_target=COALESCE(excluded.rpe_target, rpe_target)
         """,
-            (str(user_id), target_date, workout_title, description, status),
+            (
+                str(user_id),
+                target_date,
+                workout_title,
+                description,
+                status,
+                workout_type,
+                target_distance_km,
+                target_pace_range,
+                target_hr_zone,
+                rpe_target,
+            ),
         )
         conn.commit()
         conn.close()
