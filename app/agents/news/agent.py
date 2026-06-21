@@ -467,7 +467,13 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     with ThreadPoolExecutor(max_workers=min(max_workers, len(topics))) as executor:
         future_map = {
             executor.submit(
-                _call_topic, topic, session, date_str, model, source_filter, max_tokens_per_topic
+                _call_topic,
+                topic,
+                session,
+                date_str,
+                model,
+                source_filter,
+                max_tokens_per_topic,
             ): idx
             for idx, topic in enumerate(topics)
         }

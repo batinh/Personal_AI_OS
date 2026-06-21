@@ -250,7 +250,6 @@ def finalize_setup(user_id: str, collected_data: dict) -> None:
     logger.info(f"[SETUP] Finalized setup for user {user_id}: {collected_data}")
 
 
-
 def expire_stale_weekly_plans_range(user_id: str, before_date: str) -> None:
     """Expire all pending plans before before_date."""
     from app.core.database import get_db

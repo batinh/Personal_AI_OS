@@ -21,10 +21,15 @@ class TestExtractDomain:
         assert self.sf.extract_domain("https://bbc.com/news") == "bbc.com"
 
     def test_strips_www(self):
-        assert self.sf.extract_domain("https://www.reuters.com/article/x") == "reuters.com"
+        assert (
+            self.sf.extract_domain("https://www.reuters.com/article/x") == "reuters.com"
+        )
 
     def test_strips_path_and_query(self):
-        assert self.sf.extract_domain("https://vnexpress.net/kinh-doanh?p=1") == "vnexpress.net"
+        assert (
+            self.sf.extract_domain("https://vnexpress.net/kinh-doanh?p=1")
+            == "vnexpress.net"
+        )
 
     def test_strips_port(self):
         assert self.sf.extract_domain("http://localhost:8000/path") == "localhost"
@@ -36,7 +41,9 @@ class TestExtractDomain:
         assert self.sf.extract_domain("not-a-url") == ""
 
     def test_subdomain_kept(self):
-        assert self.sf.extract_domain("https://sport.bbc.com/football") == "sport.bbc.com"
+        assert (
+            self.sf.extract_domain("https://sport.bbc.com/football") == "sport.bbc.com"
+        )
 
     def test_raises_internally_returns_empty(self):
         # Passing a non-string type triggers the except branch (lines 60-61)
@@ -128,9 +135,7 @@ class TestFilterUrls:
     BLACKLISTED_URL = ("Spam", "https://top-spam-site.com/ad")
 
     def _sf(self, mode="prefer"):
-        return SourceFilter(
-            _cfg(trusted=["bbc.com"], blacklist=["*spam*"], mode=mode)
-        )
+        return SourceFilter(_cfg(trusted=["bbc.com"], blacklist=["*spam*"], mode=mode))
 
     def test_prefer_mode_trusted_first(self):
         sf = self._sf("prefer")
