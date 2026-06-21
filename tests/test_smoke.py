@@ -181,6 +181,9 @@ class TestNewsAgentImports(unittest.TestCase):
     def test_news_chat_handler_importable(self):
         from app.agents.news.telegram_handler import handle_news_chat  # noqa: F401
 
+    def test_news_source_filter_importable(self):
+        from app.agents.news.source_filter import SourceFilter  # noqa: F401
+
     def test_news_error_constants_importable(self):
         from app.agents.news.telegram_handler import (  # noqa: F401
             ERR_001,

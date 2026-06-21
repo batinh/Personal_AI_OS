@@ -44,6 +44,7 @@ from app.agents.news.prompts import (
 )
 from app.agents._prompt_telemetry import log_prompt_metrics
 from app.agents.news.memory import load_news_memory
+from app.agents.news.source_filter import SourceFilter
 from app.agents.news.telegram_handler import ERR_001, ERR_002
 from app.core.gemini_utils import (
     extract_text as _extract_text,
@@ -333,8 +334,16 @@ def _call_gemini_with_search(
 # ==========================================
 
 
+_DEFAULT_MAX_TOKENS_PER_TOPIC = 3500
+
+
 def _call_topic(
-    topic: dict, session: str, date_str: str, model: str
+    topic: dict,
+    session: str,
+    date_str: str,
+    model: str,
+    source_filter: SourceFilter | None = None,
+    max_tokens: int = _DEFAULT_MAX_TOKENS_PER_TOPIC,
 ) -> tuple[dict, str | None]:
     """
     Fetch news for a single topic. Designed to run in a ThreadPoolExecutor worker.
@@ -353,7 +362,7 @@ def _call_topic(
         model,
         system_inst,
         prompt,
-        max_tokens=6000,
+        max_tokens=max_tokens,
         flow=f"news.topic.{session}",
     )
 
@@ -361,22 +370,35 @@ def _call_topic(
         logger.warning(f"[NEWS-TOPIC] No result for '{topic_name}'. Skipping.")
         return topic, None
 
-    # Reject training-data stubs: a real grounded response always has at least
-    # one news headline + summary + trend line (> 150 chars). Short responses
-    # are pre-search scaffolding that slipped through when AFC didn't complete.
-    if len(block) < 150:
+    # Reject training-data stubs: 1-2 real headlines always exceed 80 chars.
+    if len(block) < 80:
         logger.warning(
             f"[NEWS-TOPIC] Response for '{topic_name}' is too short ({len(block)} chars) — "
             "likely a training-data stub. Skipping."
         )
         return topic, None
 
+    # Apply source filter: trusted sources sorted first; blacklisted removed.
+    if source_filter is not None:
+        accepted_urls, rejected_urls = source_filter.filter_urls(grounding_urls)
+        if rejected_urls:
+            logger.info(
+                "[NEWS-TOPIC] '%s': %d/%d sources filtered out",
+                topic_name,
+                len(rejected_urls),
+                len(grounding_urls),
+            )
+        grounding_urls = accepted_urls
+
     # Strip any LLM-written URLs then inject real grounding URLs inline after each article.
     body = _DOC_THEM_RE.sub("", block.strip())
     body = _inject_inline_links(body, grounding_urls)
     formatted = f"{emoji} <b>{topic_name.upper()}</b>\n\n{body}"
     logger.info(
-        f"[NEWS-TOPIC] Got {len(block)} chars, {len(grounding_urls)} sources for '{topic_name}'"
+        "[NEWS-TOPIC] Got %d chars, %d accepted sources for '%s'",
+        len(block),
+        len(grounding_urls),
+        topic_name,
     )
     return topic, formatted
 
@@ -421,14 +443,21 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
         send_telegram_msg(chat_id, ERR_001)
         return
 
+    source_filter = SourceFilter(config)
+    max_tokens_per_topic = int(
+        news_cfg.get("max_tokens_per_topic", _DEFAULT_MAX_TOKENS_PER_TOPIC)
+    )
     max_workers = int(news_cfg.get("max_topic_workers", _MAX_TOPIC_WORKERS))
     topic_timeout_s = int(news_cfg.get("topic_timeout_seconds", _TOPIC_TIMEOUT_S))
     logger.info(
-        "[NEWS] Starting parallel briefing: %d topics, session=%s, workers=%d, timeout=%ds",
+        "[NEWS] Starting parallel briefing: %d topics, session=%s, workers=%d, "
+        "timeout=%ds, max_tokens_per_topic=%d, filter_mode=%s",
         len(topics),
         session,
         max_workers,
         topic_timeout_s,
+        max_tokens_per_topic,
+        source_filter.mode,
     )
     _t_start = time.monotonic()
 
@@ -437,7 +466,9 @@ def generate_news_briefing(config: dict, session: str = "morning") -> None:
     completed_count = 0
     with ThreadPoolExecutor(max_workers=min(max_workers, len(topics))) as executor:
         future_map = {
-            executor.submit(_call_topic, topic, session, date_str, model): idx
+            executor.submit(
+                _call_topic, topic, session, date_str, model, source_filter, max_tokens_per_topic
+            ): idx
             for idx, topic in enumerate(topics)
         }
         try:

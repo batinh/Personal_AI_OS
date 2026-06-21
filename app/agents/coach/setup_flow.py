@@ -250,18 +250,6 @@ def finalize_setup(user_id: str, collected_data: dict) -> None:
     logger.info(f"[SETUP] Finalized setup for user {user_id}: {collected_data}")
 
 
-def invalidate_plans_for_resetup(user_id: str) -> None:
-    """
-    Expire any pending/accepted plans before re-setup. Call before start_setup() on re-entry.
-    """
-    from datetime import date, timedelta
-
-    next_monday = (
-        date.today() - timedelta(days=date.today().weekday()) + timedelta(weeks=4)
-    ).strftime("%Y-%m-%d")
-    expire_stale_weekly_plans_range(user_id, before_date=next_monday)
-    logger.info(f"[SETUP] Invalidated plans for user {user_id} due to re-setup")
-
 
 def expire_stale_weekly_plans_range(user_id: str, before_date: str) -> None:
     """Expire all pending plans before before_date."""

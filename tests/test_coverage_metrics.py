@@ -260,3 +260,143 @@ class TestCoverageEndpoint(unittest.TestCase):
         resp = self._get(cov_path=self._tmpdir / "missing.xml")
         self.assertEqual(resp.status_code, 404)
         self.assertIn("detail", resp.json())
+
+    def test_graceful_500_when_coverage_file_malformed(self):
+        bad = _write_tmp(self._tmpdir, "bad.xml", _MALFORMED_XML)
+        resp = self._get(cov_path=bad)
+        self.assertEqual(resp.status_code, 500)
+        self.assertIn("detail", resp.json())
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: internal helper functions
+# ---------------------------------------------------------------------------
+
+_JUNIT_WITH_CASES = textwrap.dedent("""\
+    <?xml version="1.0" encoding="utf-8"?>
+    <testsuites>
+      <testsuite name="pytest" errors="0" failures="1" skipped="1"
+                 tests="5" time="2.0" timestamp="2026-01-01T00:00:00">
+        <testcase classname="tests.test_smoke.TestCoreImports" name="test_config_importable" time="0.01"/>
+        <testcase classname="tests.test_smoke.TestCoreImports" name="test_db_importable" time="0.01">
+          <failure message="AssertionError">something failed</failure>
+        </testcase>
+        <testcase classname="tests.test_sanity_flows.TestMorningBriefing" name="test_skipped" time="0.0">
+          <skipped/>
+        </testcase>
+        <testcase classname="tests.test_e2e_local.TestHealth" name="test_health" time="0.5"/>
+        <testcase classname="tests.test_tools.TestTools" name="test_get_total_run_stats" time="0.1">
+          <error message="RuntimeError">some error</error>
+        </testcase>
+      </testsuite>
+    </testsuites>
+""")
+
+_JUNIT_NO_SUITE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="utf-8"?>
+    <testsuites/>
+""")
+
+
+class TestHelperFunctions(unittest.TestCase):
+    def test_humanize(self):
+        from app.services.coverage_metrics import _humanize
+        assert _humanize("test_config_importable") == "Config importable"
+
+    def test_classify_level_smoke(self):
+        from app.services.coverage_metrics import _classify_level
+        assert _classify_level("tests.test_smoke.X") == "smoke"
+
+    def test_classify_level_sanity(self):
+        from app.services.coverage_metrics import _classify_level
+        assert _classify_level("tests.test_sanity_flows.X") == "sanity"
+
+    def test_classify_level_e2e(self):
+        from app.services.coverage_metrics import _classify_level
+        assert _classify_level("tests.test_e2e_local.X") == "e2e"
+
+    def test_classify_level_unit(self):
+        from app.services.coverage_metrics import _classify_level
+        assert _classify_level("tests.test_tools.X") == "unit"
+
+    def test_short_class(self):
+        from app.services.coverage_metrics import _short_class
+        assert _short_class("tests.test_smoke.TestCoreImports") == "TestCoreImports"
+
+    def test_module_from_classname(self):
+        from app.services.coverage_metrics import _module_from_classname
+        assert _module_from_classname("tests.test_tools.TestTools") == "test_tools"
+
+    def test_module_from_classname_no_dot(self):
+        from app.services.coverage_metrics import _module_from_classname
+        assert _module_from_classname("TestTools") == "TestTools"
+
+
+class TestClassBucket(unittest.TestCase):
+    def setUp(self):
+        from app.services.coverage_metrics import _ClassBucket, TestCase
+        self.bucket = _ClassBucket(name="TestSmoke")
+        self.bucket.cases = [
+            TestCase("TestSmoke", "test_a", "A", "passed", 0.1, None),
+            TestCase("TestSmoke", "test_b", "B", "failed", 0.2, "oops"),
+            TestCase("TestSmoke", "test_c", "C", "error", 0.0, "err"),
+            TestCase("TestSmoke", "test_d", "D", "skipped", 0.0, None),
+        ]
+
+    def test_total(self):
+        assert self.bucket.total == 4
+
+    def test_passed(self):
+        assert self.bucket.passed == 1
+
+    def test_failed(self):
+        assert self.bucket.failed == 2  # "failed" + "error"
+
+    def test_skipped(self):
+        assert self.bucket.skipped == 1
+
+
+class TestJUnitParsing(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self._tmpdir = Path(tempfile.mkdtemp())
+        self._cov = _write_tmp(self._tmpdir, "coverage.xml", _COVERAGE_XML)
+        self._junit_cases = _write_tmp(self._tmpdir, "junit_cases.xml", _JUNIT_WITH_CASES)
+        self._junit_no_suite = _write_tmp(self._tmpdir, "junit_no_suite.xml", _JUNIT_NO_SUITE)
+
+    def test_by_level_populated(self):
+        from app.services.coverage_metrics import load_coverage_report
+        report = load_coverage_report(self._cov, self._junit_cases)
+        levels = {lv.level for lv in report.by_level}
+        assert "smoke" in levels
+        assert "e2e" in levels
+        assert "sanity" in levels
+
+    def test_failed_status_counted(self):
+        from app.services.coverage_metrics import load_coverage_report
+        report = load_coverage_report(self._cov, self._junit_cases)
+        smoke = next(lv for lv in report.by_level if lv.level == "smoke")
+        assert smoke.failed >= 1
+
+    def test_skipped_status_counted(self):
+        from app.services.coverage_metrics import load_coverage_report
+        report = load_coverage_report(self._cov, self._junit_cases)
+        sanity = next(lv for lv in report.by_level if lv.level == "sanity")
+        assert sanity.skipped >= 1
+
+    def test_error_counted_as_failed(self):
+        from app.services.coverage_metrics import load_coverage_report
+        report = load_coverage_report(self._cov, self._junit_cases)
+        unit = next((lv for lv in report.by_level if lv.level == "unit"), None)
+        assert unit is not None
+        assert unit.failed >= 1
+
+    def test_no_suite_element_returns_none_counts(self):
+        from app.services.coverage_metrics import load_coverage_report
+        report = load_coverage_report(self._cov, self._junit_no_suite)
+        assert report.test_counts is None
+
+    def test_level_drilldown_has_smoke(self):
+        from app.services.coverage_metrics import load_coverage_report
+        report = load_coverage_report(self._cov, self._junit_cases)
+        assert "smoke" in report.level_drilldown or "sanity" in report.level_drilldown

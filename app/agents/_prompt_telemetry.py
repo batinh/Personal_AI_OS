@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 #                  hardened: reasoning kept internal, must not leak into reply).
 #   2026.06.04-1 — Phase 1 baseline: telemetry instrumentation only, no prompt
 #                  content changes from prior production.
-PROMPT_VERSION = "2026.06.04-2"
+#   2026.06.20-1 — News agent redesign: 1-2 headlines per topic (was 2-3), trusted
+#                  source hint list added, on-demand trimmed, max_tokens 6000→3500.
+PROMPT_VERSION = "2026.06.20-1"
 
 # Tokens-per-character heuristic. Vietnamese sits around 3.5, English around 4.
 # We use 3.8 as a safe middle ground — overestimates a touch, biased toward
