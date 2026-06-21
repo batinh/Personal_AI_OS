@@ -61,6 +61,8 @@ class TestFetchAndStore:
         mock_metrics = {"training_readiness_score": 75, "resting_hr": 52}
 
         client = gc_module.GarminClient()
+        client._email = "test@example.com"
+        client._password = "testpass"
         monkeypatch.setattr(client, "_get_client", lambda: MagicMock())
         monkeypatch.setattr(client, "_collect_metrics", lambda c, d: mock_metrics)
         monkeypatch.setattr(gc_module, "upsert_garmin_daily_metrics", lambda *a: None)
@@ -77,6 +79,8 @@ class TestFetchAndStore:
             raise RuntimeError("network error")
 
         client = gc_module.GarminClient()
+        client._email = "test@example.com"
+        client._password = "testpass"
         monkeypatch.setattr(client, "_get_client", _bad_client)
         monkeypatch.setattr(
             gc_module, "_record_failure", lambda: failures.append(1) or False

@@ -169,6 +169,13 @@ class GarminClient:
             logger.info("[GARMIN] Circuit open — skipping sync, using cached values")
             return False
 
+        if not self._email or not self._password:
+            logger.error(
+                "[GARMIN] Credentials not configured — set GARMIN_EMAIL and GARMIN_PASSWORD "
+                "env vars or store encrypted credentials via admin UI. Sync skipped."
+            )
+            return False
+
         if target_date is None:
             target_date = date.today()
         date_str = target_date.strftime("%Y-%m-%d")

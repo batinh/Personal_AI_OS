@@ -36,8 +36,16 @@ from app.agents.coach.flows.weekly_plan_generation import (
 from app.agents.coach.flows.morning_briefing import generate_morning_briefing
 from app.agents.coach.utils import (
     calculate_acwr,
+    calculate_hr_zones,
+    calculate_lthr_zones,
+    calculate_pace_zones,
+    calculate_power_zones,
     calculate_training_phase,
     debug_log_prompt,
+    format_hr_zones_for_prompt,
+    format_lthr_zones_for_prompt,
+    format_pace_zones_for_prompt,
+    format_power_zones_for_prompt,
     get_formatted_weekly_context,
 )
 from app.services.rag_memory import rag_db
@@ -432,6 +440,34 @@ def _is_degenerate_response(text: str | None) -> bool:
     return not text or not text.strip()
 
 
+def _build_zone_texts(config: dict) -> tuple[str, str, str, str]:
+    """Compute HR, power, and pace zone texts from config for prompt injection."""
+    max_hr = int(config.get("max_hr", 185))
+    rest_hr = int(config.get("rest_hr", 55))
+    lthr_bpm = int(config.get("lthr_bpm", 0))
+    rftp_watts = int(config.get("rftp_watts", 0))
+    threshold_pace = int(config.get("threshold_pace_per_km", 0))
+
+    if lthr_bpm > 0:
+        hr_zones_text = format_lthr_zones_for_prompt(calculate_lthr_zones(lthr_bpm))
+        hr_zones_label = f"JOE FRIEL — LTHR {lthr_bpm} bpm"
+    else:
+        hr_zones_text = format_hr_zones_for_prompt(calculate_hr_zones(max_hr, rest_hr))
+        hr_zones_label = "KARVONEN — HRR"
+
+    power_zones_text = (
+        format_power_zones_for_prompt(calculate_power_zones(rftp_watts))
+        if rftp_watts > 0
+        else ""
+    )
+    pace_zones_text = (
+        format_pace_zones_for_prompt(calculate_pace_zones(threshold_pace))
+        if threshold_pace > 0
+        else "Chưa cấu hình ngưỡng pace (threshold_pace_per_km)."
+    )
+    return hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text
+
+
 # --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(
     activity_id: str, activity_name: str, meta_data: dict, config: dict
@@ -469,11 +505,20 @@ def analyze_run_with_gemini(
         else "Chạy tự do."
     )
     # 2. BUILD PROMPT (Lego Architecture)
+    hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text = (
+        _build_zone_texts(config)
+    )
     system_inst = build_system_instruction(
         config.get("system_instruction", ""),
         config.get("user_profile", ""),
         int(config.get("max_hr", 185)),
         int(config.get("rest_hr", 55)),
+        hr_zones_text=hr_zones_text,
+        pace_zones_text=pace_zones_text,
+        rftp_watts=int(config.get("rftp_watts", 0)),
+        lthr_bpm=int(config.get("lthr_bpm", 0)),
+        hr_zones_label=hr_zones_label,
+        power_zones_text=power_zones_text,
     )
 
     shared_context = get_shared_context_block(
@@ -739,6 +784,9 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     # 2. BUILD PROMPT (Lego Architecture)
     # Fast path uses core-only system prompt (identity + psychology, ~300 tokens).
     # Standard path uses full system prompt (zones, GCS rubric, tool discipline, ~2000 tokens).
+    hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text = (
+        _build_zone_texts(config)
+    )
     if intent == "fast":
         system_inst = build_core_system_instruction(
             config.get("system_instruction", ""),
@@ -751,6 +799,12 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             int(config.get("max_hr", 185)),
             int(config.get("rest_hr", 55)),
             chat_format=True,
+            hr_zones_text=hr_zones_text,
+            pace_zones_text=pace_zones_text,
+            rftp_watts=int(config.get("rftp_watts", 0)),
+            lthr_bpm=int(config.get("lthr_bpm", 0)),
+            hr_zones_label=hr_zones_label,
+            power_zones_text=power_zones_text,
         )
 
     if intent != "fast":
@@ -847,6 +901,12 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
                 int(config.get("max_hr", 185)),
                 int(config.get("rest_hr", 55)),
                 chat_format=True,
+                hr_zones_text=hr_zones_text,
+                pace_zones_text=pace_zones_text,
+                rftp_watts=int(config.get("rftp_watts", 0)),
+                lthr_bpm=int(config.get("lthr_bpm", 0)),
+                hr_zones_label=hr_zones_label,
+                power_zones_text=power_zones_text,
             )
             log_prompt_metrics(
                 flow="coach.chat.retry",
@@ -934,12 +994,21 @@ def generate_weekly_reflection(config: dict):
     next_monday_str = next_monday.strftime("%Y-%m-%d")
 
     # 2. Build Prompt using Lego blocks
+    hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text = (
+        _build_zone_texts(config)
+    )
     system_inst = build_system_instruction(
         config.get("system_instruction", ""),
         config.get("user_profile", ""),
         int(config.get("max_hr", 185)),
         int(config.get("rest_hr", 55)),
         chat_format=True,
+        hr_zones_text=hr_zones_text,
+        pace_zones_text=pace_zones_text,
+        rftp_watts=int(config.get("rftp_watts", 0)),
+        lthr_bpm=int(config.get("lthr_bpm", 0)),
+        hr_zones_label=hr_zones_label,
+        power_zones_text=power_zones_text,
     )
 
     shared_context = get_shared_context_block(
