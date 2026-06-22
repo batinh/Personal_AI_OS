@@ -437,13 +437,16 @@ async def save_garmin_credentials(request: Request, _=Depends(verify_admin)):
     from app.core.secrets import encrypt_garmin_credentials
     from fastapi.responses import JSONResponse
 
+    from app.agents.coach.garmin_client import has_oauth_token as _has_oauth_token
+    import time
+
     body = await request.json()
     email = body.get("email", "").strip()
     password = body.get("password", "")
-    enable = bool(body.get("enable", True))
+    enabled = bool(body.get("enabled", True))
 
     logger.info(
-        f"[GARMIN-SETUP] POST /console/setup/garmin — email={email[:3] + '***' if email else '(empty)'} enable={enable}"
+        f"[GARMIN-SETUP] POST /console/setup/garmin — email={email[:3] + '***' if email else '(empty)'} enabled={enabled}"
     )
 
     if not email or not password:
@@ -461,8 +464,6 @@ async def save_garmin_credentials(request: Request, _=Depends(verify_admin)):
 
     # Test connection
     client = GarminClient()
-    import time
-
     t0 = time.monotonic()
     success, error = client.test_connection(timeout_sec=30)
     elapsed = round(time.monotonic() - t0, 1)
@@ -470,26 +471,41 @@ async def save_garmin_credentials(request: Request, _=Depends(verify_admin)):
         f"[GARMIN-SETUP] test_connection result: success={success} elapsed={elapsed}s error={error!r}"
     )
 
+    email_masked = _mask_email(email)
+    has_oauth = _has_oauth_token()
+
     if not success:
-        # Still keep credentials but report failure (user may retry)
+        # Keep credentials; UI shows yellow "has credentials but not verified" badge
         return JSONResponse(
             {
                 "success": False,
-                "is_connected": False,
                 "message": f"Kết nối thất bại sau {elapsed}s: {error}. Thông tin đã lưu, thử lại sau.",
+                "garmin_status": {
+                    "is_connected": False,
+                    "has_credentials": True,
+                    "has_oauth_token": has_oauth,
+                    "email_masked": email_masked,
+                    "circuit_open": _is_circuit_open(),
+                },
             }
         )
 
     # Update garmin.enabled in config
     cfg = load_config()
-    cfg.setdefault("garmin", {})["enabled"] = enable
+    cfg.setdefault("garmin", {})["enabled"] = enabled
     save_config(cfg)
 
     return JSONResponse(
         {
             "success": True,
-            "is_connected": True,
             "message": "Kết nối Garmin thành công! Đồng bộ sẽ chạy lúc 05:45 sáng.",
+            "garmin_status": {
+                "is_connected": True,
+                "has_credentials": True,
+                "has_oauth_token": has_oauth,
+                "email_masked": email_masked,
+                "circuit_open": False,
+            },
         }
     )
 
