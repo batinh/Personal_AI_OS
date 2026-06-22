@@ -329,6 +329,15 @@ def init_db():
             for col, coltype in [
                 ("daily_steps", "INTEGER"),
                 ("avg_stress_level", "INTEGER"),
+                ("hrv_weekly_avg", "REAL"),
+                ("hrv_last_night", "REAL"),
+                ("sleep_score", "INTEGER"),
+                ("deep_sleep_sec", "INTEGER"),
+                ("body_battery_morning", "INTEGER"),
+                ("body_battery_evening", "INTEGER"),
+                ("resting_hr", "INTEGER"),
+                ("stress_avg", "INTEGER"),
+                ("raw_json", "TEXT"),
             ]:
                 if col not in cols:
                     logger.info(
@@ -1675,6 +1684,8 @@ def update_audit_status(entry_id: int, new_status: str) -> bool:
 # ==========================================
 def upsert_garmin_daily_metrics(user_id: str, date_str: str, metrics: dict) -> None:
     """Upsert Garmin daily wellness metrics for a given date."""
+    import json as _json
+
     try:
         with get_db() as conn:
             conn.execute("""
@@ -1684,7 +1695,15 @@ def upsert_garmin_daily_metrics(user_id: str, date_str: str, metrics: dict) -> N
                     date TEXT NOT NULL,
                     training_readiness_score INTEGER,
                     hrv_status TEXT,
+                    hrv_weekly_avg REAL,
+                    hrv_last_night REAL,
+                    sleep_score INTEGER,
                     sleep_duration_sec INTEGER,
+                    deep_sleep_sec INTEGER,
+                    body_battery_morning INTEGER,
+                    body_battery_evening INTEGER,
+                    resting_hr INTEGER,
+                    stress_avg INTEGER,
                     training_status TEXT,
                     daily_steps INTEGER,
                     avg_stress_level INTEGER,
@@ -1696,13 +1715,23 @@ def upsert_garmin_daily_metrics(user_id: str, date_str: str, metrics: dict) -> N
             conn.execute(
                 """
                 INSERT INTO garmin_daily_metrics
-                    (user_id, date, training_readiness_score, hrv_status, sleep_duration_sec,
+                    (user_id, date, training_readiness_score, hrv_status, hrv_weekly_avg,
+                     hrv_last_night, sleep_score, sleep_duration_sec, deep_sleep_sec,
+                     body_battery_morning, body_battery_evening, resting_hr, stress_avg,
                      training_status, daily_steps, avg_stress_level, raw_json, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
                 ON CONFLICT(user_id, date) DO UPDATE SET
                     training_readiness_score=excluded.training_readiness_score,
                     hrv_status=excluded.hrv_status,
+                    hrv_weekly_avg=excluded.hrv_weekly_avg,
+                    hrv_last_night=excluded.hrv_last_night,
+                    sleep_score=excluded.sleep_score,
                     sleep_duration_sec=excluded.sleep_duration_sec,
+                    deep_sleep_sec=excluded.deep_sleep_sec,
+                    body_battery_morning=excluded.body_battery_morning,
+                    body_battery_evening=excluded.body_battery_evening,
+                    resting_hr=excluded.resting_hr,
+                    stress_avg=excluded.stress_avg,
                     training_status=excluded.training_status,
                     daily_steps=excluded.daily_steps,
                     avg_stress_level=excluded.avg_stress_level,
@@ -1714,32 +1743,58 @@ def upsert_garmin_daily_metrics(user_id: str, date_str: str, metrics: dict) -> N
                     date_str,
                     metrics.get("training_readiness_score"),
                     metrics.get("hrv_status"),
+                    metrics.get("hrv_weekly_avg"),
+                    metrics.get("hrv_last_night"),
+                    metrics.get("sleep_score"),
                     metrics.get("sleep_duration_sec"),
+                    metrics.get("deep_sleep_sec"),
+                    metrics.get("body_battery_morning"),
+                    metrics.get("body_battery_evening"),
+                    metrics.get("resting_hr"),
+                    metrics.get("stress_avg"),
                     metrics.get("training_status"),
                     metrics.get("daily_steps"),
                     metrics.get("avg_stress_level"),
-                    str(metrics),
+                    _json.dumps(metrics),
                 ),
             )
     except Exception as e:
         logger.error(f"[DB_ERROR] upsert_garmin_daily_metrics failed: {e}")
 
 
-def get_garmin_daily_metrics(user_id: str, date_str: str) -> Optional[dict]:
-    """Retrieve Garmin daily metrics for a given date. Returns None if not found."""
+def get_garmin_daily_metrics(
+    user_id: str, date_str: str, max_stale_days: int = 0
+) -> Optional[dict]:
+    """Retrieve Garmin daily metrics for a given date.
+
+    If max_stale_days > 0, falls back to the most recent row within that many days back.
+    Returns None if not found.
+    """
+    from datetime import date, timedelta
+
     try:
         with get_db() as conn:
-            row = conn.execute(
-                """
-                SELECT training_readiness_score, hrv_status, sleep_duration_sec,
-                       training_status, daily_steps, avg_stress_level
-                FROM garmin_daily_metrics
-                WHERE user_id=? AND date=?
-                """,
-                (user_id, date_str),
-            ).fetchone()
-            if row:
-                return dict(row)
+            dates_to_try = [date_str]
+            if max_stale_days > 0:
+                base = date.fromisoformat(date_str)
+                for d in range(1, max_stale_days + 1):
+                    dates_to_try.append((base - timedelta(days=d)).isoformat())
+
+            for d in dates_to_try:
+                row = conn.execute(
+                    """
+                    SELECT training_readiness_score, hrv_status, hrv_weekly_avg,
+                           hrv_last_night, sleep_score, sleep_duration_sec, deep_sleep_sec,
+                           body_battery_morning, body_battery_evening, resting_hr,
+                           stress_avg, training_status, daily_steps, avg_stress_level,
+                           raw_json, updated_at
+                    FROM garmin_daily_metrics
+                    WHERE user_id=? AND date=?
+                    """,
+                    (user_id, d),
+                ).fetchone()
+                if row:
+                    return dict(row)
             return None
     except Exception as e:
         logger.error(f"[DB_ERROR] get_garmin_daily_metrics failed: {e}")
