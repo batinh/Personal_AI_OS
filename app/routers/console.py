@@ -572,7 +572,7 @@ async def upload_garmin_token(request: Request, _=Depends(verify_admin)):
 @router.get("/console/setup/garmin/status")
 async def get_garmin_status(request: Request, _=Depends(verify_admin)):
     """Return Garmin connection status without exposing credentials."""
-    from app.agents.coach.garmin_client import _TOKEN_FILE, has_oauth_token
+    from app.agents.coach.garmin_client import has_oauth_token
     from app.core.secrets import has_garmin_credentials
     from fastapi.responses import JSONResponse
     from app.core.database import get_garmin_daily_metrics
@@ -586,10 +586,9 @@ async def get_garmin_status(request: Request, _=Depends(verify_admin)):
     metrics = get_garmin_daily_metrics(user_id, today)
 
     has_creds = has_garmin_credentials() or bool(os.getenv("GARMIN_EMAIL"))
-    has_tokens = _TOKEN_FILE.exists()
     has_oauth = has_oauth_token()
     circuit_open = _is_circuit_open()
-    is_connected = (has_oauth or (has_creds and has_tokens)) and not circuit_open
+    is_connected = (has_oauth or has_creds) and not circuit_open
 
     return JSONResponse(
         {

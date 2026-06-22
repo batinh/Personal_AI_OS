@@ -151,12 +151,14 @@ class GarminClient:
         return client
 
     def _save_tokens(self, client) -> None:
-        _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # Use garth's dumps() to persist the OAuth session so future logins skip SSO.
+        # The token is saved to _OAUTH_TOKEN_FILE (same format as the upload-token path).
         try:
-            tokens = client.get_tokens()
-            _TOKEN_FILE.write_text(json.dumps(tokens, default=str))
+            token_json = client.client.dumps()
+            save_oauth_token(token_json)
+            logger.info("[GARMIN] OAuth session persisted after SSO login")
         except Exception as e:
-            logger.warning(f"[GARMIN] Could not save tokens: {e}")
+            logger.warning(f"[GARMIN] Could not persist OAuth token after SSO: {e}")
 
     def fetch_and_store_daily_metrics(
         self, user_id: str, target_date: Optional[date] = None
