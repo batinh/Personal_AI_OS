@@ -382,10 +382,15 @@ def get_garmin_client() -> GarminClient:
 
 def execute_garmin_sync(chat_id: str) -> None:
     """Manual Garmin sync triggered by /garmin Telegram command. Sends result back to chat."""
+    global _garmin_client_instance
     from datetime import date
 
     from app.core.notification import send_telegram_msg
     from app.core.user_context import get_primary_user_id
+
+    # Reset singleton so fresh credentials are read from disk (credentials may have been
+    # saved after the singleton was first created at startup).
+    _garmin_client_instance = None
 
     user_id = str(get_primary_user_id())
     garmin = get_garmin_client()
