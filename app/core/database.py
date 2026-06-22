@@ -321,31 +321,10 @@ def init_db():
         ON run_activities(user_id, start_date)
     """)
 
-    # [GARMIN] Auto-migrate garmin_daily_metrics for columns added after initial deploy
+    # [GARMIN] Ensure schema exists and reconcile any missing metric column.
+    # Single source of truth: _GARMIN_METRIC_COLUMNS (see GARMIN DAILY METRICS section).
     try:
-        cur = c.execute("PRAGMA table_info(garmin_daily_metrics)")
-        cols = [r[1] for r in cur.fetchall()]
-        if cols:
-            for col, coltype in [
-                ("daily_steps", "INTEGER"),
-                ("avg_stress_level", "INTEGER"),
-                ("hrv_weekly_avg", "REAL"),
-                ("hrv_last_night", "REAL"),
-                ("sleep_score", "INTEGER"),
-                ("deep_sleep_sec", "INTEGER"),
-                ("body_battery_morning", "INTEGER"),
-                ("body_battery_evening", "INTEGER"),
-                ("resting_hr", "INTEGER"),
-                ("stress_avg", "INTEGER"),
-                ("raw_json", "TEXT"),
-            ]:
-                if col not in cols:
-                    logger.info(
-                        f"[DATABASE] Migrating garmin_daily_metrics: adding {col}"
-                    )
-                    c.execute(
-                        f"ALTER TABLE garmin_daily_metrics ADD COLUMN {col} {coltype}"
-                    )
+        _ensure_garmin_schema(c)
     except Exception as e:
         logger.error(f"[DATABASE] garmin_daily_metrics migration error: {e}")
 
@@ -1682,84 +1661,98 @@ def update_audit_status(entry_id: int, new_status: str) -> bool:
 # ==========================================
 # ⌚ GARMIN DAILY METRICS
 # ==========================================
+# Single source of truth for the garmin_daily_metrics schema. Ordered list of
+# (column_name, sql_type) for every wellness metric column. upsert/get/migration
+# all derive their column lists from this — adding a metric here is the only edit
+# needed. Structural columns (id, user_id, date, raw_json, created_at) are fixed.
+_GARMIN_METRIC_COLUMNS: list[tuple[str, str]] = [
+    ("training_readiness_score", "INTEGER"),
+    ("hrv_status", "TEXT"),
+    ("hrv_weekly_avg", "REAL"),
+    ("hrv_last_night", "REAL"),
+    ("sleep_score", "INTEGER"),
+    ("sleep_duration_sec", "INTEGER"),
+    ("deep_sleep_sec", "INTEGER"),
+    ("body_battery_morning", "INTEGER"),
+    ("body_battery_evening", "INTEGER"),
+    ("resting_hr", "INTEGER"),
+    ("stress_avg", "INTEGER"),
+    ("training_status", "TEXT"),
+    ("daily_steps", "INTEGER"),
+    ("spo2_avg", "REAL"),
+]
+_GARMIN_METRIC_NAMES = [name for name, _ in _GARMIN_METRIC_COLUMNS]
+
+
+def _ensure_garmin_schema(conn) -> None:
+    """Create garmin_daily_metrics if absent and reconcile any missing metric column.
+
+    Idempotent: ALTERs in only columns that don't yet exist, so adding a metric to
+    _GARMIN_METRIC_COLUMNS auto-migrates live tables on next access.
+    """
+    metric_defs = ",\n                    ".join(
+        f"{name} {sqltype}" for name, sqltype in _GARMIN_METRIC_COLUMNS
+    )
+    conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS garmin_daily_metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            {metric_defs},
+            raw_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, date)
+        )
+        """)
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(garmin_daily_metrics)")}
+    # Reconcile metric columns plus the structural nullable columns. created_at uses
+    # a plain type here (no CURRENT_TIMESTAMP default) because SQLite's ALTER ADD COLUMN
+    # rejects non-constant defaults; INSERTs set created_at explicitly anyway.
+    for name, sqltype in [
+        *_GARMIN_METRIC_COLUMNS,
+        ("raw_json", "TEXT"),
+        ("created_at", "TIMESTAMP"),
+    ]:
+        if name not in existing:
+            logger.info(f"[DATABASE] Migrating garmin_daily_metrics: adding {name}")
+            conn.execute(
+                f"ALTER TABLE garmin_daily_metrics ADD COLUMN {name} {sqltype}"
+            )
+
+
 def upsert_garmin_daily_metrics(user_id: str, date_str: str, metrics: dict) -> None:
-    """Upsert Garmin daily wellness metrics for a given date."""
+    """Upsert Garmin daily wellness metrics for a given date.
+
+    Raises on DB failure — callers (fetch_and_store) must observe failure rather
+    than silently logging a success that never persisted.
+    """
     import json as _json
 
-    try:
-        with get_db() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS garmin_daily_metrics (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id TEXT NOT NULL,
-                    date TEXT NOT NULL,
-                    training_readiness_score INTEGER,
-                    hrv_status TEXT,
-                    hrv_weekly_avg REAL,
-                    hrv_last_night REAL,
-                    sleep_score INTEGER,
-                    sleep_duration_sec INTEGER,
-                    deep_sleep_sec INTEGER,
-                    body_battery_morning INTEGER,
-                    body_battery_evening INTEGER,
-                    resting_hr INTEGER,
-                    stress_avg INTEGER,
-                    training_status TEXT,
-                    daily_steps INTEGER,
-                    avg_stress_level INTEGER,
-                    raw_json TEXT,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(user_id, date)
-                )
-                """)
-            conn.execute(
-                """
-                INSERT INTO garmin_daily_metrics
-                    (user_id, date, training_readiness_score, hrv_status, hrv_weekly_avg,
-                     hrv_last_night, sleep_score, sleep_duration_sec, deep_sleep_sec,
-                     body_battery_morning, body_battery_evening, resting_hr, stress_avg,
-                     training_status, daily_steps, avg_stress_level, raw_json, updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
-                ON CONFLICT(user_id, date) DO UPDATE SET
-                    training_readiness_score=excluded.training_readiness_score,
-                    hrv_status=excluded.hrv_status,
-                    hrv_weekly_avg=excluded.hrv_weekly_avg,
-                    hrv_last_night=excluded.hrv_last_night,
-                    sleep_score=excluded.sleep_score,
-                    sleep_duration_sec=excluded.sleep_duration_sec,
-                    deep_sleep_sec=excluded.deep_sleep_sec,
-                    body_battery_morning=excluded.body_battery_morning,
-                    body_battery_evening=excluded.body_battery_evening,
-                    resting_hr=excluded.resting_hr,
-                    stress_avg=excluded.stress_avg,
-                    training_status=excluded.training_status,
-                    daily_steps=excluded.daily_steps,
-                    avg_stress_level=excluded.avg_stress_level,
-                    raw_json=excluded.raw_json,
-                    updated_at=CURRENT_TIMESTAMP
-                """,
-                (
-                    user_id,
-                    date_str,
-                    metrics.get("training_readiness_score"),
-                    metrics.get("hrv_status"),
-                    metrics.get("hrv_weekly_avg"),
-                    metrics.get("hrv_last_night"),
-                    metrics.get("sleep_score"),
-                    metrics.get("sleep_duration_sec"),
-                    metrics.get("deep_sleep_sec"),
-                    metrics.get("body_battery_morning"),
-                    metrics.get("body_battery_evening"),
-                    metrics.get("resting_hr"),
-                    metrics.get("stress_avg"),
-                    metrics.get("training_status"),
-                    metrics.get("daily_steps"),
-                    metrics.get("avg_stress_level"),
-                    _json.dumps(metrics),
-                ),
-            )
-    except Exception as e:
-        logger.error(f"[DB_ERROR] upsert_garmin_daily_metrics failed: {e}")
+    cols = ["user_id", "date", *_GARMIN_METRIC_NAMES, "raw_json"]
+    placeholders = ",".join(["?"] * len(cols)) + ",CURRENT_TIMESTAMP"
+    col_list = ",".join([*cols, "created_at"])
+    updates = ",".join(
+        f"{name}=excluded.{name}" for name in [*_GARMIN_METRIC_NAMES, "raw_json"]
+    )
+    values = [
+        user_id,
+        date_str,
+        *[metrics.get(name) for name in _GARMIN_METRIC_NAMES],
+        _json.dumps(metrics),
+    ]
+
+    with get_db() as conn:
+        _ensure_garmin_schema(conn)
+        conn.execute(
+            f"""
+            INSERT INTO garmin_daily_metrics ({col_list})
+            VALUES ({placeholders})
+            ON CONFLICT(user_id, date) DO UPDATE SET
+                {updates},
+                created_at=CURRENT_TIMESTAMP
+            """,
+            values,
+        )
 
 
 def get_garmin_daily_metrics(
@@ -1772,6 +1765,7 @@ def get_garmin_daily_metrics(
     """
     from datetime import date, timedelta
 
+    select_cols = ",".join([*_GARMIN_METRIC_NAMES, "raw_json", "created_at"])
     try:
         with get_db() as conn:
             dates_to_try = [date_str]
@@ -1782,15 +1776,8 @@ def get_garmin_daily_metrics(
 
             for d in dates_to_try:
                 row = conn.execute(
-                    """
-                    SELECT training_readiness_score, hrv_status, hrv_weekly_avg,
-                           hrv_last_night, sleep_score, sleep_duration_sec, deep_sleep_sec,
-                           body_battery_morning, body_battery_evening, resting_hr,
-                           stress_avg, training_status, daily_steps, avg_stress_level,
-                           raw_json, updated_at
-                    FROM garmin_daily_metrics
-                    WHERE user_id=? AND date=?
-                    """,
+                    f"SELECT {select_cols} FROM garmin_daily_metrics "
+                    "WHERE user_id=? AND date=?",
                     (user_id, d),
                 ).fetchone()
                 if row:

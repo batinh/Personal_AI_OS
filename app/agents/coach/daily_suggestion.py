@@ -166,6 +166,33 @@ def compute_daily_suggestion(
     return s
 
 
+def _format_garmin_wellness(garmin_data: Optional[dict]) -> str:
+    """Render a compact Vietnamese wellness line from Garmin metrics, or '' if none."""
+    if not garmin_data:
+        return ""
+
+    parts = []
+    readiness = garmin_data.get("training_readiness_score")
+    if readiness is not None:
+        parts.append(f"⚡ Sẵn sàng {readiness}")
+    sleep_score = garmin_data.get("sleep_score")
+    if sleep_score is not None:
+        parts.append(f"😴 Ngủ {sleep_score}")
+    hrv = garmin_data.get("hrv_last_night")
+    if hrv is not None:
+        parts.append(f"❤️ HRV {hrv}ms")
+    battery = garmin_data.get("body_battery_morning")
+    if battery is not None:
+        parts.append(f"🔋 Pin {battery}")
+    resting_hr = garmin_data.get("resting_hr")
+    if resting_hr is not None:
+        parts.append(f"💓 RHR {resting_hr}")
+
+    if not parts:
+        return ""
+    return "⌚ <b>Garmin:</b> " + " · ".join(parts)
+
+
 def format_daily_suggestion_for_briefing(
     suggestion: dict,
     garmin_data: Optional[dict] = None,
@@ -197,6 +224,11 @@ def format_daily_suggestion_for_briefing(
 
     if desc:
         lines.append(f"   {desc}")
+
+    wellness = _format_garmin_wellness(garmin_data)
+    if wellness:
+        lines.append("")
+        lines.append(wellness)
 
     if plan_conflict:
         lines.append(f"\n⚠️ {plan_conflict}")

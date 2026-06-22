@@ -66,10 +66,30 @@ class TestFetchAndStore:
         monkeypatch.setattr(client, "_get_client", lambda: MagicMock())
         monkeypatch.setattr(client, "_collect_metrics", lambda c, d: mock_metrics)
         monkeypatch.setattr(gc_module, "upsert_garmin_daily_metrics", lambda *a: None)
+        # Read-back verification confirms the row persisted.
+        monkeypatch.setattr(
+            gc_module, "get_garmin_daily_metrics", lambda *a, **k: mock_metrics
+        )
         monkeypatch.setattr(gc_module, "_reset_circuit", lambda: None)
 
         result = client.fetch_and_store_daily_metrics("user1", date.today())
         assert result is True
+
+    def test_returns_false_when_persist_silently_fails(self, gc_module, monkeypatch):
+        """Regression: upsert succeeds but read-back is empty → must report failure."""
+        monkeypatch.setattr(gc_module, "_is_circuit_open", lambda: False)
+
+        client = gc_module.GarminClient()
+        client._email = "test@example.com"
+        client._password = "testpass"
+        monkeypatch.setattr(client, "_get_client", lambda: MagicMock())
+        monkeypatch.setattr(client, "_collect_metrics", lambda c, d: {"resting_hr": 52})
+        monkeypatch.setattr(gc_module, "upsert_garmin_daily_metrics", lambda *a: None)
+        # Read-back returns nothing — simulates a silent persistence failure.
+        monkeypatch.setattr(gc_module, "get_garmin_daily_metrics", lambda *a, **k: None)
+
+        result = client.fetch_and_store_daily_metrics("user1", date.today())
+        assert result is False
 
     def test_records_failure_on_exception(self, gc_module, monkeypatch):
         monkeypatch.setattr(gc_module, "_is_circuit_open", lambda: False)

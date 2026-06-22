@@ -11,7 +11,10 @@ from app.core.secrets import decrypt_garmin_credentials
 
 logger = get_module_logger("garmin_client")
 
-_BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# Repo root: garmin_client.py is at app/agents/coach/, so four parents up.
+# Must match app/core/database.py and app/core/secrets.py so all runtime state
+# lives under a single data/ directory (not a split app/data/).
+_BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 _TOKEN_FILE = _BASE_DIR / "data" / "garmin_tokens.json"
 _CIRCUIT_STATE_FILE = _BASE_DIR / "data" / "garmin_circuit.json"
 
@@ -186,9 +189,17 @@ class GarminClient:
             client = self._get_client()
             metrics = self._collect_metrics(client, target_date)
             upsert_garmin_daily_metrics(user_id, date_str, metrics)
+
+            # Verify the row actually persisted — never report a sync that didn't store.
+            stored = get_garmin_daily_metrics(user_id, date_str)
+            if not stored:
+                raise RuntimeError("metrics upsert did not persist (read-back empty)")
+
             _reset_circuit()
             logger.info(
-                f"[GARMIN] Synced metrics for {user_id}/{date_str}: readiness={metrics.get('training_readiness_score')}"
+                f"[GARMIN] Synced metrics for {user_id}/{date_str}: "
+                f"readiness={metrics.get('training_readiness_score')} "
+                f"fields={sum(1 for v in metrics.values() if v is not None)}"
             )
             return True
 
@@ -249,6 +260,16 @@ class GarminClient:
         stress_data = _safe(client.get_stress_data, date_str)
         if stress_data:
             metrics["stress_avg"] = stress_data.get("averageStressLevel")
+
+        steps_data = _safe(client.get_steps_data, date_str)
+        if steps_data and isinstance(steps_data, list):
+            total_steps = sum(d.get("steps", 0) or 0 for d in steps_data)
+            if total_steps:
+                metrics["daily_steps"] = total_steps
+
+        spo2_data = _safe(client.get_spo2_data, date_str)
+        if spo2_data and isinstance(spo2_data, dict):
+            metrics["spo2_avg"] = spo2_data.get("averageSpO2")
 
         training_status = _safe(client.get_training_status, date_str)
         if training_status:

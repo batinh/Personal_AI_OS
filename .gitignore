@@ -39,8 +39,8 @@ chroma_cache/
 # --- Data (user-generated / runtime) ---
 data/*.json
 data/*.sqlite
+data/*.key
 data/streams/
-app/data/*.json
 backups/
 
 # --- Snapshot / generated files ---
