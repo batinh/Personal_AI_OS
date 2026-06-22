@@ -1,27 +1,31 @@
 """Encrypted credential storage for sensitive third-party credentials (Garmin, etc.)."""
 
-import base64
-import hashlib
 import json
-import socket
 from pathlib import Path
 
 from cryptography.fernet import Fernet
 
 _BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _SECRETS_FILE = _BASE_DIR / "data" / "garmin_secrets.json"
-_SALT = b"personal-ai-os-v1"  # public salt is fine; key security comes from hostname uniqueness
+_KEY_FILE = _BASE_DIR / "data" / "encryption.key"
 
 
-def _get_machine_key() -> bytes:
-    """Derive a Fernet key from the machine hostname. Deterministic per machine."""
-    hostname = socket.gethostname().encode()
-    digest = hashlib.sha256(hostname + _SALT).digest()  # 32 bytes
-    return base64.urlsafe_b64encode(digest)  # Fernet needs url-safe base64
+def _get_or_create_key() -> bytes:
+    """Return the persistent Fernet key, generating and saving it on first use.
+
+    Key lives in data/encryption.key which is bind-mounted from the host, so it
+    survives container rebuilds. A hostname-derived key breaks on every docker rebuild.
+    """
+    if _KEY_FILE.exists():
+        return _KEY_FILE.read_bytes().strip()
+    key = Fernet.generate_key()
+    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _KEY_FILE.write_bytes(key)
+    return key
 
 
 def _fernet() -> Fernet:
-    return Fernet(_get_machine_key())
+    return Fernet(_get_or_create_key())
 
 
 def encrypt_garmin_credentials(email: str, password: str) -> None:
