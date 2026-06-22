@@ -378,3 +378,46 @@ def get_garmin_client() -> GarminClient:
     if _garmin_client_instance is None:
         _garmin_client_instance = GarminClient()
     return _garmin_client_instance
+
+
+def execute_garmin_sync(chat_id: str) -> None:
+    """Manual Garmin sync triggered by /garmin Telegram command. Sends result back to chat."""
+    from datetime import date
+
+    from app.core.notification import send_telegram_msg
+    from app.core.user_context import get_primary_user_id
+
+    user_id = str(get_primary_user_id())
+    garmin = get_garmin_client()
+    success = garmin.fetch_and_store_daily_metrics(user_id)
+
+    if not success:
+        if _is_circuit_open():
+            send_telegram_msg(
+                chat_id,
+                "⚠️ Garmin sync bị bỏ qua — circuit breaker đang mở (quá nhiều lỗi liên tiếp). Thử lại sau 24h.",
+            )
+        else:
+            send_telegram_msg(
+                chat_id,
+                "❌ Garmin sync thất bại. Kiểm tra kết nối hoặc thông tin đăng nhập tại Console.",
+            )
+        return
+
+    metrics = garmin.get_daily_metrics(user_id, date.today()) or {}
+    readiness = metrics.get("training_readiness_score") or "—"
+    sleep_score = metrics.get("sleep_score") or "—"
+    hrv = metrics.get("hrv_last_night") or "—"
+    body_battery = metrics.get("body_battery_morning") or "—"
+    resting_hr = metrics.get("resting_hr") or "—"
+
+    send_telegram_msg(
+        chat_id,
+        f"✅ <b>Garmin sync thành công!</b>\n\n"
+        f"📊 Dữ liệu hôm nay:\n"
+        f"• Training Readiness: <b>{readiness}</b>\n"
+        f"• Sleep Score: <b>{sleep_score}</b>\n"
+        f"• HRV đêm qua: <b>{hrv}</b> ms\n"
+        f"• Body Battery sáng: <b>{body_battery}</b>\n"
+        f"• Resting HR: <b>{resting_hr}</b> bpm",
+    )

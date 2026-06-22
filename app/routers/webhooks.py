@@ -413,7 +413,15 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
             background_tasks.add_task(handle_news_command, str(chat_id), args, config)
             return {"status": "ok"}
 
-        # 4. Route free-text to the correct agent (@news/@tin → news, default → coach)
+        # 4. Catch /garmin command for manual Garmin sync
+        if text.strip().lower() == "/garmin":
+            from app.agents.coach.garmin_client import execute_garmin_sync
+
+            send_telegram_msg(str(chat_id), "⌚ Đang đồng bộ dữ liệu Garmin hôm nay...")
+            background_tasks.add_task(execute_garmin_sync, str(chat_id))
+            return {"status": "ok"}
+
+        # 5. Route free-text to the correct agent (@news/@tin → news, default → coach)
         config = load_config()
         from app.services.telegram_router import route_message
 

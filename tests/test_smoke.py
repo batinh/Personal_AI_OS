@@ -236,6 +236,7 @@ class TestGarminCoachPlanningImports(unittest.TestCase):
             has_oauth_token,
             save_oauth_token,
             load_oauth_token,
+            execute_garmin_sync,
         )
 
     def test_schemas_importable(self):
