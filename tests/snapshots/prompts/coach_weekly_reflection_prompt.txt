@@ -22,7 +22,8 @@ Với tư cách là Coach Dyno, hôm nay là Tối Chủ Nhật. Hãy thực hi�
 2. Mesocycle (28 ngày qua): Nhìn vào tỷ lệ ACWR và Tải trọng mãn tính (Chronic Load) để quyết định xu hướng tuần tới.
 
 [HÀNH ĐỘNG BẮT BUỘC]
-Dựa trên phân tích, bạn BẮT BUỘC phải gọi tool `set_actual_weekly_target` để chốt Target Volume (Tổng số km) cho tuần mới bắt đầu từ ngày mai: 2026-06-09.
+Dựa trên phân tích, bạn BẮT BUỘC phải ĐỀ XUẤT Target Volume (km) trong báo cáo gửi VĐV cho tuần mới bắt đầu từ ngày mai: 2026-06-09.
+Trình bày rõ con số đề xuất và lý do. KHÔNG tự ý gọi `set_actual_weekly_target` — chỉ gọi khi VĐV phản hồi xác nhận đồng ý với target đề xuất.
 
 
 

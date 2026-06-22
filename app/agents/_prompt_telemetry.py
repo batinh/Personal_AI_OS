@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 #                  content changes from prior production.
 #   2026.06.20-1 — News agent redesign: 1-2 headlines per topic (was 2-3), trusted
 #                  source hint list added, on-demand trimmed, max_tokens 6000→3500.
-PROMPT_VERSION = "2026.06.20-1"
+PROMPT_VERSION = "2026.06.22-1"  # athlete override protocol, morning briefing ask-first, weekly reflection propose-not-lock
 
 # Tokens-per-character heuristic. Vietnamese sits around 3.5, English around 4.
 # We use 3.8 as a safe middle ground — overestimates a touch, biased toward
