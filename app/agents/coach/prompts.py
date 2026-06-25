@@ -225,6 +225,7 @@ def get_shared_context_block(
     actual_volume: float,
     weekly_decision_context: str,
     hr_zones_text: str = "",
+    planned_km_this_week: float = 0.0,
 ) -> str:
     """Dynamic data block providing sensory context to the AI.
 
@@ -237,6 +238,15 @@ def get_shared_context_block(
 [HR ZONES (THAM CHIẾU NHANH)]
 {hr_zones_text}
 """
+    # Fix 3: Expose planned_km so the LLM can spot contradictions between
+    # the weekly target and the individual scheduled workouts.
+    plan_volume_line = ""
+    if planned_km_this_week > 0:
+        plan_volume_line = f"\n- Kế hoạch lịch (tổng target_km các ngày trong tuần): {planned_km_this_week} km"
+        if actual_volume + 0.1 < planned_km_this_week:
+            remaining = round(planned_km_this_week - actual_volume, 1)
+            plan_volume_line += f" (còn {remaining}km trong lịch)"
+
     return f"""
 [BỐI CẢNH HIỆN TẠI]
 - Thời gian hệ thống: {now_str}
@@ -246,7 +256,7 @@ def get_shared_context_block(
 - Thể trạng (ACWR): {acwr_text}
 {zones_block}
 [ĐIỀU PHỐI KHỐI LƯỢNG TUẦN (WEEKLY LIMITS)]
-- Thực chạy tuần này: {actual_volume} km
+- Thực chạy tuần này: {actual_volume} km{plan_volume_line}
 {weekly_decision_context}
 """
 

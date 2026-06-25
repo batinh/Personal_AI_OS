@@ -28,7 +28,7 @@ def _make_plan(week_start: str = "2030-06-02") -> WeeklyPlanResult:
         )
     return WeeklyPlanResult(
         week_start_date=week_start,
-        week_total_km=55.0,
+        week_total_km=40.0,
         training_rationale="Balanced build week with tempo and long run.",
         acwr_projection=1.05,
         days=days,
@@ -53,7 +53,7 @@ class TestWeeklyPlanResultSchema:
         plan = _make_plan()
         assert len(plan.days) == 7
         data = json.loads(plan.model_dump_json())
-        assert data["week_total_km"] == 55.0
+        assert data["week_total_km"] == 40.0
 
     def test_hr_zone_out_of_range_raises(self):
         import pydantic
@@ -139,6 +139,8 @@ class TestAcceptWeeklyPlan:
 
     def test_returns_confirmed_message_on_success(self, monkeypatch):
         import app.agents.coach.flows.weekly_plan_generation as wf
+        from contextlib import contextmanager
+        import sqlite3
 
         plan = _make_plan()
         plan_row = {"id": 1, "ai_output": plan.model_dump_json()}
@@ -147,6 +149,21 @@ class TestAcceptWeeklyPlan:
         )
         monkeypatch.setattr(wf, "update_weekly_plan_status", lambda *a, **kw: None)
         monkeypatch.setattr(wf, "_write_plan_to_training_plans", lambda *a: None)
+        monkeypatch.setattr(wf, "_calculate_acwr", lambda uid: 1.0)
+        monkeypatch.setattr(wf, "upsert_weekly_target", lambda *a, **kw: None)
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            "CREATE TABLE run_activities (user_id TEXT, start_date TEXT, distance_km REAL)"
+        )
+
+        @contextmanager
+        def _mock_db():
+            yield conn
+
+        import app.core.database as db_mod
+
+        monkeypatch.setattr(db_mod, "get_db", _mock_db)
         result = wf.accept_weekly_plan("user1")
         assert "xác nhận" in result
 

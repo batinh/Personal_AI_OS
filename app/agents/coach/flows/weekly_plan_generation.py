@@ -8,6 +8,7 @@ from app.core.database import (
     get_athlete_state,
     get_garmin_daily_metrics,
     upsert_weekly_plan,
+    upsert_weekly_target,
     get_pending_weekly_plan,
     update_weekly_plan_status,
     has_active_plan_this_week,
@@ -236,9 +237,25 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
     if not result:
         return None
 
+    # Fix 1: validate constraints (corrects week_total_km in-place if LLM lied).
+    _validate_plan_constraints(result, max_km=max_km)
+
     ai_output = result.model_dump_json(indent=2)
     plan_id = upsert_weekly_plan(user_id, week_start, ai_output)
     _write_plan_to_training_plans(user_id, result, plan_id)
+
+    # Fix 2: sync standard_target_km with the actual sum of day targets so
+    # morning briefing never shows a weekly target that contradicts the schedule.
+    upsert_weekly_target(
+        user_id,
+        week_start,
+        standard_target_km=result.week_total_km,
+        actual_target_km=result.week_total_km,
+        ai_reasoning=f"Auto-set at plan generation (ACWR={acwr:.2f}, max={max_km}km)",
+    )
+    logger.info(
+        f"[WEEKLY_PLAN] Synced weekly target: {result.week_total_km}km for {user_id}/{week_start}"
+    )
 
     chat_id = get_primary_user_id()
     preview = _format_plan_preview(result)
@@ -274,7 +291,6 @@ def _call_gemini_for_plan(config: dict, prompt: str) -> Optional[WeeklyPlanResul
             ),
         )
         result = WeeklyPlanResult.model_validate_json(response.text)
-        _validate_plan_constraints(result)
         return result
 
     except Exception as e:
@@ -282,7 +298,7 @@ def _call_gemini_for_plan(config: dict, prompt: str) -> Optional[WeeklyPlanResul
         return None
 
 
-def _validate_plan_constraints(plan: WeeklyPlanResult) -> None:
+def _validate_plan_constraints(plan: WeeklyPlanResult, max_km: float = 0.0) -> None:
     """Log warnings if the AI violated hard constraints — doesn't raise."""
     quality_count = sum(1 for d in plan.days if d.workout_type in _QUALITY_TYPES)
     if quality_count > _MAX_QUALITY_PER_WEEK:
@@ -302,6 +318,24 @@ def _validate_plan_constraints(plan: WeeklyPlanResult) -> None:
             logger.warning(
                 f"[WEEKLY_PLAN] Constraint violation: back-to-back quality sessions on days {i+1} and {i+2}"
             )
+
+    # Fix 1: Validate that individual day targets match the week_total_km summary.
+    # LLMs often satisfy the summary field while generating per-day values that sum to
+    # far more — e.g. week_total_km=19 but days include a 32km long run.
+    actual_sum = round(sum(d.target_distance_km or 0.0 for d in plan.days), 1)
+    if abs(actual_sum - plan.week_total_km) > 3.0:
+        logger.warning(
+            f"[WEEKLY_PLAN] week_total_km mismatch: declared={plan.week_total_km}km "
+            f"actual_sum={actual_sum}km — using actual sum as source of truth"
+        )
+        # Correct the summary field to match reality so downstream code is consistent.
+        plan.week_total_km = actual_sum
+
+    if max_km > 0 and actual_sum > max_km * 1.1:
+        logger.warning(
+            f"[WEEKLY_PLAN] Volume constraint violated: actual_sum={actual_sum}km "
+            f"exceeds max_km={max_km}km (ACWR ceiling)"
+        )
 
 
 def _format_plan_preview(plan: WeeklyPlanResult) -> str:
@@ -396,8 +430,21 @@ def accept_weekly_plan(user_id: str, week_start: Optional[str] = None) -> str:
             "Chat với coach để điều chỉnh nếu cảm giác mệt."
         )
 
+    # Fix 1: re-validate so week_total_km reflects actual day sums.
+    _validate_plan_constraints(result, max_km=max_allowed_km)
+
     _write_plan_to_training_plans(user_id, result, plan_row["id"])
     update_weekly_plan_status(user_id, week_start, "accepted")
+
+    # Fix 2: sync standard_target_km so morning briefing target = actual plan total.
+    upsert_weekly_target(
+        user_id,
+        week_start,
+        standard_target_km=result.week_total_km,
+        actual_target_km=result.week_total_km,
+        ai_reasoning=f"Auto-set at plan acceptance (ACWR={current_acwr:.2f})",
+    )
+
     logger.info(f"[WEEKLY_PLAN] Plan accepted for {user_id}/{week_start}")
     return (
         f"✅ <b>Giáo án tuần đã được xác nhận!</b>\n"

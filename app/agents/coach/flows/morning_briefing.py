@@ -18,6 +18,7 @@ from app.core.database import (
     get_athlete_state,
     get_garmin_daily_metrics,
     get_pending_weekly_plan,
+    get_planned_weekly_volume,
 )
 from app.agents.coach.utils import (
     calculate_acwr,
@@ -157,6 +158,11 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     )
     weekly_decision_context = get_formatted_weekly_context(user_id_str)
 
+    # Fix 3: Compute planned km from training_plans so LLM can detect target vs schedule mismatch.
+    days_since_monday = now.weekday()
+    week_start_str = (now - timedelta(days=days_since_monday)).strftime("%Y-%m-%d")
+    planned_km_this_week = get_planned_weekly_volume(user_id_str, week_start_str)
+
     # Fetch short-term memory (last 5 interactions) to maintain conversation context
     raw_history = load_history_for_gemini(user_id_str, limit=5)
     chat_context = "Không có tương tác trò chuyện nào gần đây."
@@ -197,6 +203,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         f"{acwr_data['acwr']} ({acwr_data['status']})",
         actual_volume,
         weekly_decision_context,
+        planned_km_this_week=planned_km_this_week,
     )
 
     # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
