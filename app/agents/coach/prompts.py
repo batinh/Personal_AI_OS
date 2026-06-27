@@ -249,7 +249,9 @@ def get_shared_context_block(
             plan_volume_line += f" (còn {remaining}km trong lịch)"
 
     garmin_line = (
-        f"\n- Garmin Training Status: {garmin_status_text}" if garmin_status_text else ""
+        f"\n- Garmin Training Status: {garmin_status_text}"
+        if garmin_status_text
+        else ""
     )
 
     return f"""
