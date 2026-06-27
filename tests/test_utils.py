@@ -96,17 +96,24 @@ class TestCalculateAcwr(unittest.TestCase):
         self.assertLess(result["acwr"], 0.8)
         self.assertIn("Under-training", result["status"])
 
-    def test_overreaching_130_to_150(self):
-        # acute=140, chronic_28d=400 → avg_weekly=100 → ACWR=1.4
+    def test_build_phase_130_to_150(self):
+        # acute=140, chronic_28d=400 → avg_weekly=100 → ACWR=1.4 (build, not overreaching)
         result = calculate_acwr(140, 400)
         self.assertGreater(result["acwr"], 1.3)
         self.assertLessEqual(result["acwr"], 1.5)
+        self.assertIn("Build Phase", result["status"])
+
+    def test_overreaching_150_to_170(self):
+        # acute=160, chronic_28d=400 → avg_weekly=100 → ACWR=1.6
+        result = calculate_acwr(160, 400)
+        self.assertGreater(result["acwr"], 1.5)
+        self.assertLessEqual(result["acwr"], 1.7)
         self.assertIn("Overreaching", result["status"])
 
-    def test_danger_zone_above_150(self):
+    def test_danger_zone_above_170(self):
         # acute=200, chronic_28d=400 → avg_weekly=100 → ACWR=2.0
         result = calculate_acwr(200, 400)
-        self.assertGreater(result["acwr"], 1.5)
+        self.assertGreater(result["acwr"], 1.7)
         self.assertIn("Danger Zone", result["status"])
 
     def test_acwr_precision_two_decimals(self):

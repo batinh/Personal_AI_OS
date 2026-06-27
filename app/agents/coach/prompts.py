@@ -149,7 +149,7 @@ GCS = 0–100% dựa trên 4 trụ cột có trọng số (BẮT BUỘC tính th
   - Không có dấu hiệu bất thường = +25pts. Có cảnh báo nhỏ = +15pts.
 
 🌀 THỂ TRẠNG / FRESHNESS & RECOVERY (15%):
-  - ACWR [0.8–1.3] = +15pts (sweet spot). ACWR [1.3–1.5] = +8pts (caution). ACWR >1.5 = +0pts (danger).
+  - ACWR [0.8–1.5] = +15pts (sweet spot/build). ACWR [1.5–1.7] = +8pts (caution). ACWR >1.7 = +0pts (danger).
   - Tuân thủ Taper (taper_factor < 1.0): BẮT BUỘC không tăng tải. Vi phạm Taper = -15pts ngay lập tức.
 
 [CHUẨN MỰC FM READINESS (BẮT BUỘC ĐỐI CHIẾU KHI GCS > 70%)]
@@ -226,6 +226,7 @@ def get_shared_context_block(
     weekly_decision_context: str,
     hr_zones_text: str = "",
     planned_km_this_week: float = 0.0,
+    garmin_status_text: str = "",
 ) -> str:
     """Dynamic data block providing sensory context to the AI.
 
@@ -247,13 +248,17 @@ def get_shared_context_block(
             remaining = round(planned_km_this_week - actual_volume, 1)
             plan_volume_line += f" (còn {remaining}km trong lịch)"
 
+    garmin_line = (
+        f"\n- Garmin Training Status: {garmin_status_text}" if garmin_status_text else ""
+    )
+
     return f"""
 [BỐI CẢNH HIỆN TẠI]
 - Thời gian hệ thống: {now_str}
 - Mục tiêu: {countdown_text}
 - User ID: {chat_id}
 - Giai đoạn: {phase_text}
-- Thể trạng (ACWR): {acwr_text}
+- Thể trạng (ACWR): {acwr_text}{garmin_line}
 {zones_block}
 [ĐIỀU PHỐI KHỐI LƯỢNG TUẦN (WEEKLY LIMITS)]
 - Thực chạy tuần này: {actual_volume} km{plan_volume_line}
@@ -446,7 +451,8 @@ Lưu ý: Nếu VĐV đang có chấn thương, BẮT BUỘC phải nhắc nhở 
 
 [NHIỆM VỤ SÁNG NAY (BẮT BUỘC)]
 1. AN TOÀN: Đánh giá Giáo án hôm nay đối chiếu với ACWR.
-   - NẾU ACWR > 1.3: CẢNH BÁO VĐV về rủi ro và ĐỀ XUẤT đổi bài nghỉ ngơi. KHÔNG tự ý gọi `update_todays_plan`. Chờ VĐV xác nhận.
+   - NẾU ACWR > 1.5: CẢNH BÁO VĐV về rủi ro và ĐỀ XUẤT đổi bài nghỉ ngơi. KHÔNG tự ý gọi `update_todays_plan`. Chờ VĐV xác nhận.
+   - NẾU ACWR 1.3–1.5 (Build Phase): ghi nhận đang trong giai đoạn tăng tải hợp lệ — KHÔNG cảnh báo trừ khi Garmin Training Status = Overreaching.
    - Chỉ gọi `update_todays_plan` khi VĐV chủ động yêu cầu đổi HOẶC xác nhận muốn nghỉ.
    - Nếu VĐV xác nhận "tôi ổn / tôi chấp nhận" → áp dụng [VĐV OVERRIDE PROTOCOL].
 2. ĐIỀU PHỐI TUẦN: Kiểm tra [ĐIỀU PHỐI KHỐI LƯỢNG TUẦN].

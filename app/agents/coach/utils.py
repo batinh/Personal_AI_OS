@@ -63,14 +63,18 @@ def calculate_acwr(acute_load_7d: float, chronic_load_28d: float) -> dict:
 
     acwr = round(acute_load_7d / avg_weekly_chronic, 2)
 
-    # Evaluate injury risk based on ACWR Sweet Spot (0.8 - 1.3)
-    status = "Sweet Spot (Optimal)"
+    # Thresholds per Hulin et al. 2016: 1.3–1.5 is acceptable build range,
+    # not a warning zone. Only flag caution at >1.5, danger at >1.7.
     if acwr < 0.8:
         status = "Under-training (Losing fitness)"
-    elif acwr > 1.5:
-        status = "Danger Zone (High Injury Risk - Need Recovery)"
-    elif acwr > 1.3:
+    elif acwr <= 1.3:
+        status = "Sweet Spot (Optimal)"
+    elif acwr <= 1.5:
+        status = "Build Phase (Acceptable)"
+    elif acwr <= 1.7:
         status = "Overreaching (Caution needed)"
+    else:
+        status = "Danger Zone (High Injury Risk - Need Recovery)"
 
     return {"acwr": acwr, "status": status}
 

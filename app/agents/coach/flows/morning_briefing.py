@@ -158,10 +158,24 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
     )
     weekly_decision_context = get_formatted_weekly_context(user_id_str)
 
-    # Fix 3: Compute planned km from training_plans so LLM can detect target vs schedule mismatch.
+    # Compute planned km from training_plans so LLM can detect target vs schedule mismatch.
     days_since_monday = now.weekday()
     week_start_str = (now - timedelta(days=days_since_monday)).strftime("%Y-%m-%d")
     planned_km_this_week = get_planned_weekly_volume(user_id_str, week_start_str)
+
+    # Fetch Garmin wellness metrics to surface Training Status alongside ACWR.
+    garmin_today = get_garmin_daily_metrics(user_id_str, now.strftime("%Y-%m-%d"))
+    garmin_status_text = ""
+    if garmin_today:
+        parts = []
+        if garmin_today.get("training_status"):
+            parts.append(garmin_today["training_status"])
+        if garmin_today.get("training_readiness_score") is not None:
+            parts.append(f"Readiness {garmin_today['training_readiness_score']}")
+        if garmin_today.get("hrv_status"):
+            parts.append(f"HRV {garmin_today['hrv_status']}")
+        if parts:
+            garmin_status_text = " | ".join(parts)
 
     # Fetch short-term memory (last 5 interactions) to maintain conversation context
     raw_history = load_history_for_gemini(user_id_str, limit=5)
@@ -204,6 +218,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         actual_volume,
         weekly_decision_context,
         planned_km_this_week=planned_km_this_week,
+        garmin_status_text=garmin_status_text,
     )
 
     # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
