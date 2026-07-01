@@ -1,7 +1,6 @@
 # app/agents/coach/prompts.py
 from functools import lru_cache
 
-
 # ==========================================
 # 🏷️ SHARED CONSTANTS (single source of truth)
 # ==========================================
