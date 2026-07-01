@@ -848,9 +848,9 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     )
 
     try:
-        # [PERF] Use limit=5 for regular chat. Reduces prompt token size and Gemini latency.
+        # [PERF] Use limit=3 for regular chat (~200-400 fewer tokens per call).
         # Deep history queries are handled via search_long_term_memory tool instead.
-        raw_history = load_history_for_gemini(chat_id, limit=5)
+        raw_history = load_history_for_gemini(chat_id, limit=3)
         formatted_history = [
             {"role": m["role"], "parts": [{"text": m["parts"][0]}]} for m in raw_history
         ]

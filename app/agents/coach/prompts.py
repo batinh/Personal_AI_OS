@@ -1,4 +1,5 @@
 # app/agents/coach/prompts.py
+from functools import lru_cache
 
 
 # ==========================================
@@ -29,6 +30,7 @@ def _chat_format_suffix(chat_format: bool) -> str:
 # ==========================================
 # 🏛️ LAYER 1: SYSTEM INSTRUCTION (IMMUTABLE)
 # ==========================================
+@lru_cache(maxsize=8)
 def build_system_instruction(
     custom_instruction: str,
     user_profile: str,
@@ -189,6 +191,7 @@ Khi VĐV xác nhận cụ thể rằng họ cảm thấy ổn SAU KHI đã nghe 
 {_chat_format_suffix(chat_format)}"""
 
 
+@lru_cache(maxsize=4)
 def build_core_system_instruction(
     custom_instruction: str, chat_format: bool = False
 ) -> str:
