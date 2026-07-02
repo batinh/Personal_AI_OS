@@ -47,49 +47,27 @@ Tóm tắt 1-2 câu ngắn gọn.
 # SYSTEM INSTRUCTION (Per-topic briefing)
 # ==========================================
 
-_TOPIC_SYSTEM_INSTRUCTION = """Bạn là News Curator, chuyên viên tóm tắt tin tức ngắn gọn về một chủ đề cụ thể.
+_TOPIC_SYSTEM_INSTRUCTION = """News curator cho 1 chủ đề cụ thể. Tìm 1-2 tin đặc sắc nhất trong 24-48h qua bằng google_search — không dùng kiến thức lưu sẵn.
+Nguồn ưu tiên: BBC, Reuters, AP, Bloomberg, FT, Nikkei Asia, TechCrunch, Wired, VnExpress, Tuổi Trẻ, World Athletics, Runner's World.
 
-[NHIỆM VỤ]
-Tìm 1-2 tin đặc sắc nhất về CHỦ ĐỀ được yêu cầu trong 24-48 giờ qua.
-Ưu tiên nguồn uy tín: BBC, Reuters, AP, Financial Times, The Economist, Bloomberg, Nikkei Asia, TechCrunch, Wired, Ars Technica, VnExpress, Tuổi Trẻ, World Athletics, Runner's World.
-Chỉ dùng kết quả tìm kiếm thực tế — không dùng kiến thức lưu sẵn.
-
-[FORMAT OUTPUT — BẮT BUỘC]
-📰 <b>Tiêu đề tin 1</b> — Tóm tắt 1 câu (tối đa 20 từ).
-
-📰 <b>Tiêu đề tin 2</b> — Tóm tắt 1 câu (tối đa 20 từ). ← chỉ thêm nếu có tin thực sự đáng chú ý
-
-[RÀNG BUỘC]
-- KHÔNG dùng Markdown. Chỉ dùng HTML tags: <b>.
-- KHÔNG thêm URL hay link — hệ thống tự gắn link từ kết quả tìm kiếm.
-- KHÔNG viết phần phân tích tổng hợp hay xu hướng.
-- Mỗi tin CHỈ 1 dòng: tiêu đề — tóm tắt 1 câu ngắn.
-- Tối đa 500 ký tự toàn output."""
+Output mỗi tin: 📰 <b>Tiêu đề</b> — Tóm tắt ≤20 từ.
+Tin 2: chỉ thêm nếu thực sự đáng chú ý.
+Chỉ dùng HTML <b>. Không Markdown, không URL. Không phân tích xu hướng. ≤500 ký tự tổng."""
 
 
 # ==========================================
 # SYSTEM INSTRUCTION (On-demand query)
 # ==========================================
 
-_ON_DEMAND_SYSTEM_INSTRUCTION = """Bạn là News Curator, trả lời yêu cầu tìm kiếm tin tức tức thời.
+_ON_DEMAND_SYSTEM_INSTRUCTION = """News curator tức thời. Gọi google_search TRƯỚC — không dùng kiến thức lưu sẵn.
+Nguồn ưu tiên: BBC, Reuters, AP, Bloomberg, FT, VnExpress, Tuổi Trẻ, TechCrunch, World Athletics.
 
-[BẮT BUỘC]
-Gọi google_search TRƯỚC khi viết bất kỳ nội dung nào. Dữ liệu huấn luyện lỗi thời — không dùng kiến thức lưu sẵn.
-Ưu tiên nguồn uy tín: BBC, Reuters, AP, Bloomberg, Financial Times, VnExpress, Tuổi Trẻ, TechCrunch, World Athletics.
-
-[FORMAT OUTPUT — BẮT BUỘC]
+Output:
 🔍 <b>[Chủ đề]</b>
+📰 <b>Tiêu đề</b> <i>(DD/MM)</i> — Tóm tắt 1 câu. (Thêm tin 2 nếu có.)
+📈 <i>[1 câu đáng theo dõi]</i>
 
-📰 <b>Tiêu đề tin 1</b> <i>(DD/MM)</i> — Tóm tắt 1 câu ngắn.
-
-📰 <b>Tiêu đề tin 2</b> <i>(DD/MM)</i> — Tóm tắt 1 câu ngắn. ← thêm nếu có
-
-📈 <i>[1 câu nhận xét nhanh về điều đáng theo dõi]</i>
-
-[RÀNG BUỘC]
-- KHÔNG dùng Markdown. Chỉ dùng HTML tags: <b>, <i>.
-- KHÔNG thêm URL hay link — hệ thống tự gắn link.
-- Tối đa 800 ký tự."""
+Chỉ HTML <b><i>. Không Markdown, không URL. ≤800 ký tự."""
 
 
 # ==========================================
@@ -286,46 +264,20 @@ def build_session_prompt(
 # MEMORY EXTRACTION PROMPT
 # ==========================================
 
-_MEMORY_EXTRACTION_TEMPLATE = """Đọc đoạn hội thoại sau giữa người dùng và trợ lý tin tức:
+_MEMORY_EXTRACTION_TEMPLATE = """Đọc hội thoại dưới đây. Trích xuất sở thích tin tức của user (nếu có). Chỉ trả về JSON, không giải thích.
+
+Format: {{"liked": [...], "disliked": [...], "notes": "..."}}
+
+Examples:
+"muốn đọc thêm LLM agents, ít hơn crypto" → {{"liked":["LLM agents"],"disliked":["crypto"],"notes":""}}
+"tin dài quá khó đọc trên mobile" → {{"liked":[],"disliked":[],"notes":"Thích tin ngắn, dễ đọc mobile."}}
+"Tin open source hôm qua hay quá" → {{"liked":["open source"],"disliked":[],"notes":""}}
+"drama người nổi tiếng không liên quan" → {{"liked":[],"disliked":["drama người nổi tiếng"],"notes":""}}
+"Cảm ơn!" → {{"liked":[],"disliked":[],"notes":""}}
 
 ---
 {chat_text}
----
-
-Trích xuất các tín hiệu sở thích tin tức của người dùng (nếu có):
-- Chủ đề họ muốn đọc thêm
-- Chủ đề họ muốn đọc ít hơn
-- Ghi chú về phong cách hoặc yêu cầu đặc biệt
-
-Trả về JSON object với format sau (bỏ trống nếu không có tín hiệu):
-{
-  "liked": ["topic1", "topic2"],
-  "disliked": ["topic3"],
-  "notes": "any free-text preference"
-}
-
-[FEW-SHOT EXAMPLES]
-Example 1 — Like + dislike together:
-  Input: "User: Tôi muốn đọc thêm tin về LLM agents và ít hơn về crypto."
-  Output: {"liked": ["LLM agents"], "disliked": ["crypto"], "notes": ""}
-
-Example 2 — Style request only, no topic signal:
-  Input: "User: Bạn viết ngắn gọn lại được không, tin dài quá khó đọc trên mobile."
-  Output: {"liked": [], "disliked": [], "notes": "Người dùng thích tin ngắn gọn, dễ đọc trên mobile."}
-
-Example 3 — Implicit liking via positive reaction:
-  Input: "User: Tin về open source hôm qua hay quá, có thêm tương tự không?"
-  Output: {"liked": ["open source"], "disliked": [], "notes": ""}
-
-Example 4 — Implicit disliking via negative reaction:
-  Input: "User: Mấy tin về drama người nổi tiếng không liên quan đến mình lắm."
-  Output: {"liked": [], "disliked": ["drama người nổi tiếng"], "notes": ""}
-
-Example 5 — Small talk, no signal:
-  Input: "User: Cảm ơn bạn nhé! AI: Không có chi."
-  Output: {"liked": [], "disliked": [], "notes": ""}
-
-Chỉ trả về JSON, không giải thích thêm."""
+---"""
 
 
 def build_memory_extraction_prompt(chat_text: str) -> str:

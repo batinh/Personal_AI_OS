@@ -804,9 +804,9 @@ class TestTieredSystemPrompt(unittest.TestCase):
             max_hr=185,
             rest_hr=55,
         )
-        self.assertIn("THANG ĐIỂM GCS", prompt)
-        self.assertIn("BẢNG HR ZONES", prompt)
-        self.assertIn("KỶ LUẬT SỬ DỤNG TOOL", prompt)
+        self.assertIn("GCS", prompt)
+        self.assertIn("HR ZONES", prompt)
+        self.assertIn("TOOL TRIGGERS", prompt)
 
     @patch("app.agents.coach.agent.build_core_system_instruction")
     @patch("app.agents.coach.agent.build_system_instruction")

@@ -95,7 +95,7 @@ class TestBuildTopicSystemInstruction:
 
     def test_contains_format_keywords(self):
         result = build_topic_system_instruction()
-        assert "FORMAT" in result
+        assert "HTML" in result
 
 
 class TestBuildTopicPrompt:
@@ -133,7 +133,7 @@ class TestBuildOnDemandSystemInstruction:
 
     def test_contains_format_keywords(self):
         result = build_on_demand_system_instruction()
-        assert "FORMAT" in result
+        assert "HTML" in result
 
 
 class TestBuildOnDemandPrompt:

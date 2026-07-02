@@ -1,42 +1,16 @@
-Đọc đoạn hội thoại sau giữa người dùng và trợ lý tin tức:
+Đọc hội thoại dưới đây. Trích xuất sở thích tin tức của user (nếu có). Chỉ trả về JSON, không giải thích.
+
+Format: {{"liked": [...], "disliked": [...], "notes": "..."}}
+
+Examples:
+"muốn đọc thêm LLM agents, ít hơn crypto" → {{"liked":["LLM agents"],"disliked":["crypto"],"notes":""}}
+"tin dài quá khó đọc trên mobile" → {{"liked":[],"disliked":[],"notes":"Thích tin ngắn, dễ đọc mobile."}}
+"Tin open source hôm qua hay quá" → {{"liked":["open source"],"disliked":[],"notes":""}}
+"drama người nổi tiếng không liên quan" → {{"liked":[],"disliked":["drama người nổi tiếng"],"notes":""}}
+"Cảm ơn!" → {{"liked":[],"disliked":[],"notes":""}}
 
 ---
 User: Tôi muốn đọc thêm tin về LLM agents và ít hơn về crypto.
 AI: Đã ghi nhận.
 User: Cảm ơn.
 ---
-
-Trích xuất các tín hiệu sở thích tin tức của người dùng (nếu có):
-- Chủ đề họ muốn đọc thêm
-- Chủ đề họ muốn đọc ít hơn
-- Ghi chú về phong cách hoặc yêu cầu đặc biệt
-
-Trả về JSON object với format sau (bỏ trống nếu không có tín hiệu):
-{
-  "liked": ["topic1", "topic2"],
-  "disliked": ["topic3"],
-  "notes": "any free-text preference"
-}
-
-[FEW-SHOT EXAMPLES]
-Example 1 — Like + dislike together:
-  Input: "User: Tôi muốn đọc thêm tin về LLM agents và ít hơn về crypto."
-  Output: {"liked": ["LLM agents"], "disliked": ["crypto"], "notes": ""}
-
-Example 2 — Style request only, no topic signal:
-  Input: "User: Bạn viết ngắn gọn lại được không, tin dài quá khó đọc trên mobile."
-  Output: {"liked": [], "disliked": [], "notes": "Người dùng thích tin ngắn gọn, dễ đọc trên mobile."}
-
-Example 3 — Implicit liking via positive reaction:
-  Input: "User: Tin về open source hôm qua hay quá, có thêm tương tự không?"
-  Output: {"liked": ["open source"], "disliked": [], "notes": ""}
-
-Example 4 — Implicit disliking via negative reaction:
-  Input: "User: Mấy tin về drama người nổi tiếng không liên quan đến mình lắm."
-  Output: {"liked": [], "disliked": ["drama người nổi tiếng"], "notes": ""}
-
-Example 5 — Small talk, no signal:
-  Input: "User: Cảm ơn bạn nhé! AI: Không có chi."
-  Output: {"liked": [], "disliked": [], "notes": ""}
-
-Chỉ trả về JSON, không giải thích thêm.
