@@ -22,87 +22,33 @@ Before commit: `docs/DELIVERY_CHECKLIST.md` (typed by change type). Pragmatic re
 
 ## Docker Log Debug Toolkit
 `scripts/fetch-logs.sh` — fetch và filter log từ container `airunningcoach`.
-
-App logs are written to `./logs/app.log` (bind-mounted: `./logs/:/app/logs`).
-Daily rotation at midnight → `app.log.2026-04-18`, 30-day retention. Persists across container restarts.
+App logs: `./logs/app.log` (bind-mounted). Daily rotation at midnight, 30-day retention.
 
 ```bash
-# Tổng quan nhanh (count by level + last errors)
-bash scripts/fetch-logs.sh --summary
-
-# Lỗi trong 1 giờ qua
-bash scripts/fetch-logs.sh -l ERROR --since 1h
-
-# Log module cụ thể (news / coach / scheduler / webhook / ...)
-bash scripts/fetch-logs.sh -m news -n 200
-
-# Kết hợp: lỗi của news agent
-bash scripts/fetch-logs.sh -l ERROR,WARNING -m news --since 2h
-
-# Live tail toàn bộ
-bash scripts/fetch-logs.sh --live
-
-# Live tail filtered
-bash scripts/fetch-logs.sh --live -l ERROR -m scheduler
-
-# Khi container down — đọc từ ./logs/app.log* trên host
-bash scripts/fetch-logs.sh --file --summary
-bash scripts/fetch-logs.sh --file -l ERROR -m news
+bash scripts/fetch-logs.sh --summary                        # count by level + last errors
+bash scripts/fetch-logs.sh -l ERROR --since 1h             # errors in last hour
+bash scripts/fetch-logs.sh -m news -n 200                  # module-specific
+bash scripts/fetch-logs.sh -l ERROR,WARNING -m news --since 2h  # combined
+bash scripts/fetch-logs.sh --live                          # live tail
+bash scripts/fetch-logs.sh --file -l ERROR -m news        # container down — read from host
 ```
 
-**Quy trình debug khi nhận báo lỗi:**
-```
-1. bash scripts/fetch-logs.sh --summary          # xác định level + module nào nhiều lỗi
-2. bash scripts/fetch-logs.sh -l ERROR -m <mod> --since 1h   # xem chi tiết
-3. Đọc code module bị lỗi → fix → chạy tests
-4. bash scripts/deploy-t440.sh --skip-pull       # rebuild + verify
-```
-
-**Fallback thủ công** (khi container down):
-```bash
-tail -n 100 ./logs/app.log | grep -i error
-cat ./logs/app.log* | grep -i error | tail -50
-```
+**Debug flow:** `--summary` → `-l ERROR -m <mod> --since 1h` → fix → `deploy-t440.sh --skip-pull`
 
 ## Dev → Test → Deploy Workflow
-Every code change must pass this gate before deploying to T440:
 
 ```
-1. SMOKE  python -m pytest tests/test_smoke.py -v
-          Catches ImportError and missing symbols before any logic runs.
-          Run this first — fastest feedback (< 2s).
-
-2. SANITY python -m pytest tests/test_sanity_flows.py -v
-          58 flow-level regression tests: morning briefing guards, daily suggestion
-          all branches, scheduler wrappers, Telegram command routing, news briefing,
-          Strava webhooks, health endpoint, notification pipeline, agentic loop.
-          Run after any agent/flow change to catch real user-facing regressions.
-          No Docker required — mocks all I/O (Gemini, DB, Telegram). ~5s.
-
-3. E2E    python -m pytest tests/test_e2e_local.py -v
-          28 HTTP-level tests: health, Strava webhook flow, Telegram routing,
-          scheduler startup, timezone utils, config concurrency.
-          Run after any refactor to prove end-to-end paths still work.
-          No Docker required — uses FastAPI TestClient.
-
-4. UNIT   python -m pytest tests/ -q
-          Full suite: unit + integration tests. 0 failures required.
-
-5. DEPLOY bash scripts/pre-deploy-check.sh
-          Runs: pytest suite + config loads + docker compose syntax.
-
-6. T440   bash scripts/deploy-t440.sh
-          git pull + docker rebuild + health check (90s timeout) +
-          E2E curl smoke tests (/health, /console, /admin, /webhook,
-          scheduler running, no errors in last 50 log lines).
+1. SMOKE  python -m pytest tests/test_smoke.py -v          # ImportError / missing symbols (<2s)
+2. SANITY python -m pytest tests/test_sanity_flows.py -v   # 58 flow-level regressions (~5s, no Docker)
+3. E2E    python -m pytest tests/test_e2e_local.py -v      # 28 HTTP-level tests (FastAPI TestClient)
+4. UNIT   python -m pytest tests/ -q                        # full suite, 0 failures required
+5. DEPLOY bash scripts/pre-deploy-check.sh                  # pytest + config + compose syntax
+6. T440   bash scripts/deploy-t440.sh                       # git pull + rebuild + health check (90s)
 ```
 
-**When to add a smoke test**: whenever a new public symbol is exported from a module
-(new function in `prompts.py`, new class in a service, new handler). Add an import
-assertion in `tests/test_smoke.py` under the matching class.
+**When to add a smoke test**: new public symbol exported from any module → add import assertion in `tests/test_smoke.py`.
 
-**When to update snapshot tests**: any change in `app/agents/coach/prompts.py` or
-`app/agents/news/prompts.py` will trip `tests/test_prompts_snapshot.py`. Workflow:
+**When to update snapshot tests**: change in `app/agents/coach/prompts.py` or `app/agents/news/prompts.py`:
 1. Run `python -m pytest tests/test_prompts_snapshot.py -v` and EYEBALL the diff.
 2. If intentional → `python scripts/update_prompt_snapshots.py` to re-freeze.
 3. Bump `PROMPT_VERSION` in `app/agents/_prompt_telemetry.py` with a changelog line.

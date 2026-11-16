@@ -1,6 +1,6 @@
 # Personal AI OS — Coach Dyno
 
-> An autonomous AI coaching agent that ingests your Strava data, applies sports science, and delivers personalized training guidance across Telegram, Strava, and Email — running 24/7 on a home lab.
+> An autonomous AI coaching agent that ingests your Runalyze data (Garmin → Runalyze), applies sports science, and delivers personalized training guidance across Telegram and Email — running 24/7 on a home lab.
 
 [![Tests](https://img.shields.io/badge/tests-273%20passed-brightgreen?style=flat-square)](./docs/testing/TEST_EXECUTION_REPORT.md)
 [![Python](https://img.shields.io/badge/python-3.11-blue?style=flat-square)](https://www.python.org/)
@@ -30,7 +30,7 @@
 
 ## Overview
 
-**Personal AI OS** is a self-hosted, agentic AI system built on FastAPI. Its first incarnation — **Coach Dyno** — acts as a personal running coach. It automatically ingests training data from Strava, computes sports science metrics (TRIMP, ACWR, Efficiency Factor, Cardiac Drift), reasons over them with Google Gemini, and delivers coaching output via Telegram, Strava activity descriptions, and email.
+**Personal AI OS** is a self-hosted, agentic AI system built on FastAPI. Its first incarnation — **Coach Dyno** — acts as a personal running coach. It automatically ingests training data from Runalyze, computes sports science metrics (TRIMP, ACWR, Efficiency Factor, Cardiac Drift), reasons over them with Google Gemini, and delivers coaching output via Telegram and email.
 
 The system is designed as a **Modular Monolith** with a clear 5-layer architecture, making it extensible to other agent domains (work assistant, finance tracker) without architectural rewrites.
 
@@ -46,9 +46,9 @@ The system is designed as a **Modular Monolith** with a clear 5-layer architectu
 
 | Feature | Description |
 |---|---|
-| **Strava Webhook Ingest** | Real-time activity ingestion. Parses splits, laps, HR streams and saves to SQLite + JSON data lake |
+| **Runalyze Run Ingest** (15-min poll) | Real-time activity ingestion. Parses splits, laps, HR streams and saves to SQLite + JSON data lake |
 | **AI Run Analysis** | Gemini analyzes pace strategy, biomechanics, cardiac drift, and GCS (Goal Confidence Score 0–100%) |
-| **Omni-channel Output** | Single analysis → HTML for Telegram, plain-text for Strava description, rich HTML for email |
+| **Omni-channel Output** | Single analysis → HTML for Telegram, plain-text fallback, rich HTML for email |
 | **Morning Briefing** | Daily standup: ACWR safety check, today's plan, weather advisory, injury memory injection |
 | **Weekly Reflection** | Sunday cron: reviews the week's compliance, GCS trend, and sets next week's target volume |
 | **Autonomous Memory** | Extracts implicit facts from chat history (injuries, goals, gear) into a persistent Core Memory |
@@ -67,7 +67,7 @@ The system is designed as a **Modular Monolith** with a clear 5-layer architectu
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 1: Edge & Triggers                                   │
-│  Strava Webhook │ Telegram Webhook │ APScheduler Cron       │
+│  Runalyze Poll  │ Telegram Webhook │ APScheduler Cron       │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Cognitive Core (FastAPI + BackgroundTasks)        │
 │  ┌─────────────┐  ┌──────────────────────────────────────┐  │
@@ -96,22 +96,21 @@ The system is designed as a **Modular Monolith** with a clear 5-layer architectu
 ### Data Flow: Activity Ingestion
 
 ```
-Strava completes run
+Run synced Garmin → Runalyze
       │
       ▼
-POST /webhook (Strava)
+APScheduler poll_new_runs (every 15 min)
       │
       ▼
-BackgroundTask: run_strava_workflow()
+run_activity_workflow()
       │
-      ├─ 1. Fetch activity detail + streams (StravaClient)
+      ├─ 1. Fetch activity detail + streams (RunalyzeActivityClient)
       ├─ 2. Save to SQLite (save_run_activity) ← data integrity first
       ├─ 3. Save raw streams to JSON file (stream_storage)
       ├─ 4. Gemini analysis (analyze_run_with_gemini)
       ├─ 5. Embed analysis into ChromaDB RAG (rag_db.memorize)
       └─ 6. Fan-out notifications:
              ├─ Telegram (HTML format)
-             ├─ Strava description update (plain-text)
              └─ Email (rich HTML)
 ```
 
@@ -147,7 +146,9 @@ Personal_AI_OS/
 │   │   ├── prompts.py             # 8-layer Lego Prompt Engine
 │   │   ├── tools.py               # Gemini AFC tools (set_plan, search_memory…)
 │   │   ├── utils.py               # TRIMP, ACWR, AgentContext, send_with_retry
-│   │   ├── strava_client.py       # Strava API client (token caching)
+│   │   ├── runalyze_client.py     # Runalyze MCP client (Personal API Token)
+│   │   ├── runalyze_activities.py # Runalyze → Strava-shaped run ingestion adapter
+│   │   ├── runalyze_context.py    # Runalyze load line for coach prompts
 │   │   ├── harvest.py             # Cron harvest + manual sync flow
 │   │   └── flows/
 │   │       ├── run_analysis.py    # analyze_run_with_gemini()
@@ -172,7 +173,7 @@ Personal_AI_OS/
 ├── tests/                         # 216 tests, 100% pass rate
 │   ├── conftest.py                # Session-level stubs (google.genai, chromadb)
 │   ├── test_webhooks.py           # HTTP endpoint tests (18)
-│   ├── test_strava_client.py      # StravaClient unit tests (20)
+│   ├── test_runalyze_client.py    # Runalyze MCP client tests
 │   ├── test_config.py             # Config management tests (8)
 │   ├── test_harvest.py            # Harvest + sync flow tests (13)
 │   ├── test_agent.py              # Agent flow integration tests (20)
@@ -186,7 +187,7 @@ Personal_AI_OS/
 ├── data/                          # Runtime data (gitignored)
 │   ├── os_core.db                 # SQLite database
 │   ├── config.json                # Active configuration
-│   └── streams/                   # Raw Strava JSON stream files
+│   └── streams/                   # Raw run stream JSON files
 ├── infra/                         # Nginx + DuckDNS config
 ├── scripts/
 │   └── deploy-t440.sh             # Automated deploy: push → SSH pull → rebuild → e2e test
@@ -204,7 +205,7 @@ Personal_AI_OS/
 
 - Python 3.11+
 - Docker & Docker Compose (recommended for production)
-- A Strava account with API access
+- A Runalyze Premium account (with your watch/Garmin syncing into it)
 - A Telegram Bot (via [@BotFather](https://t.me/botfather))
 - Google Gemini API key ([Google AI Studio](https://aistudio.google.com/))
 - OpenWeatherMap API key (free tier)
@@ -246,18 +247,12 @@ Create a `.env` file in the project root:
 # Google Gemini AI
 GOOGLE_API_KEY=your_gemini_api_key
 
-# Strava API (OAuth)
-STRAVA_CLIENT_ID=your_client_id
-STRAVA_CLIENT_SECRET=your_client_secret
-STRAVA_REFRESH_TOKEN=your_refresh_token
-STRAVA_ATHLETE_ID=your_athlete_id
+# Runalyze (MCP) — Personal API Token from runalyze.com/settings/personal-api
+RUNALYZE_API_TOKEN=your_personal_api_token
 
 # Telegram Bot
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_personal_chat_id
-
-# Strava Webhook Verification
-VERIFY_TOKEN=your_chosen_secret_string
 
 # Admin Dashboard
 ADMIN_USERNAME=admin
@@ -300,7 +295,7 @@ Key configuration fields:
 | `race_date` | Target race date (drives Training Phase logic) |
 | `model_name` | Gemini model (default: `models/gemini-2.0-flash`) |
 | `scheduler.briefing_time` | Daily briefing cron time (default: `06:00`) |
-| `scheduler.harvest_hours` | Hours to auto-harvest Strava (default: `0,6,12,18`) |
+| `scheduler.harvest_hours` | Hours to auto-harvest Runalyze (default: `0,6,12,18`) |
 | `email_config` | SMTP settings for email notifications |
 | `news_agent.enabled` | Enable/disable news briefings |
 | `news_agent.morning_time` | Morning news cron time (default: `07:00`) |
@@ -312,21 +307,9 @@ Key configuration fields:
 
 ## API Reference
 
-### Strava Webhook
+### New-run detection
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/webhook` | Strava subscription verification handshake |
-| `POST` | `/webhook` | Receive Strava events (activity create/delete) |
-
-**Strava Webhook Payload (create):**
-```json
-{
-  "object_type": "activity",
-  "aspect_type": "create",
-  "object_id": 12345678
-}
-```
+Runalyze has no push webhook: the scheduler polls every 15 minutes (`poll_new_runs`). The old Strava `/webhook` endpoints were removed.
 
 ### Telegram Webhook
 
@@ -338,7 +321,7 @@ Key configuration fields:
 
 | Command | Description |
 |---|---|
-| `/sync` | Sync 3 most recent Strava activities |
+| `/sync` | Sync 3 most recent Runalyze activities |
 | `/sync 10` | Sync last 10 activities |
 | `/sync month` | Sync last 30 days (up to 50 activities) |
 | `/standup` | Trigger morning briefing immediately |
@@ -378,7 +361,7 @@ All cron times are configured via the Admin UI (stored in `data/config.json`).
 | **Morning Briefing** | Daily at `06:00` | Fetches weather, checks ACWR, delivers today's plan via Telegram |
 | **Morning News** | Daily at `07:00` | RSS news digest (VnExpress, Tuổi Trẻ, BBC Viet) — summarized by Gemini, sent via Telegram |
 | **Afternoon News** | Daily at `17:00` | Afternoon news update with deduplication against morning's articles |
-| **Auto Harvest** | `00:15`, `06:15`, `12:15`, `18:15` | Syncs last 10 Strava activities to SQLite |
+| **Auto Harvest** | `00:15`, `06:15`, `12:15`, `18:15` | Syncs last 10 Runalyze activities to SQLite |
 | **Weekly Reflection** | Sundays at `20:00` | Reviews the week, sets next week's target volume, saves to RAG |
 | **Daily Backup** | Daily at `02:00` | Archives `os_core.db` + `config.json` to `backups/` |
 
@@ -404,8 +387,8 @@ python -m pytest tests/ -q
 
 | Module | Tests | Coverage |
 |---|---|---|
-| `test_webhooks.py` | 18 | HTTP endpoints, Strava/Telegram routing, workflow orchestration |
-| `test_strava_client.py` | 20 | Token caching, API error handling, all methods |
+| `test_webhooks.py` | — | HTTP endpoints, Telegram routing, workflow orchestration |
+| `test_runalyze_client.py` / `test_runalyze_activities.py` / `test_runalyze_poll.py` | — | MCP client, Strava-shape mapping, polling, dedupe, backfill |
 | `test_config.py` | 8 | Load/save, TTL cache, auto-init, corrupted file resilience |
 | `test_harvest.py` | 13 | Cron harvest, manual sync, RAG gap detection, rate limiting |
 | `test_agent.py` | 20 | Telegram chat, morning briefing, weekly reflection, memory extraction |
@@ -434,12 +417,8 @@ docker compose up -d
 # 3. Verify startup logs
 docker logs airunningcoach --tail 20
 
-# 4. Register Strava webhook subscription (one-time)
-curl -X POST https://www.strava.com/api/v3/push_subscriptions \
-  -d "client_id=YOUR_CLIENT_ID" \
-  -d "client_secret=YOUR_CLIENT_SECRET" \
-  -d "callback_url=https://your-domain.com/webhook" \
-  -d "verify_token=YOUR_VERIFY_TOKEN"
+# 4. Fill the run gap after switching data source (one-time, see docs/features/runalyze-mcp.md)
+docker exec airunningcoach python scripts/backfill_runalyze.py --dry-run
 
 # 5. Register Telegram webhook (one-time)
 curl "https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook?url=https://your-domain.com/telegram-webhook"
@@ -482,9 +461,8 @@ Prerequisites: SSH key auth to T440, `tinhn` user in Docker group.
 curl http://your-host:8000/health
 # Expected: {"status":"healthy","db":"ok","config":"ok","scheduler":"running"}
 
-# 2. Verify Strava webhook endpoint
-curl "https://your-domain.com/webhook?hub.verify_token=YOUR_TOKEN&hub.challenge=test"
-# Expected: {"hub.challenge": "test"}
+# 2. Verify run polling is scheduled
+bash scripts/fetch-logs.sh -m coach --since 1h   # look for [POLL] lines
 
 # 3. Check Console UI
 # Open: https://your-domain.com/console
@@ -496,9 +474,9 @@ curl "https://your-domain.com/webhook?hub.verify_token=YOUR_TOKEN&hub.challenge=
 
 ### ✅ Completed
 
-- [x] Strava webhook ingestion with stream parsing
+- [x] Runalyze run ingestion (15-min poll) with stream parsing (replaced the Strava webhook)
 - [x] Gemini AI run analysis with GCS scoring
-- [x] Omni-channel output (Telegram, Strava, Email)
+- [x] Omni-channel output (Telegram, Email)
 - [x] Morning briefing with weather awareness
 - [x] Weekly reflection with RAG memory injection
 - [x] Autonomous implicit memory extraction
@@ -523,7 +501,7 @@ curl "https://your-domain.com/webhook?hub.verify_token=YOUR_TOKEN&hub.challenge=
 
 The current architecture is single-tenant (one `TELEGRAM_CHAT_ID` per deployment). Multi-tenant migration path:
 
-- [ ] Identity router: manage multiple Telegram + Strava ID pairs
+- [ ] Identity router: manage multiple Telegram + Runalyze ID pairs
 - [ ] All DB tables already have `user_id` column — schema is ready
 - [ ] ChromaDB metadata filtering by `user_id` already implemented
 - [ ] Replace `get_primary_user_id()` with request-scoped user resolution

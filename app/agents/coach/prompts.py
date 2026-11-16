@@ -168,6 +168,7 @@ def get_shared_context_block(
     hr_zones_text: str = "",
     planned_km_this_week: float = 0.0,
     garmin_status_text: str = "",
+    runalyze_text: str = "",
 ) -> str:
     """Dynamic data block providing sensory context to the AI.
 
@@ -195,13 +196,19 @@ def get_shared_context_block(
         else ""
     )
 
+    runalyze_line = (
+        f"\n- Runalyze (tham khảo, mô hình TRIMP riêng; an toàn vẫn theo ACWR trên): {runalyze_text}"
+        if runalyze_text
+        else ""
+    )
+
     return f"""
 [BỐI CẢNH HIỆN TẠI]
 - Thời gian hệ thống: {now_str}
 - Mục tiêu: {countdown_text}
 - User ID: {chat_id}
 - Giai đoạn: {phase_text}
-- Thể trạng (ACWR): {acwr_text}{garmin_line}
+- Thể trạng (ACWR): {acwr_text}{garmin_line}{runalyze_line}
 {zones_block}
 [ĐIỀU PHỐI KHỐI LƯỢNG TUẦN (WEEKLY LIMITS)]
 - Thực chạy tuần này: {actual_volume} km{plan_volume_line}
@@ -278,15 +285,6 @@ CHAT_FORMAT_RULES = """
    - Phân tích bài tập hoặc giáo án → tối đa 20 dòng có cấu trúc.
 """
 
-STRAVA_FORMAT_RULES = """
-[QUY TẮC HIỂN THỊ ĐỘC QUYỀN CHO STRAVA]
-1. TUYỆT ĐỐI KHÔNG DÙNG KÝ TỰ MARKDOWN (*, **, #, ```). Nền tảng này chỉ hỗ trợ Plain-text.
-2. TẠO ĐIỂM NHẤN BẰNG CHỮ IN HOA (Ví dụ: ZONE 4, VƯỢT CHỈ TIÊU).
-3. Sử dụng dải ký tự `-----------------------------` để phân tách.
-4. Mỗi ý chỉ dài 1-2 dòng, xuống dòng liên tục.
-5. KHÔNG bao gồm lập luận nội bộ (ACWR, Giai đoạn, Kết luận an toàn) vào mô tả Strava. Đây là thông tin dùng để suy luận nội bộ, KHÔNG xuất hiện trong văn bản gửi lên Strava.
-"""
-
 EMAIL_FORMAT_RULES = """
 [QUY TẮC HIỂN THỊ ĐỘC QUYỀN CHO EMAIL]
 1. SỬ DỤNG MÃ HTML CHUẨN ĐỂ TRÌNH BÀY (<h1>, <h2>, <b>, <ul>, <li>, <table>).
@@ -306,13 +304,13 @@ BẮT BUỘC TRÌNH BÀY THEO CẤU TRÚC HTML SAU (Chỉ trả về nội dung 
 """
 
 UNIVERSAL_FORMAT_RULES = """
-[QUY TẮC ĐỊNH DẠNG DÙNG CHUNG (STRAVA & EMAIL PLAIN-TEXT MODE)]
+[QUY TẮC ĐỊNH DẠNG DÙNG CHUNG (PLAIN-TEXT MODE)]
 Áp dụng KHI KHÔNG có platform-specific format rules:
 1. TUYỆT ĐỐI KHÔNG DÙNG KÝ TỰ MARKDOWN (*, **, #, ```) VÀ THẺ HTML. Nền tảng đích chỉ hỗ trợ Plain-text.
 2. TẠO ĐIỂM NHẤN BẰNG CHỮ IN HOA (Ví dụ: ZONE 4, VƯỢT CHỈ TIÊU) thay vì in đậm.
 3. Giữ nguyên các dải ký tự `-----------------------------` và `════════════════════════` như trong Cấu trúc yêu cầu.
 4. Mỗi ý chỉ dài 1-2 dòng, xuống dòng liên tục để dễ đọc trên thiết bị di động.
-5. KHÔNG bao gồm lập luận nội bộ (ACWR hiện tại, Giai đoạn hiện tại, Kết luận an toàn) vào nội dung xuất bản. Đây là bước suy luận nội bộ — KHÔNG xuất hiện trong văn bản cuối gửi lên Strava hoặc thiết bị.
+5. KHÔNG bao gồm lập luận nội bộ (ACWR hiện tại, Giai đoạn hiện tại, Kết luận an toàn) vào nội dung xuất bản. Đây là bước suy luận nội bộ — KHÔNG xuất hiện trong văn bản cuối gửi cho vận động viên.
 """
 
 
@@ -422,7 +420,7 @@ def build_universal_run_analysis_prompt(
     The 9-parameter signature is intentional: each block is owned by a different
     layer (L2 context, L3 report definitions, L4 platform format, L7 metrics).
     Callers select which constants to inject so the same builder serves chat,
-    Strava, and email outputs without per-channel duplication.
+    and email outputs without per-channel duplication.
 
     Args:
         shared_context  : output of ``get_shared_context_block`` (L2).
@@ -433,8 +431,8 @@ def build_universal_run_analysis_prompt(
         analysis_req    : analysis requirements block (L3).
         report_structure: required report layout (L3).
         format_rules    : platform-specific formatter (L4) — pick one of
-                          ``CHAT_FORMAT_RULES`` / ``STRAVA_FORMAT_RULES`` /
-                          ``EMAIL_FORMAT_RULES`` / ``UNIVERSAL_FORMAT_RULES``.
+                          ``CHAT_FORMAT_RULES`` / ``EMAIL_FORMAT_RULES`` /
+                          ``UNIVERSAL_FORMAT_RULES``.
         metrics_block   : optional running-science metrics (L7).
     """
     metrics_section = (

@@ -27,12 +27,12 @@ def compute_stream_metrics(
     activity_name: str = "",
 ) -> Dict[str, Any]:
     """
-    Compute all running science metrics from Strava stream data.
+    Compute all running science metrics from run stream data (Strava key_by_type shape).
 
     Args:
         streams:       key_by_type dict — e.g. {"velocity_smooth": [0.1, ...], ...}
                        Use stream_storage.get_stream_arrays() to get this.
-        meta:          extended_meta from strava_client
+        meta:          extended_meta from runalyze_activities.to_extended_meta
                        Expected keys: moving_time (sec), distance (m), avg_hr, splits, etc.
         config:        user physiology config
                        Expected keys: max_hr, rest_hr, rftp_watts, threshold_pace_min_km

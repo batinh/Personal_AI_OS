@@ -12,6 +12,7 @@ from app.core.database import (
     get_all_active_memories,
     get_planned_weekly_volume,
 )
+from app.agents.coach.runalyze_context import get_runalyze_text
 from app.agents.coach.utils import (
     calculate_acwr,
     calculate_training_phase,
@@ -129,6 +130,7 @@ def generate_weekly_reflection(config: dict):
         f"{acwr_data['acwr']} ({acwr_data['status']})",
         actual_volume,
         weekly_decision_context,
+        runalyze_text=get_runalyze_text(user_id_str, now.date()),
     )
 
     prompt = build_weekly_reflection_prompt(

@@ -13,6 +13,21 @@ from unittest.mock import patch, MagicMock
 
 from app.agents.coach.harvest import build_activity_record
 
+_dup_patcher = None
+
+
+def setUpModule():
+    """Keep ingest tests off the real DB: no stored run is ever a duplicate."""
+    global _dup_patcher
+    _dup_patcher = patch(
+        "app.agents.coach.harvest.find_duplicate_run", return_value=None
+    )
+    _dup_patcher.start()
+
+
+def tearDownModule():
+    _dup_patcher.stop()
+
 
 class TestBuildActivityRecord(unittest.TestCase):
     """build_activity_record normalizes Strava API response to DB schema."""
@@ -92,12 +107,10 @@ class TestHarvestData(unittest.TestCase):
         return_value={"max_hr": 185, "rest_hr": 55},
     )
     @patch("app.agents.coach.harvest.get_primary_user_id", return_value="12345")
-    @patch.dict("os.environ", {"STRAVA_ATHLETE_ID": "99999"})
     def test_harvest_saves_only_runs(
         self, mock_uid, mock_cfg, mock_init, mock_upsert, mock_save, mock_db
     ):
         mock_client = MagicMock()
-        mock_client.get_athlete_stats.return_value = None
         mock_client.get_recent_activities.return_value = [
             {
                 "id": 1,
@@ -119,8 +132,10 @@ class TestHarvestData(unittest.TestCase):
         ]
 
         with patch(
-            "app.agents.coach.harvest.StravaClient", return_value=mock_client
-        ), patch("builtins.open", MagicMock()):
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ), patch("builtins.open", MagicMock()), patch(
+            "app.agents.coach.harvest.get_run_totals_km", return_value={}
+        ):
             from app.agents.coach.harvest import harvest_data
 
             harvest_data()
@@ -135,7 +150,9 @@ class TestHarvestData(unittest.TestCase):
         """If no TELEGRAM_CHAT_ID, harvest should exit early."""
         mock_client = MagicMock()
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import harvest_data
 
             harvest_data()
@@ -174,7 +191,9 @@ class TestExecuteManualSync(unittest.TestCase):
         # RAG already has this activity
         mock_rag.collection.get.return_value = {"ids": ["1"]}
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import execute_manual_sync
 
             execute_manual_sync("12345", limit=3)
@@ -231,7 +250,9 @@ class TestExecuteManualSync(unittest.TestCase):
         # RAG does NOT have this activity
         mock_rag.collection.get.return_value = {"ids": []}
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import execute_manual_sync
 
             execute_manual_sync("12345", limit=3)
@@ -247,7 +268,9 @@ class TestExecuteManualSync(unittest.TestCase):
         mock_client = MagicMock()
         mock_client.get_recent_activities.return_value = []
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import execute_manual_sync
 
             execute_manual_sync("12345", limit=3)
@@ -274,7 +297,9 @@ class TestExecuteManualSync(unittest.TestCase):
             {"id": 2, "type": "Swim", "distance": 1500, "moving_time": 1800},
         ]
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import execute_manual_sync
 
             execute_manual_sync("12345", limit=5)
@@ -315,7 +340,9 @@ class TestExecuteManualSync(unittest.TestCase):
         ]
         mock_rag.collection.get.return_value = {"ids": ["1", "2"]}
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import execute_manual_sync
 
             execute_manual_sync("12345", limit=50, days_back=30)
@@ -361,7 +388,9 @@ class TestHarvestActivityTypes(unittest.TestCase):
         mock_client.get_activity_data.return_value = ("Virtual Run", None, None, None)
         mock_rag.collection.get.return_value = {"ids": []}
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import execute_manual_sync
 
             execute_manual_sync("12345", limit=5)
@@ -412,7 +441,9 @@ class TestHarvestActivityTypes(unittest.TestCase):
         mock_rag.collection.get.return_value = {"ids": []}
         mock_save.side_effect = [Exception("DB write failed"), None]
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import execute_manual_sync
 
             execute_manual_sync("12345", limit=5)
@@ -461,7 +492,9 @@ class TestManualSyncRateLimiting(unittest.TestCase):
         mock_client.get_activity_data.return_value = ("Run", None, None, None)
         mock_rag.collection.get.return_value = {"ids": []}
 
-        with patch("app.agents.coach.harvest.StravaClient", return_value=mock_client):
+        with patch(
+            "app.agents.coach.harvest.get_activity_client", return_value=mock_client
+        ):
             from app.agents.coach.harvest import execute_manual_sync
 
             execute_manual_sync("12345", limit=5)

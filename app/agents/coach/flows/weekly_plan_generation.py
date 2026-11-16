@@ -7,12 +7,18 @@ from app.core.notification import send_telegram_msg
 from app.core.database import (
     get_athlete_state,
     get_garmin_daily_metrics,
+    get_runalyze_daily_load,
     upsert_weekly_plan,
     upsert_weekly_target,
     get_pending_weekly_plan,
     update_weekly_plan_status,
     has_active_plan_this_week,
     get_db,
+)
+from app.agents.coach.runalyze_context import (
+    RUNALYZE_MAX_STALE_DAYS,
+    format_runalyze_prognosis,
+    format_runalyze_races,
 )
 from app.agents.coach.schemas import WeeklyPlanResult
 from app.agents.coach.utils import build_agent_context
@@ -92,6 +98,14 @@ def _build_weekly_plan_prompt(config: dict, context_data: dict) -> str:
     recovery_week_due = context_data.get("recovery_week_due", False)
     rpe_trend = context_data.get("rpe_last_3_runs", [])
     training_status = context_data.get("garmin_training_status", "MAINTAINING")
+    runalyze_lines = "".join(
+        f"\n- {label}: {context_data[key]}"
+        for key, label in (
+            ("runalyze_prognosis", "Dự báo thành tích"),
+            ("runalyze_races", "Giải chạy kế hoạch (Runalyze)"),
+        )
+        if context_data.get(key)
+    )
 
     readiness_instruction = _readiness_gate_instruction(readiness)
     taper_instruction = _taper_instruction(countdown_days)
@@ -109,7 +123,7 @@ Bạn là HLV marathon AI chuyên nghiệp. Hãy tạo giáo án 7 ngày cho tu�
 - Training Readiness: {readiness}/100
 - HRV: {hrv_status} | Ngủ tối qua: {sleep_h}h
 - Garmin Training Status: {training_status}
-- ACWR: {acwr} (7d/28d load ratio)
+- ACWR: {acwr} (7d/28d load ratio){runalyze_lines}
 - Khối lượng tuần trước: {weekly_km}km
 - RPE 3 bài gần nhất: {rpe_trend}
 
@@ -191,6 +205,9 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
     acwr = _calculate_acwr(user_id)
     today_str = date.today().strftime("%Y-%m-%d")
     garmin = get_garmin_daily_metrics(user_id, today_str) or {}
+    runalyze_row = get_runalyze_daily_load(
+        user_id, today_str, max_stale_days=RUNALYZE_MAX_STALE_DAYS
+    )
     ctx = build_agent_context(user_id, config)
 
     countdown_days = 60
@@ -226,6 +243,8 @@ def generate_weekly_plan(user_id: str, config: dict) -> Optional[WeeklyPlanResul
         "countdown_days": countdown_days,
         "recovery_week_due": recovery_week_due,
         "garmin_training_status": garmin.get("training_status", "MAINTAINING"),
+        "runalyze_prognosis": format_runalyze_prognosis(runalyze_row),
+        "runalyze_races": format_runalyze_races(runalyze_row),
     }
 
     prompt = _build_weekly_plan_prompt(config, context_data)

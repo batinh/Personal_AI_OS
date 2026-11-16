@@ -23,6 +23,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 |----|------|-------|----------|----------|------|--------|
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
 | [ISS-014](#iss-014--no-onboarding-guide-for-physiology-config-fields) | feature | No onboarding guide for physiology config fields (LTHR, rFTP) | Low | U+AI | 2026-04-26 | `docs/`, `config.example.json` |
+| [ISS-023](#iss-023--runalyze-mcp-ingestion) | feature | Runalyze MCP ingestion (training load, HRV baseline, races) | Medium | U | 2026-10-04 | `app/agents/coach/runalyze_client.py` |
 
 ---
 
@@ -510,3 +511,20 @@ User types `/plan` in Telegram. Coach responds with a daily training suggestion 
 **Fix:**
 - `agent.py:/plan handler`: 3-step fallback — (1) show accepted plan from `training_plans`, (2) re-surface pending plan from `weekly_plans` with `/accept` prompt, (3) call `generate_weekly_plan()` on demand.
 - `database.py:get_upcoming_plans`: return `""` (falsy) instead of Vietnamese error string when no rows found.
+
+---
+
+### ISS-023 — Runalyze MCP ingestion
+
+**Type:** feature · **Priority:** Medium · **Reporter:** U · **Date:** 2026-10-04
+**Module:** `app/agents/coach/runalyze_client.py`, `app/core/database.py`, `app/services/scheduler.py`
+**Design:** [docs/features/runalyze-mcp.md](features/runalyze-mcp.md)
+
+**Scope (phases 0-3):** MCP client (personal token), `runalyze_daily_load` table, daily `runalyze_sync` job.
+**Activity ingestion (done, replaces dead Strava API):** `RunalyzeActivityClient`, 15-min poll, dedupe by time/distance, `source` column, `scripts/backfill_runalyze.py`. See the design doc.
+**Phase 4 (done):** Runalyze load line in shared context (`build_agent_context`, briefing, chat, reflection), prognosis/races in weekly plan, `PROMPT_VERSION` bump. Runalyze ACWR intentionally not exposed.
+
+**Acceptance criteria:**
+- `RUNALYZE_API_TOKEN` (Personal API Token, `token` header) authenticates the MCP session
+- `task_runalyze_sync` stores one row/day with CTL/ATL/TSB, ACWR, HRV baseline
+- Auth failure logs an actionable error and never crashes the scheduler

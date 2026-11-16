@@ -20,6 +20,7 @@ from app.core.database import (
     get_pending_weekly_plan,
     get_planned_weekly_volume,
 )
+from app.agents.coach.runalyze_context import get_runalyze_text
 from app.agents.coach.utils import (
     calculate_acwr,
     calculate_training_phase,
@@ -219,6 +220,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         weekly_decision_context,
         planned_km_this_week=planned_km_this_week,
         garmin_status_text=garmin_status_text,
+        runalyze_text=get_runalyze_text(user_id_str, now.date()),
     )
 
     # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)

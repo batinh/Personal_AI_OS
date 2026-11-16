@@ -13,7 +13,7 @@ from app.core.database import (
     get_run_activity_raw,
 )
 from app.core.notification import send_telegram_msg
-from app.agents.coach.harvest import harvest_data
+from app.agents.coach.harvest import harvest_data, poll_new_runs
 from app.agents.coach.utils import calculate_training_phase
 from app.services.backup import perform_backup
 from app.agents.coach.agent import (
@@ -26,6 +26,7 @@ from app.services.weather import get_today_weather
 from app.agents.news.agent import generate_news_briefing
 from app.services.log_auditor import run_audit
 from app.agents.coach.garmin_client import get_garmin_client
+from app.agents.coach.runalyze_client import get_runalyze_client
 from app.agents.coach.setup_flow import cleanup_stale_setup_sessions
 from app.agents.coach.flows.weekly_plan_generation import generate_weekly_plan
 
@@ -269,6 +270,35 @@ def task_garmin_sync():
         garmin.fetch_and_store_daily_metrics(user_id)
     except Exception as e:
         logger.error("[SCHEDULER] task_garmin_sync failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 🔔 NEW-RUN POLL (replaces the Strava push webhook)
+# ==========================================
+def task_poll_new_runs():
+    """Check Runalyze for new runs. Runs in BackgroundScheduler thread pool."""
+    try:
+        from app.routers.webhooks import run_activity_workflow
+
+        poll_new_runs(run_activity_workflow)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_poll_new_runs failed: %s", e, exc_info=True)
+
+
+# ==========================================
+# 📈 RUNALYZE SYNC
+# ==========================================
+def task_runalyze_sync():
+    """Sync Runalyze training load. Runs in BackgroundScheduler thread pool."""
+    try:
+        user_id = str(get_primary_user_id())
+        if not user_id or user_id == "None":
+            logger.warning("[SCHEDULER] No primary user ID. Skipping Runalyze sync.")
+            return
+        logger.info("[SCHEDULER] Syncing Runalyze daily load...")
+        get_runalyze_client().fetch_and_store_daily_load(user_id)
+    except Exception as e:
+        logger.error("[SCHEDULER] task_runalyze_sync failed: %s", e, exc_info=True)
 
 
 # ==========================================
@@ -688,6 +718,18 @@ def setup_jobs():
         task_garmin_sync,
         CronTrigger(hour=5, minute=45, timezone=TZ_VN),
         id="garmin_sync",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_poll_new_runs,
+        CronTrigger(minute="*/15", hour="5-22", timezone=TZ_VN),
+        id="poll_new_runs",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        task_runalyze_sync,
+        CronTrigger(hour=5, minute=55, timezone=TZ_VN),  # after Garmin sync (05:45)
+        id="runalyze_sync",
         replace_existing=True,
     )
     scheduler.add_job(

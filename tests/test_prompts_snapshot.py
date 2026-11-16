@@ -185,11 +185,6 @@ class TestCoachFormatRuleSnapshots(unittest.TestCase):
 
         _assert_snapshot(self, "coach_chat_format_rules", CHAT_FORMAT_RULES)
 
-    def test_strava_format_rules(self):
-        from app.agents.coach.prompts import STRAVA_FORMAT_RULES
-
-        _assert_snapshot(self, "coach_strava_format_rules", STRAVA_FORMAT_RULES)
-
     def test_email_format_rules(self):
         from app.agents.coach.prompts import EMAIL_FORMAT_RULES
 

@@ -639,6 +639,7 @@ class AgentContext:
     hr_zones_text: str = ""
     pace_zones_text: str = ""
     taper_factor: float = 1.0
+    runalyze_text: str = ""
 
 
 def build_agent_context(
@@ -646,6 +647,7 @@ def build_agent_context(
 ) -> AgentContext:
     """Single Source of Truth for gathering and formatting agent context for all flows."""
     from app.core.database import get_training_loads, get_weekly_volume
+    from app.agents.coach.runalyze_context import get_runalyze_text
     from app.agents.coach.prompts import (
         build_system_instruction,
         get_shared_context_block,
@@ -718,6 +720,7 @@ def build_agent_context(
         hr_zones_label=hr_zones_label,
         power_zones_text=power_zones_text,
     )
+    runalyze_text = get_runalyze_text(user_id, now.date())
     shared_context = get_shared_context_block(
         now.strftime("%A, %d/%m/%Y"),
         user_id,
@@ -727,6 +730,7 @@ def build_agent_context(
         actual_volume,
         weekly_decision_context,
         hr_zones_text,
+        runalyze_text=runalyze_text,
     )
 
     return AgentContext(
@@ -742,4 +746,5 @@ def build_agent_context(
         hr_zones_text=hr_zones_text,
         pace_zones_text=pace_zones_text,
         taper_factor=taper_factor,
+        runalyze_text=runalyze_text,
     )

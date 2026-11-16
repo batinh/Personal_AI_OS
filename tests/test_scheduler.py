@@ -322,6 +322,8 @@ class TestSetupJobs(unittest.TestCase):
             "proactive_check",
             "log_audit",
             "garmin_sync",
+            "poll_new_runs",
+            "runalyze_sync",
             "weekly_plan_gen",
             "cleanup_stale_setup",
             "gear_check",
@@ -344,17 +346,18 @@ class TestSetupJobs(unittest.TestCase):
     def test_total_jobs_with_news_enabled(self):
         cfg = _make_config(news_enabled=True)
         mock_sched = self._run_setup(cfg)
-        # 13 core (briefing, backup, harvest, reflection, proactive, log_audit,
-        #           garmin_sync, weekly_plan_gen, cleanup_stale_setup, auto_reschedule,
-        #           nutrition_alert, gear_check, retry_pending_analyses)
-        #    + 3 news = 16
-        self.assertEqual(mock_sched.add_job.call_count, 16)
+        # 15 core (briefing, backup, harvest, reflection, proactive, log_audit,
+        #           garmin_sync, poll_new_runs, runalyze_sync, weekly_plan_gen,
+        #           cleanup_stale_setup, auto_reschedule, nutrition_alert, gear_check,
+        #           retry_pending_analyses)
+        #    + 3 news = 18
+        self.assertEqual(mock_sched.add_job.call_count, 18)
 
     def test_total_jobs_without_news(self):
         cfg = _make_config(news_enabled=False)
         mock_sched = self._run_setup(cfg)
-        # 13 core (added retry_pending_analyses)
-        self.assertEqual(mock_sched.add_job.call_count, 13)
+        # 15 core (added poll_new_runs)
+        self.assertEqual(mock_sched.add_job.call_count, 15)
 
 
 # ==========================================

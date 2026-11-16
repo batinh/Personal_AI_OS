@@ -293,6 +293,37 @@ class TestGarminCoachPlanningImports(unittest.TestCase):
             task_retry_pending_analyses,
         )
 
+    def test_runalyze_symbols_importable(self):
+        from app.agents.coach.runalyze_client import (  # noqa: F401
+            RunalyzeClient,
+            get_runalyze_client,
+        )
+        from app.core.database import (  # noqa: F401
+            get_runalyze_daily_load,
+            upsert_runalyze_daily_load,
+        )
+        from app.services.scheduler import (  # noqa: F401
+            task_poll_new_runs,
+            task_runalyze_sync,
+        )
+        from app.agents.coach.harvest import poll_new_runs  # noqa: F401
+        from app.agents.coach.runalyze_activities import (  # noqa: F401
+            RunalyzeActivityClient,
+            get_activity_client,
+        )
+        from app.core.database import (  # noqa: F401
+            find_duplicate_run,
+            get_run_totals_km,
+            has_run_activity,
+        )
+        from app.routers.webhooks import run_activity_workflow  # noqa: F401
+        from app.agents.coach.runalyze_context import (  # noqa: F401
+            format_runalyze_context,
+            format_runalyze_prognosis,
+            format_runalyze_races,
+            get_runalyze_text,
+        )
+
 
 class TestSDKContracts(unittest.TestCase):
     """SDK parameter unit contracts — catch wrong units before they hit production."""
@@ -387,16 +418,6 @@ class TestE2EIntegrationEdgeCasesImports(unittest.TestCase):
 
     def test_TestConfigReload_importable(self):
         from tests.test_e2e_integration_edge_cases import TestConfigReload  # noqa: F401
-
-    def test_TestStravaThreeChannelOutput_importable(self):
-        from tests.test_e2e_integration_edge_cases import (
-            TestStravaThreeChannelOutput,  # noqa: F401
-        )
-
-    def test_TestStravaErrorHandling_importable(self):
-        from tests.test_e2e_integration_edge_cases import (
-            TestStravaErrorHandling,  # noqa: F401
-        )
 
 
 if __name__ == "__main__":

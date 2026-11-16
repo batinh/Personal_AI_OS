@@ -54,136 +54,16 @@ class TestE2EHealthCheck(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # 2. STRAVA WEBHOOK FLOW — create event → background workflow triggered
 # ---------------------------------------------------------------------------
-class TestE2EStravaWebhookFlow(unittest.TestCase):
-    """
-    POST /webhook with a valid 'create' payload must:
-      - Return 200 {"status": "ok"} immediately (async background_task)
-      - Queue the workflow (mocked at service boundary)
-    """
-
-    def setUp(self):
-        self.client = _make_client()
-
-    @patch("app.routers.webhooks.run_strava_workflow")
-    def test_create_event_returns_ok_and_queues_workflow(self, mock_workflow):
-        resp = self.client.post(
-            "/webhook",
-            json={
-                "object_type": "activity",
-                "aspect_type": "create",
-                "object_id": 987654321,
-            },
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"status": "ok"})
-        mock_workflow.assert_called_once_with("987654321")
-
-    @patch("app.routers.webhooks.handle_deleted_activity")
-    def test_delete_event_returns_ok_and_queues_cleanup(self, mock_delete):
-        resp = self.client.post(
-            "/webhook",
-            json={
-                "object_type": "activity",
-                "aspect_type": "delete",
-                "object_id": 111222333,
-            },
-        )
-        self.assertEqual(resp.status_code, 200)
-        mock_delete.assert_called_once_with("111222333")
-
-    @patch("app.routers.webhooks.run_strava_workflow")
-    def test_update_event_ignored(self, mock_workflow):
-        """Title-change 'update' events must be silently ignored."""
-        resp = self.client.post(
-            "/webhook",
-            json={
-                "object_type": "activity",
-                "aspect_type": "update",
-                "object_id": 444555666,
-            },
-        )
-        self.assertEqual(resp.status_code, 200)
-        mock_workflow.assert_not_called()
-
-    @patch("app.routers.webhooks.run_strava_workflow")
-    def test_non_activity_object_ignored(self, mock_workflow):
-        resp = self.client.post(
-            "/webhook",
-            json={
-                "object_type": "athlete",
-                "aspect_type": "update",
-                "object_id": 777888999,
-            },
-        )
-        self.assertEqual(resp.status_code, 200)
-        mock_workflow.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
 # 3. STRAVA WEBHOOK VALIDATION — bad payloads must be rejected at the boundary
 # ---------------------------------------------------------------------------
-class TestE2EStravaPayloadValidation(unittest.TestCase):
-    """Pydantic model StravaWebhookPayload must reject malformed payloads."""
-
-    def setUp(self):
-        self.client = _make_client()
-
-    def test_malformed_json_returns_4xx(self):
-        resp = self.client.post(
-            "/webhook",
-            content="{invalid json",
-            headers={"Content-Type": "application/json"},
-        )
-        self.assertIn(resp.status_code, [400, 422])
-
-    def test_zero_object_id_rejected(self):
-        """Field(..., gt=0) means object_id=0 must fail validation."""
-        resp = self.client.post(
-            "/webhook",
-            json={
-                "object_type": "activity",
-                "aspect_type": "create",
-                "object_id": 0,
-            },
-        )
-        self.assertIn(resp.status_code, [400, 422])
-
-    def test_missing_required_fields_rejected(self):
-        resp = self.client.post("/webhook", json={"object_id": 12345})
-        self.assertIn(resp.status_code, [400, 422])
 
 
 # ---------------------------------------------------------------------------
 # 4. STRAVA WEBHOOK VERIFICATION — GET handshake
 # ---------------------------------------------------------------------------
-class TestE2EStravaVerification(unittest.TestCase):
-
-    def setUp(self):
-        self.client = _make_client()
-
-    @patch.dict("os.environ", {"VERIFY_TOKEN": "e2e-secret"})
-    def test_valid_token_returns_challenge(self):
-        resp = self.client.get(
-            "/webhook",
-            params={
-                "hub.verify_token": "e2e-secret",
-                "hub.challenge": "e2e-challenge-xyz",
-            },
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"hub.challenge": "e2e-challenge-xyz"})
-
-    @patch.dict("os.environ", {"VERIFY_TOKEN": "e2e-secret"})
-    def test_wrong_token_returns_error(self):
-        resp = self.client.get(
-            "/webhook",
-            params={
-                "hub.verify_token": "wrong",
-                "hub.challenge": "e2e-challenge-xyz",
-            },
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json(), {"error": "Invalid token"})
 
 
 # ---------------------------------------------------------------------------
@@ -264,15 +144,15 @@ class TestE2ETelegramWebhookRouting(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 6. FULL STRAVA WORKFLOW — integration with mocked external services
+# 6. FULL RUN WORKFLOW — integration with mocked external services
 # ---------------------------------------------------------------------------
-class TestE2EStravaFullWorkflow(unittest.TestCase):
+class TestE2ERunFullWorkflow(unittest.TestCase):
     """
     Proves the complete run ingestion pipeline works after refactor:
-      webhook event → StravaClient.get_activity_data → DB save → AI analysis
-      → Telegram notification → Strava description update
+      new-run trigger → activity client get_activity_data → DB save → AI analysis
+      → Telegram + email notification (no write-back to the source platform)
 
-    All external calls (Strava API, Gemini, Telegram, email) are mocked.
+    All external calls (Runalyze, Gemini, Telegram, email) are mocked.
     """
 
     def setUp(self):
@@ -311,8 +191,8 @@ class TestE2EStravaFullWorkflow(unittest.TestCase):
         mock_email,
         mock_tg,
     ):
-        mock_strava_client = MagicMock()
-        mock_strava_client.get_activity_data.return_value = (
+        mock_activity_client = MagicMock()
+        mock_activity_client.get_activity_data.return_value = (
             "Morning Easy Run",
             "Time_sec,HR_bpm\n0,120\n60,130",
             {
@@ -328,22 +208,25 @@ class TestE2EStravaFullWorkflow(unittest.TestCase):
             },
             {"time": {"data": [0, 60]}, "heartrate": {"data": [120, 130]}},
         )
-        mock_strava_client.update_activity_description.return_value = True
 
         with patch(
-            "app.routers.webhooks.StravaClient", return_value=mock_strava_client
+            "app.routers.webhooks.get_activity_client",
+            return_value=mock_activity_client,
         ), patch("app.routers.webhooks.state") as mock_state:
             mock_state.service_active = True
-            from app.routers.webhooks import run_strava_workflow
+            from app.routers.webhooks import run_activity_workflow
 
-            run_strava_workflow("12345678")
+            run_activity_workflow("12345678")
 
         # DB save happened (data integrity before AI)
         mock_save_run.assert_called_once()
         # AI analysis was called
         mock_analyze.assert_called_once()
-        # Strava description updated with analysis
-        mock_strava_client.update_activity_description.assert_called_once()
+        # Runalyze is read-only: no description write-back exists
+        self.assertFalse(
+            hasattr(mock_activity_client, "update_activity_description")
+            and mock_activity_client.update_activity_description.called
+        )
         # Telegram notification sent
         mock_tg.assert_called()
 
@@ -353,17 +236,18 @@ class TestE2EStravaFullWorkflow(unittest.TestCase):
     )
     def test_paused_service_skips_workflow(self, mock_config, mock_uid):
         """When state.service_active=False, workflow must exit without calling Strava API."""
-        mock_strava_client = MagicMock()
+        mock_activity_client = MagicMock()
 
         with patch(
-            "app.routers.webhooks.StravaClient", return_value=mock_strava_client
+            "app.routers.webhooks.get_activity_client",
+            return_value=mock_activity_client,
         ), patch("app.routers.webhooks.state") as mock_state:
             mock_state.service_active = False
-            from app.routers.webhooks import run_strava_workflow
+            from app.routers.webhooks import run_activity_workflow
 
-            run_strava_workflow("12345678")
+            run_activity_workflow("12345678")
 
-        mock_strava_client.get_activity_data.assert_not_called()
+        mock_activity_client.get_activity_data.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 #                  content changes from prior production.
 #   2026.06.20-1 — News agent redesign: 1-2 headlines per topic (was 2-3), trusted
 #                  source hint list added, on-demand trimmed, max_tokens 6000→3500.
-PROMPT_VERSION = "2026.07.02-1"  # semantic compression: coach sys_instruction -60%, news prompts -50%, memory extraction -70%
+PROMPT_VERSION = "2026.10.27-1"  # Strava removed from format rules (STRAVA_FORMAT_RULES deleted, universal rules reworded); 2026.10.24-1: Runalyze load line + weekly-plan prognosis/races
 
 # Tokens-per-character heuristic. Vietnamese sits around 3.5, English around 4.
 # We use 3.8 as a safe middle ground — overestimates a touch, biased toward

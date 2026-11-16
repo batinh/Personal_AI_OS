@@ -10,7 +10,7 @@ This guide covers everything needed to go from zero to a running instance.
 |---|---|---|
 | Python | 3.11+ | 3.11-slim for Docker |
 | Docker & Compose | v2+ | `docker compose` (not `docker-compose`) |
-| Strava account | — | With Developer App created |
+| Runalyze Premium account | — | Personal API Token (Garmin/Strava/etc. sync into Runalyze) |
 | Telegram Bot | — | Created via [@BotFather](https://t.me/botfather) |
 | Google Gemini API key | — | [Google AI Studio](https://aistudio.google.com/) |
 | OpenWeatherMap key | — | Free tier sufficient |
@@ -40,18 +40,12 @@ Create a `.env` file in the project root. **Never commit this file.**
 # ── AI ──────────────────────────────────────────────────────────────
 GEMINI_API_KEY=your_gemini_api_key
 
-# ── Strava ──────────────────────────────────────────────────────────
-STRAVA_CLIENT_ID=your_client_id
-STRAVA_CLIENT_SECRET=your_client_secret
-STRAVA_REFRESH_TOKEN=your_refresh_token
-STRAVA_ATHLETE_ID=your_athlete_id
+# ── Runalyze (MCP, Personal API Token) ──────────────────────────────
+RUNALYZE_API_TOKEN=your_personal_api_token
 
 # ── Telegram ────────────────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_personal_chat_id
-
-# ── Strava Webhook Verification ────────────────────────────────────
-VERIFY_TOKEN=choose_any_secret_string
 
 # ── Admin UI ────────────────────────────────────────────────────────
 ADMIN_USERNAME=admin
@@ -79,11 +73,10 @@ CHROMADB_CACHE_DIR=/app/data/chroma_cache
 1. Go to [Google AI Studio](https://aistudio.google.com/)
 2. Create an API key → copy to `GEMINI_API_KEY`
 
-**Strava credentials:**
-1. [Strava Developers](https://www.strava.com/settings/api) → create application
-2. Note `Client ID` and `Client Secret`
-3. To get a `REFRESH_TOKEN` (OAuth): run the one-time auth flow described in [Strava docs](https://developers.strava.com/docs/getting-started/)
-4. `STRAVA_ATHLETE_ID` is your numeric Strava user ID (visible in your profile URL)
+**Runalyze token** (Premium required):
+1. Open [runalyze.com/settings/personal-api](https://runalyze.com/settings/personal-api) → create a token
+2. Copy it to `RUNALYZE_API_TOKEN` (never commit it; revoke it there if leaked)
+3. The app sends it in the `token` header (`Authorization: Bearer` is OAuth-only and is rejected)
 
 **Telegram Bot:**
 1. Message [@BotFather](https://t.me/botfather) → `/newbot`
@@ -175,20 +168,15 @@ The container has a `HEALTHCHECK` directive — Docker will restart the containe
 
 These steps are performed once per deployment URL change.
 
-### Strava Webhook
+### New-run detection (no webhook)
 
-```bash
-curl -X POST https://www.strava.com/api/v3/push_subscriptions \
-  -d "client_id=$STRAVA_CLIENT_ID" \
-  -d "client_secret=$STRAVA_CLIENT_SECRET" \
-  -d "callback_url=https://your-domain.com/webhook" \
-  -d "verify_token=$VERIFY_TOKEN"
-```
+Runalyze has no push webhook. The `poll_new_runs` job checks every 15 minutes (05:00–22:59) for new runs
+and runs the analysis for those younger than 48 h. Nothing to register.
 
-Verify it worked:
+After changing the data source, fill the gap once:
 ```bash
-curl "https://your-domain.com/webhook?hub.verify_token=$VERIFY_TOKEN&hub.challenge=test"
-# → {"hub.challenge": "test"}
+docker exec airunningcoach python scripts/backfill_runalyze.py --dry-run
+docker exec airunningcoach python scripts/backfill_runalyze.py
 ```
 
 ### Telegram Webhook
@@ -207,7 +195,7 @@ Once the bot is running and the webhook is registered, send commands in your Tel
 
 | Command | Description |
 |---------|-------------|
-| `/sync` | Sync latest 3 activities from Strava |
+| `/sync` | Sync latest 3 activities from Runalyze |
 | `/sync 10` | Sync latest 10 activities |
 | `/sync month` | Sync all activities from the last 30 days |
 | `/standup` | Trigger today's morning briefing immediately |
@@ -292,11 +280,11 @@ curl http://localhost:8000/health
 
 APScheduler will stop if an unhandled exception occurs in a job. Check Docker logs for `[SCHEDULER]` error lines.
 
-### Strava webhook not receiving events
+### New runs are not picked up
 
-1. Verify subscription exists: `GET https://www.strava.com/api/v3/push_subscriptions?client_id=...&client_secret=...`
-2. Verify your domain resolves and the `/webhook` endpoint returns 200 for GET requests
-3. Check DuckDNS is updating (if using dynamic IP)
+1. Check logs: `bash scripts/fetch-logs.sh -m runalyze --since 1h` (and `-m coach` for `[POLL]` lines)
+2. A Telegram alert "Runalyze: token bị từ chối" means the token was revoked/expired — create a new one and update `RUNALYZE_API_TOKEN`
+3. `get_activities` can take 10–30 s on Runalyze's side; this is normal
 
 ### ChromaDB errors on first start
 

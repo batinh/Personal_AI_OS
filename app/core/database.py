@@ -129,6 +129,8 @@ def init_db():
         "ALTER TABLE run_activities ADD COLUMN max_velocity_m_s REAL DEFAULT NULL",
         "ALTER TABLE run_activities ADD COLUMN anaerobic_time_sec REAL DEFAULT NULL",
         "ALTER TABLE run_activities ADD COLUMN z4_z5_time_pct REAL DEFAULT NULL",
+        # Origin of the row; pre-existing rows are Strava imports.
+        "ALTER TABLE run_activities ADD COLUMN source TEXT DEFAULT 'strava'",
     ]
     for _sql in _metric_migrations:
         try:
@@ -390,8 +392,8 @@ def save_run_activity(user_id: str, activity_data: dict):
         c.execute(
             """
             INSERT INTO run_activities 
-            (activity_id, user_id, name, start_date, distance_km, moving_time_min, avg_hr, max_hr, suffer_score, trimp_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (activity_id, user_id, name, start_date, distance_km, moving_time_min, avg_hr, max_hr, suffer_score, trimp_score, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(activity_id) DO UPDATE SET
                 name=excluded.name,
                 start_date=excluded.start_date,
@@ -413,6 +415,7 @@ def save_run_activity(user_id: str, activity_data: dict):
                 activity_data.get("max_hr"),
                 activity_data.get("suffer_score"),
                 activity_data.get("trimp_score"),
+                activity_data.get("source") or "strava",
             ),
         )
 
@@ -441,6 +444,103 @@ def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
         conn.close()
     except Exception as e:
         logger.error(f"[DB_ERROR] Failed to update GCS: {e}")
+
+
+RECENT_TOTALS_DAYS = 28
+
+
+def get_run_totals_km(user_id: str) -> dict:
+    """Distance totals (km) for the last RECENT_TOTALS_DAYS days, this year, and all time."""
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                  COALESCE(SUM(CASE WHEN date(start_date) >= date('now', ?)
+                               THEN distance_km END), 0) AS recent,
+                  COALESCE(SUM(CASE WHEN strftime('%Y', start_date) = strftime('%Y', 'now')
+                               THEN distance_km END), 0) AS ytd,
+                  COALESCE(SUM(distance_km), 0) AS total
+                FROM run_activities WHERE user_id = ?
+                """,
+                (f"-{RECENT_TOTALS_DAYS} days", str(user_id)),
+            ).fetchone()
+            return {
+                "recent_run_totals": round(row["recent"], 1),
+                "ytd_run_totals": round(row["ytd"], 1),
+                "all_run_totals": round(row["total"], 1),
+            }
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_run_totals_km failed: {e}")
+        return {}
+
+
+def get_latest_run_date(user_id: str) -> Optional[str]:
+    """YYYY-MM-DD of the newest stored run for the user, or None when there are none."""
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT max(date(start_date)) AS d FROM run_activities WHERE user_id = ?",
+                (str(user_id),),
+            ).fetchone()
+            return row["d"] if row and row["d"] else None
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_latest_run_date failed: {e}")
+        return None
+
+
+DUPLICATE_START_WINDOW_MIN = 5
+DUPLICATE_DISTANCE_TOLERANCE = 0.03
+
+
+def has_run_activity(activity_id: str) -> bool:
+    """True when a run with this exact id is already stored."""
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM run_activities WHERE activity_id=?", (str(activity_id),)
+            ).fetchone()
+            return row is not None
+    except Exception as e:
+        logger.error(f"[DB_ERROR] has_run_activity failed: {e}")
+        return False
+
+
+def find_duplicate_run(
+    user_id: str, start_date: Optional[str], distance_km: float, exclude_id: str
+) -> Optional[str]:
+    """Id of a stored run that is the same workout under another id, else None.
+
+    Same user, start within DUPLICATE_START_WINDOW_MIN minutes and distance within
+    DUPLICATE_DISTANCE_TOLERANCE — used to avoid double-counting a run that exists
+    both as a legacy Strava row and as a Runalyze row.
+    """
+    if not start_date or not distance_km:
+        return None
+    try:
+        with get_db() as conn:
+            row = conn.execute(
+                """
+                SELECT activity_id FROM run_activities
+                WHERE user_id = ? AND activity_id != ?
+                  AND abs(julianday(start_date) - julianday(?)) * 1440 <= ?
+                  AND abs(distance_km - ?) <= ? * ?
+                LIMIT 1
+                """,
+                (
+                    str(user_id),
+                    str(exclude_id),
+                    start_date,
+                    DUPLICATE_START_WINDOW_MIN,
+                    distance_km,
+                    DUPLICATE_DISTANCE_TOLERANCE,
+                    distance_km,
+                ),
+            ).fetchone()
+            return row["activity_id"] if row else None
+    except Exception as e:
+        logger.error(f"[DB_ERROR] find_duplicate_run failed: {e}")
+        return None
 
 
 def delete_run_activity(activity_id: str):
@@ -487,23 +587,32 @@ def delete_run_activity(activity_id: str):
 
 
 def list_run_activity_ids_in_date_range(
-    user_id: str, start_date_str: str, end_date_str: str
+    user_id: str,
+    start_date_str: str,
+    end_date_str: str,
+    source: Optional[str] = None,
 ) -> List[Dict]:
     """
     Return list of run activity ids in the inclusive date range [start_date_str, end_date_str].
     Each item is a dict: {"activity_id": str, "start_date": str} ordered by start_date DESC.
-    Dates must be YYYY-MM-DD strings.
+    Dates must be YYYY-MM-DD strings. When ``source`` is given, only rows from that
+    source are returned (reconcile must never touch rows from another source).
     """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        source_clause = "AND source = ?" if source else ""
+        params = (str(user_id), start_date_str, end_date_str) + (
+            (source,) if source else ()
+        )
         cursor.execute(
-            """
+            f"""
             SELECT activity_id, start_date FROM run_activities
             WHERE user_id = ? AND date(start_date) >= ? AND date(start_date) <= ?
+            {source_clause}
             ORDER BY start_date DESC
         """,
-            (str(user_id), start_date_str, end_date_str),
+            params,
         )
         rows = cursor.fetchall()
         conn.close()
@@ -1785,6 +1894,111 @@ def get_garmin_daily_metrics(
             return None
     except Exception as e:
         logger.error(f"[DB_ERROR] get_garmin_daily_metrics failed: {e}")
+        return None
+
+
+# ==========================================
+# 📈 RUNALYZE DAILY LOAD (CTL/ATL/TSB, ACWR, HRV baseline)
+# ==========================================
+# Single source of truth for runalyze_daily_load, mirroring _GARMIN_METRIC_COLUMNS.
+_RUNALYZE_METRIC_COLUMNS: list[tuple[str, str]] = [
+    ("effective_vo2max", "REAL"),
+    ("ctl", "REAL"),
+    ("atl", "REAL"),
+    ("tsb", "REAL"),
+    ("acwr", "REAL"),
+    ("marathon_shape", "REAL"),
+    ("rest_days", "REAL"),
+    ("monotony", "REAL"),
+    ("training_strain", "REAL"),
+    ("hrv_baseline", "REAL"),
+    ("hrv_range_low", "REAL"),
+    ("hrv_range_high", "REAL"),
+    ("hrv_last", "REAL"),
+    ("resting_hr", "INTEGER"),
+    ("sleep_duration_min", "INTEGER"),
+    ("sleep_quality", "INTEGER"),
+    ("weight_kg", "REAL"),
+]
+_RUNALYZE_METRIC_NAMES = [name for name, _ in _RUNALYZE_METRIC_COLUMNS]
+
+
+def _ensure_runalyze_schema(conn) -> None:
+    """Create runalyze_daily_load if absent and add any missing metric column."""
+    metric_defs = ",\n            ".join(
+        f"{name} {sqltype}" for name, sqltype in _RUNALYZE_METRIC_COLUMNS
+    )
+    conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS runalyze_daily_load (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            {metric_defs},
+            raw_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, date)
+        )
+        """)
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(runalyze_daily_load)")}
+    for name, sqltype in _RUNALYZE_METRIC_COLUMNS:
+        if name not in existing:
+            logger.info(f"[DATABASE] Migrating runalyze_daily_load: adding {name}")
+            conn.execute(f"ALTER TABLE runalyze_daily_load ADD COLUMN {name} {sqltype}")
+
+
+def upsert_runalyze_daily_load(user_id: str, date_str: str, metrics: dict) -> None:
+    """Upsert one Runalyze daily load row. Raises on DB failure."""
+    cols = ["user_id", "date", *_RUNALYZE_METRIC_NAMES, "raw_json"]
+    placeholders = ",".join(["?"] * len(cols)) + ",CURRENT_TIMESTAMP"
+    col_list = ",".join([*cols, "created_at"])
+    updates = ",".join(
+        f"{name}=excluded.{name}" for name in [*_RUNALYZE_METRIC_NAMES, "raw_json"]
+    )
+    values = [
+        user_id,
+        date_str,
+        *[metrics.get(name) for name in _RUNALYZE_METRIC_NAMES],
+        metrics.get("raw_json"),
+    ]
+    with get_db() as conn:
+        _ensure_runalyze_schema(conn)
+        conn.execute(
+            f"""
+            INSERT INTO runalyze_daily_load ({col_list})
+            VALUES ({placeholders})
+            ON CONFLICT(user_id, date) DO UPDATE SET
+                {updates},
+                created_at=CURRENT_TIMESTAMP
+            """,
+            values,
+        )
+
+
+def get_runalyze_daily_load(
+    user_id: str, date_str: str, max_stale_days: int = 0
+) -> Optional[dict]:
+    """Return the Runalyze row for date_str (or latest within max_stale_days back)."""
+    from datetime import date, timedelta
+
+    select_cols = ",".join(["date", *_RUNALYZE_METRIC_NAMES, "raw_json", "created_at"])
+    base = date.fromisoformat(date_str)
+    candidates = [
+        (base - timedelta(days=d)).isoformat() for d in range(max_stale_days + 1)
+    ]
+    try:
+        with get_db() as conn:
+            _ensure_runalyze_schema(conn)
+            for d in candidates:
+                row = conn.execute(
+                    f"SELECT {select_cols} FROM runalyze_daily_load "
+                    "WHERE user_id=? AND date=?",
+                    (user_id, d),
+                ).fetchone()
+                if row:
+                    return dict(row)
+            return None
+    except Exception as e:
+        logger.error(f"[DB_ERROR] get_runalyze_daily_load failed: {e}")
         return None
 
 

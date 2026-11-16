@@ -1,9 +1,6 @@
 import json
-import os
-from typing import Any, Optional
 
 from fastapi import APIRouter, Request, BackgroundTasks
-from pydantic import BaseModel, Field
 
 from app.core.user_context import get_primary_user_id
 from app.core.config import load_config
@@ -17,13 +14,13 @@ from app.core.state import state
 from app.core.database import (
     save_run_activity,
     save_run_activity_raw,
-    delete_run_activity,
+    find_duplicate_run,
     upsert_run_computed_metrics,
     get_plan_for_date,
 )
 from app.core.logging_conf import get_module_logger
 from app.agents.coach.agent import analyze_run_with_gemini, handle_telegram_chat
-from app.agents.coach.strava_client import StravaClient
+from app.agents.coach.runalyze_activities import get_activity_client
 from app.agents.coach.harvest import (
     execute_manual_sync,
     execute_sync_all,
@@ -33,17 +30,6 @@ from app.agents.coach.metrics_engine import compute_stream_metrics
 from app.services.scheduler import task_morning_briefing
 from app.services.rag_memory import rag_db
 from app.services.stream_storage import save_activity_stream_to_file
-
-
-class StravaWebhookPayload(BaseModel):
-    object_type: str
-    object_id: int = Field(..., gt=0)
-    aspect_type: str
-    owner_id: Optional[int] = None
-    subscription_id: Optional[int] = None
-    event_time: Optional[int] = None
-    updates: Optional[dict[str, Any]] = None
-
 
 router = APIRouter()
 logger = get_module_logger("webhook")
@@ -74,30 +60,15 @@ def _ingest_realtime_run(
     )
 
 
-def handle_deleted_activity(activity_id: str):
-    """Service to clean up the system when Strava reports an activity deletion."""
-    logger.info(f"[*] Cleaning up records for deleted activity: {activity_id}")
-    delete_run_activity(activity_id)
-    rag_db.forget(doc_id=activity_id)
-
-    chat_id = get_primary_user_id()
-    if chat_id:
-        # [ZONE 3] User-facing notification remains in Vietnamese
-        send_telegram_msg(
-            chat_id,
-            f"🗑️ <b>Strava Sync:</b> Đã tự động xóa bài chạy trùng lặp (ID: {activity_id}) khỏi hệ thống!",
-        )
-
-
-# --- STRAVA WORKFLOW ---
+# --- RUN ANALYSIS WORKFLOW ---
 # --- ORCHESTRATION LAYER ---
-def run_strava_workflow(activity_id: str):
+def run_activity_workflow(activity_id: str):
     if not state.service_active:
         logger.info(f"[WEBHOOK] Service is PAUSED. Ignoring Activity {activity_id}.")
         return
 
     config = load_config()
-    client = StravaClient()
+    client = get_activity_client()
 
     logger.info(f"[*] Fetching data for Activity {activity_id}...")
     try:
@@ -111,6 +82,16 @@ def run_strava_workflow(activity_id: str):
         return
 
     chat_id = get_primary_user_id()
+
+    # Same workout already stored under another id (legacy Strava row)? Nothing to do.
+    if chat_id and find_duplicate_run(
+        chat_id,
+        meta_data.get("start_date_local"),
+        round(meta_data.get("distance", 0) / 1000, 2),
+        str(activity_id),
+    ):
+        logger.info(f"[*] Activity {activity_id} duplicates a stored run; skipping")
+        return
 
     # 1. Ensure Data Integrity before invoking LLM
     if chat_id:
@@ -174,11 +155,8 @@ def run_strava_workflow(activity_id: str):
 
     # 3. Trigger Notifications
     if analysis_text:
-        client.update_activity_description(activity_id, analysis_text)
-
         email_body = f"""
         <h2>🏃‍♂️ Run Analysis: {act_name}</h2>
-        <p><a href="https://www.strava.com/activities/{activity_id}">View on Strava</a></p>
         <hr>
         <pre style="white-space: pre-wrap; font-family: sans-serif;">{analysis_text}</pre>
         """
@@ -188,8 +166,7 @@ def run_strava_workflow(activity_id: str):
             # [ZONE 3] Telegram text structure remains in Vietnamese
             telegram_msg = (
                 f"🏃‍♂️ <b>Phân tích bài chạy mới:</b> {act_name}\n\n"
-                f"{analysis_text}\n\n"
-                f"🔗 Xem trên Strava: https://www.strava.com/activities/{activity_id}"
+                f"{analysis_text}"
             )
             send_telegram_msg(chat_id, telegram_msg)
             logger.info(f"[*] Sent Telegram notification for Activity {activity_id}")
@@ -221,35 +198,12 @@ def run_strava_workflow(activity_id: str):
         fallback_msg = (
             f"✅ <b>Đã lưu bài chạy:</b> {act_name}\n"
             f"📏 {dist_km}km · ⏱ {moving_min} phút · ❤️ {avg_hr} bpm\n"
-            f"⚠️ Phân tích AI tạm thời không khả dụng (Gemini timeout). Dữ liệu đã được lưu.\n"
-            f"🔗 https://www.strava.com/activities/{activity_id}"
+            f"⚠️ Phân tích AI tạm thời không khả dụng (Gemini timeout). Dữ liệu đã được lưu."
         )
         send_telegram_msg(chat_id, fallback_msg)
         logger.warning(
             f"[*] Sent fallback Telegram (no analysis) for Activity {activity_id}"
         )
-
-
-@router.post("/webhook")
-async def strava_event(
-    payload: StravaWebhookPayload, background_tasks: BackgroundTasks
-):
-    if payload.object_type == "activity":
-        activity_id = str(payload.object_id)
-
-        if payload.aspect_type == "create":
-            background_tasks.add_task(run_strava_workflow, activity_id)
-        elif payload.aspect_type == "delete":
-            background_tasks.add_task(handle_deleted_activity, activity_id)
-
-    return {"status": "ok"}
-
-
-@router.get("/webhook")
-def verify_strava(request: Request):
-    if request.query_params.get("hub.verify_token") == os.getenv("VERIFY_TOKEN"):
-        return {"hub.challenge": request.query_params.get("hub.challenge")}
-    return {"error": "Invalid token"}
 
 
 # --- TELEGRAM CALLBACK QUERY HANDLER ---
@@ -377,7 +331,7 @@ async def telegram_event(request: Request, background_tasks: BackgroundTasks):
             if param == "all":
                 send_telegram_msg(
                     str(chat_id),
-                    "🚀 <b>Sync All</b>: đang khởi động đồng bộ toàn bộ lịch sử Strava. Có thể mất vài phút...",
+                    "🚀 <b>Sync All</b>: đang khởi động đồng bộ toàn bộ lịch sử Runalyze. Có thể mất vài phút...",
                 )
                 background_tasks.add_task(execute_sync_all, str(chat_id))
             else:

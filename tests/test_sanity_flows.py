@@ -594,49 +594,6 @@ class TestNewsBriefingFlow(unittest.TestCase):
 # ──────────────────────────────────────────────────────────────────────────────
 # 8. STRAVA WEBHOOK — event routing
 # ──────────────────────────────────────────────────────────────────────────────
-class TestStravaWebhookRouting(unittest.TestCase):
-    """Strava webhook must route create/delete correctly and return 200 immediately."""
-
-    def setUp(self):
-        self.client = _make_client()
-
-    @patch("app.routers.webhooks.run_strava_workflow")
-    def test_create_event_queues_workflow(self, mock_wf):
-        resp = self.client.post(
-            "/webhook",
-            json={
-                "object_type": "activity",
-                "aspect_type": "create",
-                "object_id": 123456,
-            },
-        )
-        self.assertEqual(resp.status_code, 200)
-        mock_wf.assert_called_once_with("123456")
-
-    @patch("app.routers.webhooks.handle_deleted_activity")
-    def test_delete_event_queues_cleanup(self, mock_del):
-        resp = self.client.post(
-            "/webhook",
-            json={"object_type": "activity", "aspect_type": "delete", "object_id": 789},
-        )
-        self.assertEqual(resp.status_code, 200)
-        mock_del.assert_called_once_with("789")
-
-    @patch("app.routers.webhooks.run_strava_workflow")
-    def test_update_event_is_ignored(self, mock_wf):
-        resp = self.client.post(
-            "/webhook",
-            json={"object_type": "activity", "aspect_type": "update", "object_id": 999},
-        )
-        self.assertEqual(resp.status_code, 200)
-        mock_wf.assert_not_called()
-
-    def test_invalid_payload_returns_4xx(self):
-        resp = self.client.post(
-            "/webhook",
-            json={"object_type": "activity", "aspect_type": "create", "object_id": 0},
-        )
-        self.assertIn(resp.status_code, [400, 422])
 
 
 # ──────────────────────────────────────────────────────────────────────────────

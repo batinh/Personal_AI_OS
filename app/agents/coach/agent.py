@@ -51,6 +51,7 @@ from app.agents.coach.utils import (
 from app.services.rag_memory import rag_db
 
 # [REFACTOR] Import builder functions
+from app.agents.coach.runalyze_context import get_runalyze_text
 from app.agents.coach.prompts import (
     build_system_instruction,
     build_core_system_instruction,
@@ -816,6 +817,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             "ACWR đang tính (Dùng tool check_training_status nếu cần)",
             actual_volume,
             weekly_decision_context,
+            runalyze_text=get_runalyze_text(str(chat_id)),
         )
         today_plan_row = get_plan_for_date(
             str(chat_id), datetime.now(tz).strftime("%Y-%m-%d")
