@@ -1,0 +1,5912 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude usage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* anthropic / claude-code palette */
+    --ivory: #FAF9F5;
+    --term-bg: #1a1918;
+    --term-fg: #d1cfc5;
+    --titlebar: #252321;
+    --outline: rgba(255,255,255,0.08);
+    --hover: rgba(255,255,255,0.035);
+    --clay: #D97757;
+    --dim: rgb(136,136,136);
+    --subtle: rgb(80,80,80);
+    --green: rgb(78,186,101);
+    --red: rgb(255,107,128);
+    --blue: rgb(177,185,249);
+    --yellow: rgb(255,193,7);
+    --mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Monaco, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--ivory); }
+  body {
+    margin: 0; padding: 48px 24px 80px;
+    font: 13px/1.55 var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--term-fg);
+  }
+
+  /* ——— terminal window chrome ——— */
+  .term {
+    max-width: 1180px; margin: 0 auto;
+    background: var(--term-bg);
+    border-radius: 8px;
+    outline: 1px solid var(--outline);
+    box-shadow: 0 20px 60px rgba(20,20,19,0.22);
+  }
+  .titlebar {
+    background: var(--titlebar);
+    border-radius: 8px 8px 0 0;
+    border-bottom: 1px solid var(--outline);
+    padding: 11px 14px;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .titlebar .dot { width: 11px; height: 11px; border-radius: 50%; background: #3a3836; }
+  .titlebar .path { margin-left: 14px; color: var(--dim); font-size: 11px; }
+  .term-body { padding: 22px 30px 30px; }
+
+  /* ——— command + hero ——— */
+  .cmd { color: var(--dim); margin-bottom: 6px; }
+  .cmd .prompt { color: var(--clay); }
+  .cmd .flag { color: var(--blue); }
+  #meta-line { color: var(--subtle); font-size: 11px; }
+
+  #hero { margin: 14px 0 6px; }
+  #hero-total { font-size: 56px; font-weight: 700; line-height: 1; }
+  #hero-total .unit { color: var(--clay); }
+  #hero-total .label { font-size: 18px; font-weight: 400; color: var(--dim); margin-left: 8px; }
+  #hero-split { color: var(--dim); margin-top: 8px; }
+  #hero-split b { color: var(--term-fg); font-weight: 500; }
+  #hero-split .ok { color: var(--green); }
+  #hero-split .warn { color: var(--yellow); }
+
+  /* ——— sections ——— */
+  section { margin-top: 26px; }
+  .hr { color: var(--subtle); overflow: hidden; white-space: nowrap;
+        user-select: none; margin-bottom: 8px; }
+  .hr::after { content: '────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────'; }
+  h2 { all: unset; display: block; color: var(--clay); font-weight: 500; }
+  h2::before { content: '▸ '; }
+  h2 .hint { color: var(--subtle); font-size: 11px; font-weight: 400; margin-left: 10px; }
+  .section-body { margin-top: 10px; }
+
+  /* ——— overall stat grid ——— */
+  #overall-grid { display: grid; gap: 4px 28px;
+                  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .stat { padding: 4px 0; }
+  .stat .label { font-size: 11px; color: var(--dim); }
+  .stat .val { font-size: 20px; font-weight: 500; }
+  .stat .detail { font-size: 11px; color: var(--subtle); }
+
+  /* ——— takeaways ——— */
+  .take { display: grid; grid-template-columns: 9ch 1fr; gap: 18px;
+          padding: 6px 0; align-items: baseline; }
+  .take .fig { text-align: right; font-weight: 700; font-size: 15px; }
+  .take .txt { color: var(--dim); }
+  .take .txt b { color: var(--term-fg); font-weight: 500; }
+  .take.bad  .fig { color: var(--red); }
+  .take.good .fig { color: var(--green); }
+  .take.info .fig { color: var(--blue); }
+
+  /* ——— callouts (recommendations) ——— */
+  .callout { padding: 6px 0 6px 14px; border-left: 2px solid var(--subtle);
+             color: var(--dim); margin: 6px 0; }
+  .callout b, .callout code { color: var(--term-fg); }
+
+  /* ——— day pills + session gantt ——— */
+  .days { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .dpill { flex: 1; min-width: 84px; max-width: 140px; background: none;
+           border: 1px solid var(--subtle); border-radius: 4px;
+           padding: 9px 6px; font: inherit; color: var(--dim);
+           cursor: pointer; text-align: center; }
+  .dpill:hover { border-color: var(--dim); background: var(--hover); }
+  .dpill .dow { font-size: 10px; color: var(--subtle); display: block; }
+  .dpill .date { font-size: 11px; color: var(--term-fg); font-weight: 500;
+                 display: block; margin: 2px 0 4px; }
+  .dpill .pct { font-size: 16px; font-weight: 700; color: var(--term-fg); display: block; }
+  .dpill .ns { font-size: 10px; color: var(--subtle); display: block; margin-top: 2px; }
+  .dpill.heaviest .pct { color: var(--clay); }
+  .dpill.sel { border-color: var(--clay); background: rgba(217,119,87,0.10); }
+  .gantt-hd { display: flex; justify-content: space-between; align-items: baseline;
+              margin-bottom: 6px; }
+  .gantt-hd .day { color: var(--term-fg); font-weight: 500; }
+  .gantt-hd .stats { font-size: 11px; color: var(--dim); }
+  .gantt-hd .stats b { color: var(--clay); }
+  .gantt { position: relative; border-top: 1px solid var(--outline);
+           border-bottom: 1px solid var(--outline); min-height: 32px; }
+  .lane { position: relative; height: 16px;
+          border-bottom: 1px dashed rgba(255,255,255,0.04); }
+  .seg { position: absolute; top: 2px; height: 12px; border-radius: 2px;
+         opacity: .85; cursor: crosshair; }
+  .seg:hover { opacity: 1; outline: 1px solid var(--term-fg); z-index: 2; }
+  .gantt-rule { position: absolute; top: 0; bottom: 0; width: 0;
+                border-left: 1px dashed var(--subtle); opacity: .4;
+                pointer-events: none; }
+  .gantt-axis { display: flex; justify-content: space-between;
+                font-size: 10px; color: var(--subtle); padding: 4px 0; }
+  .gantt-leg { font-size: 10px; color: var(--subtle); margin-top: 8px;
+               display: flex; gap: 14px; flex-wrap: wrap; }
+  .gantt-leg .sw { display: inline-block; width: 14px; height: 10px;
+                   border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+
+  /* ——— block-char bars ——— */
+  .bar { display: grid; grid-template-columns: 26ch 1fr 8ch; gap: 14px;
+         padding: 2px 0; align-items: center; }
+  .bar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .blocks { color: var(--clay); white-space: pre; overflow: hidden; }
+  .bar .blocks .empty { color: var(--subtle); }
+  .bar .pct { text-align: right; color: var(--dim); }
+  .bar:hover .name { color: var(--clay); }
+
+  /* ——— drill-down lists (top prompts, cache breaks) ——— */
+  .drill details { border-top: 1px solid var(--outline); }
+  .drill details:last-of-type { border-bottom: 1px solid var(--outline); }
+  .drill summary { list-style: none; cursor: pointer;
+    display: grid; grid-template-columns: 8ch 1fr; gap: 16px;
+    padding: 9px 4px; align-items: baseline; }
+  .drill summary::-webkit-details-marker { display: none; }
+  .drill summary:hover { background: var(--hover); }
+  .drill .amt { font-weight: 700; text-align: right; color: var(--clay); }
+  .drill .desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drill .meta { grid-column: 2; font-size: 11px; color: var(--subtle); }
+  .drill details[open] summary .desc { white-space: normal; }
+  .drill .body { padding: 4px 4px 14px calc(8ch + 20px); font-size: 12px; color: var(--dim); }
+
+  /* ——— transcript context (±2 user msgs) — light inset for legibility ——— */
+  .ctx { margin: 8px 0 12px; padding: 10px 14px;
+         background: #F0EEE6; color: #1a1918;
+         border-radius: 6px; font-size: 12px; }
+  .ctx-msg { padding: 4px 0; white-space: pre-wrap; }
+  .ctx-msg .who { color: #87867F; font-size: 11px; }
+  .ctx-msg .ts { color: #87867F; font-size: 10px; margin-left: 8px; }
+  .ctx-msg.here { margin: 2px -14px; padding: 6px 11px 6px 14px;
+                  border-left: 3px solid var(--clay);
+                  background: rgba(217,119,87,0.10); }
+  .ctx-msg.here .who { color: var(--clay); font-weight: 500; }
+  .ctx-gap { color: #87867F; font-size: 11px; padding: 3px 0 3px 7ch; }
+  .ctx-gap::before { content: '⟨ '; }
+  .ctx-gap::after  { content: ' ⟩'; }
+  .ctx-break { margin: 2px -14px; padding: 8px 11px 8px 14px;
+               border-left: 3px solid #BD5E6D;
+               background: rgba(189,94,109,0.12); color: #A63244; }
+  .ctx-break b { color: #1a1918; margin-right: 6px; }
+
+  .more-btn { display: block; width: 100%; margin-top: 10px; padding: 9px;
+              background: none; border: 1px dashed var(--subtle); cursor: pointer;
+              font: 500 11px/1 var(--mono); letter-spacing: 0.06em;
+              color: var(--dim); }
+  .more-btn:hover { border-color: var(--dim); color: var(--term-fg); }
+
+  /* ——— tables ——— */
+  .scroll { max-height: 440px; overflow: auto;
+            border-top: 1px solid var(--outline); border-bottom: 1px solid var(--outline); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 6px 10px; }
+  td { border-top: 1px solid rgba(255,255,255,0.04); }
+  th { position: sticky; top: 0; background: var(--term-bg); z-index: 1;
+       font-weight: 500; font-size: 11px; color: var(--subtle);
+       cursor: pointer; user-select: none;
+       border-bottom: 1px solid var(--outline); }
+  th:hover { color: var(--dim); }
+  th.sorted { color: var(--clay); }
+  th.sorted::after { content: ' ↓'; }
+  th.sorted.asc::after { content: ' ↑'; }
+  td.num, th.num { text-align: right; }
+  tbody tr:hover td { background: var(--hover); }
+
+  footer { margin-top: 28px; color: var(--subtle); font-size: 11px;
+           display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  code { color: var(--blue); }
+  a { color: var(--clay); }
+  ::selection { background: var(--clay); color: var(--term-bg); }
+
+  @media (max-width: 760px) {
+    body { padding: 20px 12px 48px; }
+    .term-body { padding: 16px 16px 24px; }
+    #hero-total { font-size: 40px; }
+    .bar { grid-template-columns: 14ch 1fr 7ch; gap: 8px; }
+    .drill summary { grid-template-columns: 6ch 1fr; }
+    .drill .body { padding-left: 12px; }
+    .take { grid-template-columns: 7ch 1fr; gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="term">
+  <div class="titlebar">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span class="path" id="title-path">~/.claude — session-report</span>
+  </div>
+  <div class="term-body">
+
+    <div class="cmd"><span class="prompt">&gt;</span> claude usage <span id="cmd-flags"></span></div>
+    <div id="meta-line">loading…</div>
+
+    <div id="hero">
+      <div id="hero-total">—</div>
+      <div id="hero-split"></div>
+    </div>
+
+    <!-- ====================================================================
+         FINDINGS — agent fills this. 3–5 one-line takeaways. Use .bad for
+         waste/anomalies, .good for healthy signals, .info for neutral.
+         ==================================================================== -->
+    <section>
+      <div class="hr"></div>
+      <h2>findings</h2>
+      <div class="section-body" id="takeaways">
+        <div class="take bad"><div class="fig">17%</div><div class="txt"><b>/plan + /orchestrate</b> skills consumed 28M / 162M total tokens across 273 calls</div></div>
+<div class="take bad"><div class="fig">12</div><div class="txt"><b>Cache breaks &gt;100k</b> — 12 resets in 30 days; each break re-pays full input cost</div></div>
+<div class="take warn"><div class="fig">11.7M</div><div class="txt"><b>Heaviest session</b>: "fail ci test ruff" — 41 API calls, likely long debug loop without /compact</div></div>
+<div class="take good"><div class="fig">94.8%</div><div class="txt"><b>Cache hit rate</b> — excellent; lru_cache + prompt caching working correctly</div></div>
+<div class="take good"><div class="fig">0.02%</div><div class="txt"><b>Uncached input</b> only 27k tokens — nearly all input served from cache</div></div>
+        <div class="take"><div class="fig">—</div><div class="txt">No findings generated yet.</div></div>
+        <!-- /AGENT -->
+      </div>
+    </section>
+
+    <!-- ====================================================================
+         Everything below renders automatically from #report-data.
+         ==================================================================== -->
+    <section>
+      <div class="hr"></div>
+      <h2>summary</h2>
+      <div class="section-body" id="overall-grid"></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>tokens by project<span class="hint">share of total</span></h2>
+      <div class="section-body" id="project-bars"></div>
+    </section>
+
+    <section id="timeline-section">
+      <div class="hr"></div>
+      <h2>session timeline by day<span class="hint">click a day · ←/→ to navigate</span></h2>
+      <div class="section-body">
+        <div class="days" id="day-pills"></div>
+        <div class="gantt-hd">
+          <span class="day" id="g-day">—</span>
+          <span class="stats" id="g-stats"></span>
+        </div>
+        <div class="gantt-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>
+        <div class="gantt" id="gantt"></div>
+        <div class="gantt-leg" id="gantt-leg"></div>
+      </div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>most expensive prompts<span class="hint">click to expand context</span></h2>
+      <div class="section-body drill" id="top-prompts"></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>cache breaks<span class="hint">&gt;100k uncached · click for context</span></h2>
+      <div class="section-body drill" id="cache-breaks"></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>projects</h2>
+      <div class="section-body scroll"><table id="tbl-projects"></table></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>subagent types</h2>
+      <div class="section-body scroll"><table id="tbl-subagents"></table></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>skills &amp; slash commands</h2>
+      <div class="section-body scroll"><table id="tbl-skills"></table></div>
+    </section>
+
+    <section>
+      <div class="hr"></div>
+      <h2>recommendations</h2>
+      <div class="section-body">
+        <!-- AGENT: optimizations -->
+        <div class="callout"><b>/plan + /orchestrate</b> skills burn 28M tokens (17% of total) across 273 calls — consider using <code>/plan</code> only for features ≥3 files changed, skip for single-file fixes and bug reports where inline planning is cheaper.</div>
+        <div class="callout"><b>12 cache breaks &gt;100k</b> in 30 days — each break re-pays full uncached cost. Long debug sessions like "fail ci test ruff" (11.7M, 41 calls) indicate a /compact was never triggered mid-session. Add <code>/compact</code> after every 20 API calls in long sessions.</div>
+        <div class="callout"><b>Sessions "yes, implement all 1-7"</b> average 5–7M tokens and 49–56 API calls — these are large plan→implement sessions. Split into Plan session (confirm design) + separate Implement session to reset cache and reduce context carry-over cost.</div>
+        <div class="callout"><b>subagent avg 706k tokens/call</b> (5 calls, 3.5M total) — subagent spawning is appropriately rare; no action needed. If subagent use increases, route lightweight tasks (grep, read-only analysis) to <b>Haiku 4.5</b> instead of Sonnet.</div>
+        <!-- /AGENT -->
+      </div>
+    </section>
+
+    <footer>
+      <span id="foot-gen"></span>
+      <span id="foot-stats"></span>
+    </footer>
+
+  </div>
+</div>
+
+<!-- ========================================================================
+     DATA — agent replaces the {} below with the full --json output.
+     ======================================================================== -->
+<script id="report-data" type="application/json">{
+  "root": "/home/tinhn/.claude/projects",
+  "generated_at": "2026-07-01T00:44:51.840Z",
+  "overall": {
+    "sessions": 72,
+    "api_calls": 1826,
+    "input_tokens": {
+      "uncached": 27262,
+      "cache_create": 8439556,
+      "cache_read": 153185010,
+      "total": 161651828,
+      "pct_cached": 94.8
+    },
+    "output_tokens": 787815,
+    "human_messages": 177,
+    "hours": {
+      "wall_clock": 731.7,
+      "active": 10
+    },
+    "cache_breaks_over_100k": 12,
+    "subagent": {
+      "calls": 5,
+      "total_tokens": 3531201,
+      "avg_tokens_per_call": 706240
+    },
+    "skill_invocations": {
+      "plan": 19,
+      "model": 5,
+      "orchestrate": 2,
+      "exit": 2,
+      "compact": 1,
+      "ecc:continuous-learning-v2": 1,
+      "evolve": 1,
+      "clear": 1,
+      "statusline": 1,
+      "login": 2,
+      "refactor-clean": 1,
+      "test-coverage": 1,
+      "e2e": 1,
+      "ecc:plan": 10,
+      "context-budget": 1
+    },
+    "span": {
+      "from": "2026-06-03T15:18:54.290Z",
+      "to": "2026-07-01T00:43:45.625Z"
+    }
+  },
+  "cache_breaks": [
+    {
+      "ts": "2026-06-05T01:37:07.654Z",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 302913,
+      "total": 302913,
+      "kind": "main",
+      "context": [
+        {
+          "text": "con gi chua implement ko",
+          "ts": "2026-06-04T01:28:38.442Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "clean nốt 4 LOW items",
+          "ts": "2026-06-04T01:31:15.570Z",
+          "calls": 15,
+          "here": false
+        },
+        {
+          "text": "fail ci test ruff. tại sao fail vân deploy dc",
+          "ts": "2026-06-04T23:05:36.609Z",
+          "calls": 41,
+          "here": true
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mSonnet 4.6 (default)\u001b[22m",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-04T23:05:55.573Z",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 259495,
+      "total": 259495,
+      "kind": "main",
+      "context": [
+        {
+          "text": "con gi chua implement ko",
+          "ts": "2026-06-04T01:28:38.442Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "clean nốt 4 LOW items",
+          "ts": "2026-06-04T01:31:15.570Z",
+          "calls": 15,
+          "here": false
+        },
+        {
+          "text": "fail ci test ruff. tại sao fail vân deploy dc",
+          "ts": "2026-06-04T23:05:36.609Z",
+          "calls": 41,
+          "here": true
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mSonnet 4.6 (default)\u001b[22m",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T23:18:33.278Z",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 128663,
+      "total": 128663,
+      "kind": "main",
+      "context": [
+        {
+          "text": "Set model to \u001b[1mOpus 4.7\u001b[22m",
+          "ts": "2026-06-03T23:09:47.347Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T23:13:11.297Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-03T23:18:10.432Z",
+          "calls": 53,
+          "here": true
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-03T23:56:28.474Z",
+          "calls": 15,
+          "here": false
+        },
+        {
+          "text": "code review reuoc sau do tiep tuc tất ca cac phase",
+          "ts": "2026-06-04T00:08:00.605Z",
+          "calls": 35,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:56:09.480Z",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 128369,
+      "total": 136474,
+      "kind": "main",
+      "context": [
+        {
+          "text": "/model",
+          "ts": "2026-06-22T14:54:41.728Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mOpus 4.8\u001b[22m and saved as your default for new sessions\u001b[2m\u001b[22m \u001b[2m .claude/settings.json pins \u001b[1mSonnet 4.6\u001b[22m\u001b[2m — that applies on restart\u001b[22m",
+          "ts": "2026-06-22T14:54:41.728Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T14:55:56.114Z",
+          "calls": 8,
+          "here": true
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T15:00:00.419Z",
+          "calls": 42,
+          "here": false
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-22T15:13:57.995Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-28T01:22:58.809Z",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 126741,
+      "total": 138399,
+      "kind": "main",
+      "context": [
+        {
+          "text": "yes",
+          "ts": "2026-06-27T03:29:40.834Z",
+          "calls": 27,
+          "here": false
+        },
+        {
+          "text": "push it",
+          "ts": "2026-06-27T06:30:07.822Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/context-budget",
+          "ts": "2026-06-28T01:22:40.564Z",
+          "calls": 1,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-30T23:51:17.406Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "Proceed Phase A+B principles + quik reference",
+          "ts": "2026-07-01T00:03:06.838Z",
+          "calls": 30,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T11:31:15.866Z",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 118280,
+      "total": 129938,
+      "kind": "main",
+      "context": [
+        {
+          "text": "/login",
+          "ts": "2026-06-21T11:30:46.193Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Login successful",
+          "ts": "2026-06-21T11:30:46.193Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "check @app @scripts/ /refactor-clean then /test-coverage then /e2e",
+          "ts": "2026-06-21T11:31:05.963Z",
+          "calls": 52,
+          "here": true
+        },
+        {
+          "text": "commit all & push",
+          "ts": "2026-06-21T11:54:09.260Z",
+          "calls": 8,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-21T12:17:58.802Z",
+          "calls": 6,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T23:24:57.422Z",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 116246,
+      "total": 141321,
+      "kind": "main",
+      "context": [
+        {
+          "text": "Set model to \u001b[1mOpus 4.7\u001b[22m",
+          "ts": "2026-06-03T23:09:47.347Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T23:13:11.297Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-03T23:18:10.432Z",
+          "calls": 53,
+          "here": true
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-03T23:56:28.474Z",
+          "calls": 15,
+          "here": false
+        },
+        {
+          "text": "code review reuoc sau do tiep tuc tất ca cac phase",
+          "ts": "2026-06-04T00:08:00.605Z",
+          "calls": 35,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T23:13:22.691Z",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 111967,
+      "total": 111967,
+      "kind": "main",
+      "context": [
+        {
+          "text": "/model",
+          "ts": "2026-06-03T23:09:47.347Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mOpus 4.7\u001b[22m",
+          "ts": "2026-06-03T23:09:47.347Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T23:13:11.297Z",
+          "calls": 2,
+          "here": true
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-03T23:18:10.432Z",
+          "calls": 53,
+          "here": false
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-03T23:56:28.474Z",
+          "calls": 15,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T14:07:38.843Z",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 108680,
+      "total": 120338,
+      "kind": "main",
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T05:15:42.410Z",
+          "calls": 23,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T11:48:47.675Z",
+          "calls": 34,
+          "here": false
+        },
+        {
+          "text": "yes, proceed with phase 1 + 2 3",
+          "ts": "2026-06-18T12:28:55.605Z",
+          "calls": 35,
+          "here": true
+        },
+        {
+          "text": "/ecc:continuous-learning-v2",
+          "ts": "2026-06-19T23:39:47.344Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "/evolve",
+          "ts": "2026-06-19T23:42:10.128Z",
+          "calls": 3,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T13:15:13.140Z",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 108624,
+      "total": 120282,
+      "kind": "main",
+      "context": [
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T23:02:28.998Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-21T23:27:26.650Z",
+          "calls": 44,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:14:58.475Z",
+          "calls": 6,
+          "here": true
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T13:24:51.436Z",
+          "calls": 17,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T13:31:24.326Z",
+          "calls": 4,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T14:45:22.591Z",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 105501,
+      "total": 117017,
+      "kind": "main",
+      "context": [
+        {
+          "text": "check CI passed",
+          "ts": "2026-06-16T12:10:30.171Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:11:48.696Z",
+          "calls": 21,
+          "here": false
+        },
+        {
+          "text": "fix gap.",
+          "ts": "2026-06-16T12:22:25.407Z",
+          "calls": 15,
+          "here": true
+        },
+        {
+          "text": "/compact",
+          "ts": "2026-06-18T01:49:55.904Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m \u001b[2mPreCompact [node \"/home/tinhn/.claude/scripts/hooks/run-with-flags.js\" \"pre:compact\" \"scripts/hooks/pre-compact.js\" \"standard,strict\"] completed successfully: {\"session_id\":\"549e8ef3-71…",
+          "ts": "2026-06-18T01:51:00.588Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T04:57:41.368Z",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "uncached": 105144,
+      "total": 116802,
+      "kind": "main",
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T01:52:34.640Z",
+          "calls": 17,
+          "here": false
+        },
+        {
+          "text": "yes, implement all 3",
+          "ts": "2026-06-18T01:57:50.251Z",
+          "calls": 49,
+          "here": false
+        },
+        {
+          "text": "backfill structured data cho plan hiện tại",
+          "ts": "2026-06-18T04:56:55.146Z",
+          "calls": 4,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T05:15:42.410Z",
+          "calls": 23,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T11:48:47.675Z",
+          "calls": 34,
+          "here": false
+        }
+      ]
+    }
+  ],
+  "by_project": {
+    "-home-tinhn--claude-homunculus-projects-bb760f1a52a7": {
+      "sessions": 69,
+      "api_calls": 611,
+      "input_tokens": {
+        "uncached": 5016,
+        "cache_create": 3065447,
+        "cache_read": 28454032,
+        "total": 31524495,
+        "pct_cached": 90.3
+      },
+      "output_tokens": 286158,
+      "human_messages": 69,
+      "hours": {
+        "wall_clock": 1.2,
+        "active": 1.2
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": {
+        "from": "2026-06-03T15:19:53.576Z",
+        "to": "2026-06-27T03:40:37.059Z"
+      }
+    },
+    "-home-tinhn-repo-Personal-AI-OS": {
+      "sessions": 2,
+      "api_calls": 1194,
+      "input_tokens": {
+        "uncached": 22219,
+        "cache_create": 5278688,
+        "cache_read": 123075672,
+        "total": 128376579,
+        "pct_cached": 95.9
+      },
+      "output_tokens": 493179,
+      "human_messages": 102,
+      "hours": {
+        "wall_clock": 658.1,
+        "active": 8.6
+      },
+      "cache_breaks_over_100k": 12,
+      "subagent": {
+        "calls": 5,
+        "total_tokens": 3531201,
+        "avg_tokens_per_call": 706240
+      },
+      "skill_invocations": {
+        "plan": 18,
+        "model": 5,
+        "orchestrate": 2,
+        "exit": 1,
+        "compact": 1,
+        "ecc:continuous-learning-v2": 1,
+        "evolve": 1,
+        "clear": 1,
+        "statusline": 1,
+        "login": 2,
+        "refactor-clean": 1,
+        "test-coverage": 1,
+        "e2e": 1,
+        "ecc:plan": 10,
+        "context-budget": 1
+      },
+      "span": {
+        "from": "2026-06-03T15:18:54.290Z",
+        "to": "2026-07-01T00:43:45.625Z"
+      }
+    },
+    "-home-tinhn-repo-TinhN-Home-Lab": {
+      "sessions": 1,
+      "api_calls": 21,
+      "input_tokens": {
+        "uncached": 27,
+        "cache_create": 95421,
+        "cache_read": 1655306,
+        "total": 1750754,
+        "pct_cached": 94.5
+      },
+      "output_tokens": 8478,
+      "human_messages": 6,
+      "hours": {
+        "wall_clock": 72.3,
+        "active": 0.2
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {
+        "plan": 1,
+        "exit": 1
+      },
+      "span": {
+        "from": "2026-06-08T13:47:05.619Z",
+        "to": "2026-06-11T14:06:08.106Z"
+      }
+    }
+  },
+  "by_subagent_type": {
+    "planner": {
+      "sessions": 1,
+      "api_calls": 9,
+      "input_tokens": {
+        "uncached": 55,
+        "cache_create": 45575,
+        "cache_read": 305181,
+        "total": 350811,
+        "pct_cached": 87
+      },
+      "output_tokens": 6535,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 1,
+        "total_tokens": 357346,
+        "avg_tokens_per_call": 357346
+      },
+      "skill_invocations": {},
+      "span": {
+        "from": "2026-06-19T23:48:42.980Z",
+        "to": "2026-06-19T23:49:59.323Z"
+      }
+    },
+    "code-reviewer": {
+      "sessions": 1,
+      "api_calls": 27,
+      "input_tokens": {
+        "uncached": 79,
+        "cache_create": 115645,
+        "cache_read": 861375,
+        "total": 977099,
+        "pct_cached": 88.2
+      },
+      "output_tokens": 5429,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0.6,
+        "active": 0.1
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 1,
+        "total_tokens": 982528,
+        "avg_tokens_per_call": 982528
+      },
+      "skill_invocations": {},
+      "span": {
+        "from": "2026-06-04T00:08:34.075Z",
+        "to": "2026-06-04T00:46:19.420Z"
+      }
+    },
+    "ecc:planner": {
+      "sessions": 2,
+      "api_calls": 50,
+      "input_tokens": {
+        "uncached": 178,
+        "cache_create": 176086,
+        "cache_read": 1999417,
+        "total": 2175681,
+        "pct_cached": 91.9
+      },
+      "output_tokens": 15646,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0.1,
+        "active": 0.1
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 3,
+        "total_tokens": 2191327,
+        "avg_tokens_per_call": 730442
+      },
+      "skill_invocations": {},
+      "span": {
+        "from": "2026-06-16T00:30:35.890Z",
+        "to": "2026-06-21T23:04:54.270Z"
+      }
+    }
+  },
+  "by_skill": {
+    "plan": {
+      "sessions": 0,
+      "api_calls": 202,
+      "input_tokens": {
+        "uncached": 7673,
+        "cache_create": 1098087,
+        "cache_read": 16064407,
+        "total": 17170167,
+        "pct_cached": 93.6
+      },
+      "output_tokens": 96069,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "orchestrate": {
+      "sessions": 0,
+      "api_calls": 71,
+      "input_tokens": {
+        "uncached": 1713,
+        "cache_create": 422708,
+        "cache_read": 10510497,
+        "total": 10934918,
+        "pct_cached": 96.1
+      },
+      "output_tokens": 64200,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "ecc:continuous-learning-v2": {
+      "sessions": 0,
+      "api_calls": 1,
+      "input_tokens": {
+        "uncached": 2,
+        "cache_create": 89596,
+        "cache_read": 11658,
+        "total": 101256,
+        "pct_cached": 11.5
+      },
+      "output_tokens": 314,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "evolve": {
+      "sessions": 0,
+      "api_calls": 3,
+      "input_tokens": {
+        "uncached": 4,
+        "cache_create": 92325,
+        "cache_read": 217675,
+        "total": 310004,
+        "pct_cached": 70.2
+      },
+      "output_tokens": 676,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "statusline": {
+      "sessions": 0,
+      "api_calls": 1,
+      "input_tokens": {
+        "uncached": 0,
+        "cache_create": 0,
+        "cache_read": 0,
+        "total": 0,
+        "pct_cached": 0
+      },
+      "output_tokens": 0,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "refactor-clean": {
+      "sessions": 0,
+      "api_calls": 18,
+      "input_tokens": {
+        "uncached": 22,
+        "cache_create": 178770,
+        "cache_read": 1107158,
+        "total": 1285950,
+        "pct_cached": 86.1
+      },
+      "output_tokens": 4795,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "test-coverage": {
+      "sessions": 0,
+      "api_calls": 31,
+      "input_tokens": {
+        "uncached": 1613,
+        "cache_create": 33238,
+        "cache_read": 2800825,
+        "total": 2835676,
+        "pct_cached": 98.8
+      },
+      "output_tokens": 13495,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "e2e": {
+      "sessions": 0,
+      "api_calls": 3,
+      "input_tokens": {
+        "uncached": 4,
+        "cache_create": 3301,
+        "cache_read": 318959,
+        "total": 322264,
+        "pct_cached": 99
+      },
+      "output_tokens": 1105,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "ecc:plan": {
+      "sessions": 0,
+      "api_calls": 70,
+      "input_tokens": {
+        "uncached": 94,
+        "cache_create": 481577,
+        "cache_read": 5849180,
+        "total": 6330851,
+        "pct_cached": 92.4
+      },
+      "output_tokens": 33981,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    },
+    "context-budget": {
+      "sessions": 0,
+      "api_calls": 1,
+      "input_tokens": {
+        "uncached": 2,
+        "cache_create": 126739,
+        "cache_read": 11658,
+        "total": 138399,
+        "pct_cached": 8.4
+      },
+      "output_tokens": 506,
+      "human_messages": 0,
+      "hours": {
+        "wall_clock": 0,
+        "active": 0
+      },
+      "cache_breaks_over_100k": 0,
+      "subagent": {
+        "calls": 0,
+        "total_tokens": 0,
+        "avg_tokens_per_call": 0
+      },
+      "skill_invocations": {},
+      "span": null
+    }
+  },
+  "top_prompts": [
+    {
+      "ts": "2026-06-04T23:05:36.609Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "fail ci test ruff. tại sao fail vân deploy dc",
+      "api_calls": 41,
+      "subagent_calls": 0,
+      "total_tokens": 11693223,
+      "input": {
+        "uncached": 46,
+        "cache_create": 608436,
+        "cache_read": 11069923
+      },
+      "output": 14818,
+      "context": [
+        {
+          "text": "con gi chua implement ko",
+          "ts": "2026-06-04T01:28:38.442Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "clean nốt 4 LOW items",
+          "ts": "2026-06-04T01:31:15.570Z",
+          "calls": 15,
+          "here": false
+        },
+        {
+          "text": "fail ci test ruff. tại sao fail vân deploy dc",
+          "ts": "2026-06-04T23:05:36.609Z",
+          "calls": 41,
+          "here": true
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mSonnet 4.6 (default)\u001b[22m",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T23:18:10.432Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/orchestrate",
+      "api_calls": 53,
+      "subagent_calls": 0,
+      "total_tokens": 9346205,
+      "input": {
+        "uncached": 1694,
+        "cache_create": 330572,
+        "cache_read": 8961379
+      },
+      "output": 52560,
+      "context": [
+        {
+          "text": "Set model to \u001b[1mOpus 4.7\u001b[22m",
+          "ts": "2026-06-03T23:09:47.347Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T23:13:11.297Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-03T23:18:10.432Z",
+          "calls": 53,
+          "here": true
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-03T23:56:28.474Z",
+          "calls": 15,
+          "here": false
+        },
+        {
+          "text": "code review reuoc sau do tiep tuc tất ca cac phase",
+          "ts": "2026-06-04T00:08:00.605Z",
+          "calls": 35,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T15:00:00.419Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "yes",
+      "api_calls": 42,
+      "subagent_calls": 0,
+      "total_tokens": 7367972,
+      "input": {
+        "uncached": 3690,
+        "cache_create": 36507,
+        "cache_read": 7304890
+      },
+      "output": 22885,
+      "context": [
+        {
+          "text": "Set model to \u001b[1mOpus 4.8\u001b[22m and saved as your default for new sessions\u001b[2m\u001b[22m \u001b[2m .claude/settings.json pins \u001b[1mSonnet 4.6\u001b[22m\u001b[2m — that applies on restart\u001b[22m",
+          "ts": "2026-06-22T14:54:41.728Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T14:55:56.114Z",
+          "calls": 8,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T15:00:00.419Z",
+          "calls": 42,
+          "here": true
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-22T15:13:57.995Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mSonnet 4.6 (default)\u001b[22m and saved as your default for new sessions\u001b[2m\u001b[22m \u001b[2m .claude/settings.json pins \u001b[1mSonnet 4.6\u001b[22m\u001b[2m — that applies on restart\u001b[22m",
+          "ts": "2026-06-22T15:13:57.995Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T00:56:32.213Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "yes, implement all 1-7",
+      "api_calls": 56,
+      "subagent_calls": 0,
+      "total_tokens": 5595119,
+      "input": {
+        "uncached": 326,
+        "cache_create": 60467,
+        "cache_read": 5516266
+      },
+      "output": 18060,
+      "context": [
+        {
+          "text": "yes",
+          "ts": "2026-06-15T23:15:33.601Z",
+          "calls": 32,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T00:28:55.858Z",
+          "calls": 19,
+          "here": false
+        },
+        {
+          "text": "yes, implement all 1-7",
+          "ts": "2026-06-16T00:56:32.213Z",
+          "calls": 56,
+          "here": true
+        },
+        {
+          "text": "merge to main and deploy",
+          "ts": "2026-06-16T01:39:10.763Z",
+          "calls": 34,
+          "here": false
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-16T05:13:03.667Z",
+          "calls": 5,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T01:57:50.251Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "yes, implement all 3",
+      "api_calls": 49,
+      "subagent_calls": 0,
+      "total_tokens": 4913641,
+      "input": {
+        "uncached": 51,
+        "cache_create": 39134,
+        "cache_read": 4856186
+      },
+      "output": 18270,
+      "context": [
+        {
+          "text": "\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m \u001b[2mPreCompact [node \"/home/tinhn/.claude/scripts/hooks/run-with-flags.js\" \"pre:compact\" \"scripts/hooks/pre-compact.js\" \"standard,strict\"] completed successfully: {\"session_id\":\"549e8ef3-71…",
+          "ts": "2026-06-18T01:51:00.588Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T01:52:34.640Z",
+          "calls": 17,
+          "here": false
+        },
+        {
+          "text": "yes, implement all 3",
+          "ts": "2026-06-18T01:57:50.251Z",
+          "calls": 49,
+          "here": true
+        },
+        {
+          "text": "backfill structured data cho plan hiện tại",
+          "ts": "2026-06-18T04:56:55.146Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T05:15:42.410Z",
+          "calls": 23,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T23:27:26.650Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "yes",
+      "api_calls": 44,
+      "subagent_calls": 0,
+      "total_tokens": 4742744,
+      "input": {
+        "uncached": 46,
+        "cache_create": 27150,
+        "cache_read": 4704059
+      },
+      "output": 11489,
+      "context": [
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T12:35:16.720Z",
+          "calls": 22,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T23:02:28.998Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-21T23:27:26.650Z",
+          "calls": 44,
+          "here": true
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:14:58.475Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T13:24:51.436Z",
+          "calls": 17,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T11:31:05.963Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "check @app @scripts/ /refactor-clean then /test-coverage then /e2e",
+      "api_calls": 52,
+      "subagent_calls": 0,
+      "total_tokens": 4463285,
+      "input": {
+        "uncached": 1639,
+        "cache_create": 215309,
+        "cache_read": 4226942
+      },
+      "output": 19395,
+      "context": [
+        {
+          "text": "/login",
+          "ts": "2026-06-21T11:30:46.193Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Login successful",
+          "ts": "2026-06-21T11:30:46.193Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "check @app @scripts/ /refactor-clean then /test-coverage then /e2e",
+          "ts": "2026-06-21T11:31:05.963Z",
+          "calls": 52,
+          "here": true
+        },
+        {
+          "text": "commit all & push",
+          "ts": "2026-06-21T11:54:09.260Z",
+          "calls": 8,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-21T12:17:58.802Z",
+          "calls": 6,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-25T15:51:05.285Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "yes, implement cả 3",
+      "api_calls": 41,
+      "subagent_calls": 0,
+      "total_tokens": 4135675,
+      "input": {
+        "uncached": 43,
+        "cache_create": 80054,
+        "cache_read": 4043520
+      },
+      "output": 12058,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T15:31:10.474Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-25T15:43:55.758Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes, implement cả 3",
+          "ts": "2026-06-25T15:51:05.285Z",
+          "calls": 41,
+          "here": true
+        },
+        {
+          "text": "push it",
+          "ts": "2026-06-25T23:01:45.685Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "deploy ho xong chưa?",
+          "ts": "2026-06-27T03:24:33.776Z",
+          "calls": 1,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T12:28:55.605Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "yes, proceed with phase 1 + 2 3",
+      "api_calls": 35,
+      "subagent_calls": 0,
+      "total_tokens": 3922411,
+      "input": {
+        "uncached": 37,
+        "cache_create": 122097,
+        "cache_read": 3792377
+      },
+      "output": 7900,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T05:15:42.410Z",
+          "calls": 23,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T11:48:47.675Z",
+          "calls": 34,
+          "here": false
+        },
+        {
+          "text": "yes, proceed with phase 1 + 2 3",
+          "ts": "2026-06-18T12:28:55.605Z",
+          "calls": 35,
+          "here": true
+        },
+        {
+          "text": "/ecc:continuous-learning-v2",
+          "ts": "2026-06-19T23:39:47.344Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "/evolve",
+          "ts": "2026-06-19T23:42:10.128Z",
+          "calls": 3,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-04T01:31:15.570Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "clean nốt 4 LOW items",
+      "api_calls": 15,
+      "subagent_calls": 0,
+      "total_tokens": 3793661,
+      "input": {
+        "uncached": 20,
+        "cache_create": 17384,
+        "cache_read": 3765020
+      },
+      "output": 11237,
+      "context": [
+        {
+          "text": "code review reuoc sau do tiep tuc tất ca cac phase",
+          "ts": "2026-06-04T00:08:00.605Z",
+          "calls": 35,
+          "here": false
+        },
+        {
+          "text": "con gi chua implement ko",
+          "ts": "2026-06-04T01:28:38.442Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "clean nốt 4 LOW items",
+          "ts": "2026-06-04T01:31:15.570Z",
+          "calls": 15,
+          "here": true
+        },
+        {
+          "text": "fail ci test ruff. tại sao fail vân deploy dc",
+          "ts": "2026-06-04T23:05:36.609Z",
+          "calls": 41,
+          "here": false
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-15T23:15:33.601Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "yes",
+      "api_calls": 32,
+      "subagent_calls": 0,
+      "total_tokens": 3791470,
+      "input": {
+        "uncached": 34,
+        "cache_create": 20011,
+        "cache_read": 3761431
+      },
+      "output": 9994,
+      "context": [
+        {
+          "text": "deploy",
+          "ts": "2026-06-12T05:14:28.891Z",
+          "calls": 5,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-15T23:00:57.405Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-15T23:15:33.601Z",
+          "calls": 32,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T00:28:55.858Z",
+          "calls": 19,
+          "here": false
+        },
+        {
+          "text": "yes, implement all 1-7",
+          "ts": "2026-06-16T00:56:32.213Z",
+          "calls": 56,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T23:56:28.474Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "continue",
+      "api_calls": 15,
+      "subagent_calls": 0,
+      "total_tokens": 3366736,
+      "input": {
+        "uncached": 20,
+        "cache_create": 14505,
+        "cache_read": 3341777
+      },
+      "output": 10434,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T23:13:11.297Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-03T23:18:10.432Z",
+          "calls": 53,
+          "here": false
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-03T23:56:28.474Z",
+          "calls": 15,
+          "here": true
+        },
+        {
+          "text": "code review reuoc sau do tiep tuc tất ca cac phase",
+          "ts": "2026-06-04T00:08:00.605Z",
+          "calls": 35,
+          "here": false
+        },
+        {
+          "text": "con gi chua implement ko",
+          "ts": "2026-06-04T01:28:38.442Z",
+          "calls": 1,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T01:39:10.763Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "merge to main and deploy",
+      "api_calls": 34,
+      "subagent_calls": 0,
+      "total_tokens": 2896911,
+      "input": {
+        "uncached": 36,
+        "cache_create": 55039,
+        "cache_read": 2836367
+      },
+      "output": 5469,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T00:28:55.858Z",
+          "calls": 19,
+          "here": false
+        },
+        {
+          "text": "yes, implement all 1-7",
+          "ts": "2026-06-16T00:56:32.213Z",
+          "calls": 56,
+          "here": false
+        },
+        {
+          "text": "merge to main and deploy",
+          "ts": "2026-06-16T01:39:10.763Z",
+          "calls": 34,
+          "here": true
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-16T05:13:03.667Z",
+          "calls": 5,
+          "here": false
+        },
+        {
+          "text": "/exit",
+          "ts": "2026-06-16T11:32:57.840Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T11:48:47.675Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 34,
+      "subagent_calls": 0,
+      "total_tokens": 2894576,
+      "input": {
+        "uncached": 1166,
+        "cache_create": 88572,
+        "cache_read": 2793252
+      },
+      "output": 11586,
+      "context": [
+        {
+          "text": "backfill structured data cho plan hiện tại",
+          "ts": "2026-06-18T04:56:55.146Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T05:15:42.410Z",
+          "calls": 23,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T11:48:47.675Z",
+          "calls": 34,
+          "here": true
+        },
+        {
+          "text": "yes, proceed with phase 1 + 2 3",
+          "ts": "2026-06-18T12:28:55.605Z",
+          "calls": 35,
+          "here": false
+        },
+        {
+          "text": "/ecc:continuous-learning-v2",
+          "ts": "2026-06-19T23:39:47.344Z",
+          "calls": 1,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-04T00:08:00.605Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "code review reuoc sau do tiep tuc tất ca cac phase",
+      "api_calls": 35,
+      "subagent_calls": 1,
+      "total_tokens": 2886237,
+      "input": {
+        "uncached": 92,
+        "cache_create": 125542,
+        "cache_read": 2750248
+      },
+      "output": 10355,
+      "context": [
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-03T23:18:10.432Z",
+          "calls": 53,
+          "here": false
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-03T23:56:28.474Z",
+          "calls": 15,
+          "here": false
+        },
+        {
+          "text": "code review reuoc sau do tiep tuc tất ca cac phase",
+          "ts": "2026-06-04T00:08:00.605Z",
+          "calls": 35,
+          "here": true
+        },
+        {
+          "text": "con gi chua implement ko",
+          "ts": "2026-06-04T01:28:38.442Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "clean nốt 4 LOW items",
+          "ts": "2026-06-04T01:31:15.570Z",
+          "calls": 15,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-07-01T00:03:06.838Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "Proceed Phase A+B principles + quik reference",
+      "api_calls": 30,
+      "subagent_calls": 0,
+      "total_tokens": 2716721,
+      "input": {
+        "uncached": 1886,
+        "cache_create": 85700,
+        "cache_read": 2616110
+      },
+      "output": 13025,
+      "context": [
+        {
+          "text": "/context-budget",
+          "ts": "2026-06-28T01:22:40.564Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-30T23:51:17.406Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "Proceed Phase A+B principles + quik reference",
+          "ts": "2026-07-01T00:03:06.838Z",
+          "calls": 30,
+          "here": true
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-07-01T00:14:26.026Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-07-01T00:22:12.809Z",
+          "calls": 3,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-27T03:29:40.834Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "yes",
+      "api_calls": 27,
+      "subagent_calls": 0,
+      "total_tokens": 2548708,
+      "input": {
+        "uncached": 29,
+        "cache_create": 20638,
+        "cache_read": 2520372
+      },
+      "output": 7669,
+      "context": [
+        {
+          "text": "deploy ho xong chưa?",
+          "ts": "2026-06-27T03:24:33.776Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-27T03:26:16.861Z",
+          "calls": 8,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-27T03:29:40.834Z",
+          "calls": 27,
+          "here": true
+        },
+        {
+          "text": "push it",
+          "ts": "2026-06-27T06:30:07.822Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/context-budget",
+          "ts": "2026-06-28T01:22:40.564Z",
+          "calls": 1,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-20T01:39:44.318Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "proceed with implementation",
+      "api_calls": 26,
+      "subagent_calls": 0,
+      "total_tokens": 2381855,
+      "input": {
+        "uncached": 4230,
+        "cache_create": 87762,
+        "cache_read": 2272772
+      },
+      "output": 17091,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-19T23:48:30.445Z",
+          "calls": 11,
+          "here": false
+        },
+        {
+          "text": "review lại source cho đầy đủ theo topics. sources đang quá ít. đánh giá lại các rủi ro, có thể giãn diều kiện ra để giảm rủi ro hoặc có biện pháp tốt",
+          "ts": "2026-06-19T23:58:09.367Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "proceed with implementation",
+          "ts": "2026-06-20T01:39:44.318Z",
+          "calls": 26,
+          "here": true
+        },
+        {
+          "text": "/statusline",
+          "ts": "2026-06-21T03:18:07.234Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "check @app @scripts/ /refactor-clean then /test-coverage then /e2e",
+          "ts": "2026-06-21T11:07:13.165Z",
+          "calls": 1,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T12:11:48.696Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 21,
+      "subagent_calls": 0,
+      "total_tokens": 2226460,
+      "input": {
+        "uncached": 23,
+        "cache_create": 16857,
+        "cache_read": 2204410
+      },
+      "output": 5170,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:09:03.143Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "check CI passed",
+          "ts": "2026-06-16T12:10:30.171Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:11:48.696Z",
+          "calls": 21,
+          "here": true
+        },
+        {
+          "text": "fix gap.",
+          "ts": "2026-06-16T12:22:25.407Z",
+          "calls": 15,
+          "here": false
+        },
+        {
+          "text": "/compact",
+          "ts": "2026-06-18T01:49:55.904Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:46:03.878Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "garmin đồng bộ được gì? làm sao tôi có thể thấy?",
+      "api_calls": 19,
+      "subagent_calls": 0,
+      "total_tokens": 2168658,
+      "input": {
+        "uncached": 21,
+        "cache_create": 14393,
+        "cache_read": 2144442
+      },
+      "output": 9802,
+      "context": [
+        {
+          "text": "check log",
+          "ts": "2026-06-22T14:33:04.396Z",
+          "calls": 12,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:44:09.088Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "garmin đồng bộ được gì? làm sao tôi có thể thấy?",
+          "ts": "2026-06-22T14:46:03.878Z",
+          "calls": 19,
+          "here": true
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-22T14:54:41.728Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mOpus 4.8\u001b[22m and saved as your default for new sessions\u001b[2m\u001b[22m \u001b[2m .claude/settings.json pins \u001b[1mSonnet 4.6\u001b[22m\u001b[2m — that applies on restart\u001b[22m",
+          "ts": "2026-06-22T14:54:41.728Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T13:41:09.315Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/ecc:plan",
+      "api_calls": 18,
+      "subagent_calls": 0,
+      "total_tokens": 2053318,
+      "input": {
+        "uncached": 20,
+        "cache_create": 17016,
+        "cache_read": 2027020
+      },
+      "output": 9262,
+      "context": [
+        {
+          "text": "yes",
+          "ts": "2026-06-22T13:24:51.436Z",
+          "calls": 17,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T13:31:24.326Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:41:09.315Z",
+          "calls": 18,
+          "here": true
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:52:40.910Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "làm sao để biết garmin kết nối ok hay chưa?",
+          "ts": "2026-06-22T13:54:06.373Z",
+          "calls": 2,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T15:18:54.290Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 22,
+      "subagent_calls": 0,
+      "total_tokens": 1975495,
+      "input": {
+        "uncached": 24,
+        "cache_create": 102449,
+        "cache_read": 1864714
+      },
+      "output": 8308,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T15:18:54.290Z",
+          "calls": 22,
+          "here": true
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-03T15:28:54.248Z",
+          "calls": 9,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-03T15:35:00.393Z",
+          "calls": 5,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-05T01:54:20.469Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "merge vào main",
+      "api_calls": 27,
+      "subagent_calls": 0,
+      "total_tokens": 1946966,
+      "input": {
+        "uncached": 29,
+        "cache_create": 217244,
+        "cache_read": 1724663
+      },
+      "output": 5030,
+      "context": [
+        {
+          "text": "/model",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mSonnet 4.6 (default)\u001b[22m",
+          "ts": "2026-06-05T01:42:18.999Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "merge vào main",
+          "ts": "2026-06-05T01:54:20.469Z",
+          "calls": 27,
+          "here": true
+        },
+        {
+          "text": "ẽit",
+          "ts": "2026-06-06T02:14:18.168Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "ẽit",
+          "ts": "2026-06-06T02:21:57.662Z",
+          "calls": 1,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-15T23:00:57.405Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 18,
+      "subagent_calls": 0,
+      "total_tokens": 1764826,
+      "input": {
+        "uncached": 20,
+        "cache_create": 190873,
+        "cache_read": 1566460
+      },
+      "output": 7473,
+      "context": [
+        {
+          "text": "commit & push all & merge all to main & deploy. toi chuaan bi doi may",
+          "ts": "2026-06-11T05:19:40.553Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-12T05:14:28.891Z",
+          "calls": 5,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-15T23:00:57.405Z",
+          "calls": 18,
+          "here": true
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-15T23:15:33.601Z",
+          "calls": 32,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T00:28:55.858Z",
+          "calls": 19,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T11:37:43.718Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "merge to main and deploy",
+      "api_calls": 20,
+      "subagent_calls": 0,
+      "total_tokens": 1689408,
+      "input": {
+        "uncached": 22,
+        "cache_create": 78746,
+        "cache_read": 1606021
+      },
+      "output": 4619,
+      "context": [
+        {
+          "text": "/exit",
+          "ts": "2026-06-16T11:32:57.840Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Catch you later!",
+          "ts": "2026-06-16T11:32:57.841Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "merge to main and deploy",
+          "ts": "2026-06-16T11:37:43.718Z",
+          "calls": 20,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:09:03.143Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "check CI passed",
+          "ts": "2026-06-16T12:10:30.171Z",
+          "calls": 4,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-25T15:43:55.758Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/orchestrate",
+      "api_calls": 18,
+      "subagent_calls": 0,
+      "total_tokens": 1652913,
+      "input": {
+        "uncached": 19,
+        "cache_create": 92136,
+        "cache_read": 1549118
+      },
+      "output": 11640,
+      "context": [
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T15:14:37.337Z",
+          "calls": 5,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T15:31:10.474Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-25T15:43:55.758Z",
+          "calls": 18,
+          "here": true
+        },
+        {
+          "text": "yes, implement cả 3",
+          "ts": "2026-06-25T15:51:05.285Z",
+          "calls": 41,
+          "here": false
+        },
+        {
+          "text": "push it",
+          "ts": "2026-06-25T23:01:45.685Z",
+          "calls": 2,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T13:24:51.436Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "yes",
+      "api_calls": 17,
+      "subagent_calls": 0,
+      "total_tokens": 1638320,
+      "input": {
+        "uncached": 19,
+        "cache_create": 8785,
+        "cache_read": 1624837
+      },
+      "output": 4679,
+      "context": [
+        {
+          "text": "yes",
+          "ts": "2026-06-21T23:27:26.650Z",
+          "calls": 44,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:14:58.475Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T13:24:51.436Z",
+          "calls": 17,
+          "here": true
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T13:31:24.326Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:41:09.315Z",
+          "calls": 18,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T12:22:25.407Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "fix gap.",
+      "api_calls": 15,
+      "subagent_calls": 0,
+      "total_tokens": 1608120,
+      "input": {
+        "uncached": 16,
+        "cache_create": 110672,
+        "cache_read": 1494919
+      },
+      "output": 2513,
+      "context": [
+        {
+          "text": "check CI passed",
+          "ts": "2026-06-16T12:10:30.171Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:11:48.696Z",
+          "calls": 21,
+          "here": false
+        },
+        {
+          "text": "fix gap.",
+          "ts": "2026-06-16T12:22:25.407Z",
+          "calls": 15,
+          "here": true
+        },
+        {
+          "text": "/compact",
+          "ts": "2026-06-18T01:49:55.904Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m \u001b[2mPreCompact [node \"/home/tinhn/.claude/scripts/hooks/run-with-flags.js\" \"pre:compact\" \"scripts/hooks/pre-compact.js\" \"standard,strict\"] completed successfully: {\"session_id\":\"549e8ef3-71…",
+          "ts": "2026-06-18T01:51:00.588Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T05:15:42.410Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 23,
+      "subagent_calls": 0,
+      "total_tokens": 1508889,
+      "input": {
+        "uncached": 25,
+        "cache_create": 58092,
+        "cache_read": 1442952
+      },
+      "output": 7820,
+      "context": [
+        {
+          "text": "yes, implement all 3",
+          "ts": "2026-06-18T01:57:50.251Z",
+          "calls": 49,
+          "here": false
+        },
+        {
+          "text": "backfill structured data cho plan hiện tại",
+          "ts": "2026-06-18T04:56:55.146Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T05:15:42.410Z",
+          "calls": 23,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T11:48:47.675Z",
+          "calls": 34,
+          "here": false
+        },
+        {
+          "text": "yes, proceed with phase 1 + 2 3",
+          "ts": "2026-06-18T12:28:55.605Z",
+          "calls": 35,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-20T01:45:17.735Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "b94e1997-b85d-442c-846b-1de0d8c7fb99",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 20,
+      "subagent_calls": 0,
+      "total_tokens": 1500920,
+      "input": {
+        "uncached": 162,
+        "cache_create": 71927,
+        "cache_read": 1422397
+      },
+      "output": 6434,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-20T01:45:17.735Z",
+          "calls": 20,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:02:03.866Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/ecc:plan",
+      "api_calls": 17,
+      "subagent_calls": 0,
+      "total_tokens": 1312622,
+      "input": {
+        "uncached": 19,
+        "cache_create": 64662,
+        "cache_read": 1243045
+      },
+      "output": 4896,
+      "context": [
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:52:40.910Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "làm sao để biết garmin kết nối ok hay chưa?",
+          "ts": "2026-06-22T13:54:06.373Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:02:03.866Z",
+          "calls": 17,
+          "here": true
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:12:46.685Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T14:14:18.986Z",
+          "calls": 10,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:33:04.396Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "check log",
+      "api_calls": 12,
+      "subagent_calls": 0,
+      "total_tokens": 1235055,
+      "input": {
+        "uncached": 14,
+        "cache_create": 5868,
+        "cache_read": 1226168
+      },
+      "output": 3005,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T14:25:19.188Z",
+          "calls": 7,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T14:30:51.369Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "check log",
+          "ts": "2026-06-22T14:33:04.396Z",
+          "calls": 12,
+          "here": true
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:44:09.088Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "garmin đồng bộ được gì? làm sao tôi có thể thấy?",
+          "ts": "2026-06-22T14:46:03.878Z",
+          "calls": 19,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-08T13:53:40.154Z",
+      "project": "-home-tinhn-repo-TinhN-Home-Lab",
+      "session": "9a918b00-333d-451c-8f02-e2ad0e077f1b",
+      "text": "yes",
+      "api_calls": 13,
+      "subagent_calls": 0,
+      "total_tokens": 1221230,
+      "input": {
+        "uncached": 15,
+        "cache_create": 8256,
+        "cache_read": 1206318
+      },
+      "output": 6641,
+      "context": [
+        {
+          "text": "commit & push all",
+          "ts": "2026-06-08T13:48:50.295Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-08T13:50:55.944Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-08T13:53:40.154Z",
+          "calls": 13,
+          "here": true
+        },
+        {
+          "text": "! sudo apt-get install -y fio",
+          "ts": "2026-06-08T13:57:12.289Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "/exit",
+          "ts": "2026-06-11T14:06:08.106Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-05T01:39:14.894Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "75de667e-10dc-4e1f-8453-82bf1a7b4a2a",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 20,
+      "subagent_calls": 0,
+      "total_tokens": 1201430,
+      "input": {
+        "uncached": 162,
+        "cache_create": 67548,
+        "cache_read": 1127693
+      },
+      "output": 6027,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-05T01:39:14.894Z",
+          "calls": 20,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-27T03:31:39.480Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "0d3466a2-11d4-4aff-85cc-db6ec747383f",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 20,
+      "subagent_calls": 0,
+      "total_tokens": 1191073,
+      "input": {
+        "uncached": 162,
+        "cache_create": 59588,
+        "cache_read": 1125488
+      },
+      "output": 5835,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-27T03:31:39.480Z",
+          "calls": 20,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T11:57:44.626Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "40ad99ab-6d65-42d8-94e8-75eb757b0820",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 19,
+      "subagent_calls": 0,
+      "total_tokens": 1170392,
+      "input": {
+        "uncached": 154,
+        "cache_create": 63107,
+        "cache_read": 1101877
+      },
+      "output": 5254,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T11:57:44.626Z",
+          "calls": 19,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:55:56.114Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/plan",
+      "api_calls": 8,
+      "subagent_calls": 0,
+      "total_tokens": 1153424,
+      "input": {
+        "uncached": 1073,
+        "cache_create": 141388,
+        "cache_read": 1001343
+      },
+      "output": 9620,
+      "context": [
+        {
+          "text": "/model",
+          "ts": "2026-06-22T14:54:41.728Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mOpus 4.8\u001b[22m and saved as your default for new sessions\u001b[2m\u001b[22m \u001b[2m .claude/settings.json pins \u001b[1mSonnet 4.6\u001b[22m\u001b[2m — that applies on restart\u001b[22m",
+          "ts": "2026-06-22T14:54:41.728Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T14:55:56.114Z",
+          "calls": 8,
+          "here": true
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T15:00:00.419Z",
+          "calls": 42,
+          "here": false
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-22T15:13:57.995Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T01:52:34.640Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 17,
+      "subagent_calls": 0,
+      "total_tokens": 1109501,
+      "input": {
+        "uncached": 19,
+        "cache_create": 64486,
+        "cache_read": 1039136
+      },
+      "output": 5860,
+      "context": [
+        {
+          "text": "/compact",
+          "ts": "2026-06-18T01:49:55.904Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "\u001b[2mCompacted (ctrl+o to see full summary)\u001b[22m \u001b[2mPreCompact [node \"/home/tinhn/.claude/scripts/hooks/run-with-flags.js\" \"pre:compact\" \"scripts/hooks/pre-compact.js\" \"standard,strict\"] completed successfully: {\"session_id\":\"549e8ef3-71…",
+          "ts": "2026-06-18T01:51:00.588Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T01:52:34.640Z",
+          "calls": 17,
+          "here": true
+        },
+        {
+          "text": "yes, implement all 3",
+          "ts": "2026-06-18T01:57:50.251Z",
+          "calls": 49,
+          "here": false
+        },
+        {
+          "text": "backfill structured data cho plan hiện tại",
+          "ts": "2026-06-18T04:56:55.146Z",
+          "calls": 4,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-25T15:57:55.928Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "675cd5ec-bf30-453d-a93c-5779f5abf441",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 20,
+      "subagent_calls": 0,
+      "total_tokens": 1002228,
+      "input": {
+        "uncached": 162,
+        "cache_create": 45310,
+        "cache_read": 953739
+      },
+      "output": 3017,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-25T15:57:55.928Z",
+          "calls": 20,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T02:00:51.770Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "f6097ad5-8363-498c-bbd9-5298f5190993",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 20,
+      "subagent_calls": 0,
+      "total_tokens": 1001439,
+      "input": {
+        "uncached": 162,
+        "cache_create": 43911,
+        "cache_read": 951762
+      },
+      "output": 5604,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T02:00:51.770Z",
+          "calls": 20,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T12:35:16.720Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/ecc:plan",
+      "api_calls": 22,
+      "subagent_calls": 1,
+      "total_tokens": 985650,
+      "input": {
+        "uncached": 31,
+        "cache_create": 123307,
+        "cache_read": 853076
+      },
+      "output": 9236,
+      "context": [
+        {
+          "text": "commit all & push",
+          "ts": "2026-06-21T11:54:09.260Z",
+          "calls": 8,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-21T12:17:58.802Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T12:35:16.720Z",
+          "calls": 22,
+          "here": true
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T23:02:28.998Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-21T23:27:26.650Z",
+          "calls": 44,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T00:28:55.858Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 19,
+      "subagent_calls": 1,
+      "total_tokens": 967734,
+      "input": {
+        "uncached": 91,
+        "cache_create": 117919,
+        "cache_read": 840994
+      },
+      "output": 8730,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-15T23:00:57.405Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-15T23:15:33.601Z",
+          "calls": 32,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T00:28:55.858Z",
+          "calls": 19,
+          "here": true
+        },
+        {
+          "text": "yes, implement all 1-7",
+          "ts": "2026-06-16T00:56:32.213Z",
+          "calls": 56,
+          "here": false
+        },
+        {
+          "text": "merge to main and deploy",
+          "ts": "2026-06-16T01:39:10.763Z",
+          "calls": 34,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T15:28:54.248Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "yes",
+      "api_calls": 9,
+      "subagent_calls": 0,
+      "total_tokens": 962095,
+      "input": {
+        "uncached": 11,
+        "cache_create": 5312,
+        "cache_read": 954529
+      },
+      "output": 2243,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T15:18:54.290Z",
+          "calls": 22,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-03T15:28:54.248Z",
+          "calls": 9,
+          "here": true
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-03T15:35:00.393Z",
+          "calls": 5,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T15:47:23.151Z",
+          "calls": 4,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T01:07:49.590Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "4107eac4-2c8f-49eb-9fdc-a8c081c13da0",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 17,
+      "subagent_calls": 0,
+      "total_tokens": 912759,
+      "input": {
+        "uncached": 138,
+        "cache_create": 50251,
+        "cache_read": 857148
+      },
+      "output": 5222,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-16T01:07:49.590Z",
+          "calls": 17,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T23:02:28.998Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/ecc:plan",
+      "api_calls": 18,
+      "subagent_calls": 1,
+      "total_tokens": 903549,
+      "input": {
+        "uncached": 77,
+        "cache_create": 124744,
+        "cache_read": 773340
+      },
+      "output": 5388,
+      "context": [
+        {
+          "text": "deploy",
+          "ts": "2026-06-21T12:17:58.802Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T12:35:16.720Z",
+          "calls": 22,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T23:02:28.998Z",
+          "calls": 18,
+          "here": true
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-21T23:27:26.650Z",
+          "calls": 44,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:14:58.475Z",
+          "calls": 6,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-04T01:03:19.425Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "520a061a-eab5-4098-b224-14c2316b5650",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 20,
+      "subagent_calls": 0,
+      "total_tokens": 903179,
+      "input": {
+        "uncached": 162,
+        "cache_create": 50209,
+        "cache_read": 848850
+      },
+      "output": 3958,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-04T01:03:19.425Z",
+          "calls": 20,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:20:00.819Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/ecc:plan",
+      "api_calls": 10,
+      "subagent_calls": 0,
+      "total_tokens": 898395,
+      "input": {
+        "uncached": 12,
+        "cache_create": 8346,
+        "cache_read": 883718
+      },
+      "output": 6319,
+      "context": [
+        {
+          "text": "yes",
+          "ts": "2026-06-22T14:14:18.986Z",
+          "calls": 10,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T14:17:27.039Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:20:00.819Z",
+          "calls": 10,
+          "here": true
+        },
+        {
+          "text": "reset circuit",
+          "ts": "2026-06-22T14:24:04.321Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T14:25:19.188Z",
+          "calls": 7,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T11:54:09.260Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "commit all & push",
+      "api_calls": 8,
+      "subagent_calls": 0,
+      "total_tokens": 892814,
+      "input": {
+        "uncached": 10,
+        "cache_create": 4336,
+        "cache_read": 885943
+      },
+      "output": 2525,
+      "context": [
+        {
+          "text": "Login successful",
+          "ts": "2026-06-21T11:30:46.193Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "check @app @scripts/ /refactor-clean then /test-coverage then /e2e",
+          "ts": "2026-06-21T11:31:05.963Z",
+          "calls": 52,
+          "here": false
+        },
+        {
+          "text": "commit all & push",
+          "ts": "2026-06-21T11:54:09.260Z",
+          "calls": 8,
+          "here": true
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-21T12:17:58.802Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T12:35:16.720Z",
+          "calls": 22,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-07-01T00:33:47.438Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/plan",
+      "api_calls": 13,
+      "subagent_calls": 0,
+      "total_tokens": 844300,
+      "input": {
+        "uncached": 15,
+        "cache_create": 59189,
+        "cache_read": 779637
+      },
+      "output": 5459,
+      "context": [
+        {
+          "text": "analyze impact su danh doi ve lost ngu nghia hay lam sai voi plan optimize nay",
+          "ts": "2026-07-01T00:25:59.799Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "proceed",
+          "ts": "2026-07-01T00:27:55.787Z",
+          "calls": 7,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-07-01T00:33:47.438Z",
+          "calls": 13,
+          "here": true
+        },
+        {
+          "text": "cahy session-report",
+          "ts": "2026-07-01T00:42:44.686Z",
+          "calls": 5,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T11:49:54.880Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "bd4ebb7d-2246-4e5a-a90d-161eca3c61b7",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 14,
+      "subagent_calls": 0,
+      "total_tokens": 832035,
+      "input": {
+        "uncached": 114,
+        "cache_create": 56359,
+        "cache_read": 771027
+      },
+      "output": 4535,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-21T11:49:54.880Z",
+          "calls": 14,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:14:18.986Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "yes",
+      "api_calls": 10,
+      "subagent_calls": 0,
+      "total_tokens": 831619,
+      "input": {
+        "uncached": 12,
+        "cache_create": 3318,
+        "cache_read": 825783
+      },
+      "output": 2506,
+      "context": [
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:02:03.866Z",
+          "calls": 17,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:12:46.685Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T14:14:18.986Z",
+          "calls": 10,
+          "here": true
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T14:17:27.039Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:20:00.819Z",
+          "calls": 10,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T02:07:43.784Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "d6acc95c-61f6-462a-98da-ff60f2625e55",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 14,
+      "subagent_calls": 0,
+      "total_tokens": 787516,
+      "input": {
+        "uncached": 114,
+        "cache_create": 51169,
+        "cache_read": 730843
+      },
+      "output": 5390,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T02:07:43.784Z",
+          "calls": 14,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T15:28:09.705Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "c9350212-76c6-4831-8d1d-4f861a46c0d5",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 8,
+      "subagent_calls": 0,
+      "total_tokens": 785079,
+      "input": {
+        "uncached": 66,
+        "cache_create": 35380,
+        "cache_read": 748320
+      },
+      "output": 1313,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-03T15:28:09.705Z",
+          "calls": 8,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T12:39:01.872Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "79910982-c5e9-4507-a17e-872a04b8e590",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 17,
+      "subagent_calls": 0,
+      "total_tokens": 752987,
+      "input": {
+        "uncached": 138,
+        "cache_create": 38020,
+        "cache_read": 709983
+      },
+      "output": 4846,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T12:39:01.872Z",
+          "calls": 17,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T13:17:46.682Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "f2455116-c3fb-4c68-9aee-9cb710265419",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 19,
+      "subagent_calls": 0,
+      "total_tokens": 746073,
+      "input": {
+        "uncached": 154,
+        "cache_create": 32133,
+        "cache_read": 709184
+      },
+      "output": 4602,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-22T13:17:46.682Z",
+          "calls": 19,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T15:01:19.423Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "8118fc81-946a-4d78-9034-d85372866cce",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 11,
+      "subagent_calls": 0,
+      "total_tokens": 738304,
+      "input": {
+        "uncached": 90,
+        "cache_create": 63640,
+        "cache_read": 667692
+      },
+      "output": 6882,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-22T15:01:19.423Z",
+          "calls": 11,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T15:50:22.133Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "acc55493-f673-4bc8-86d8-bdf5fee0d7f2",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 728392,
+      "input": {
+        "uncached": 58,
+        "cache_create": 60479,
+        "cache_read": 663866
+      },
+      "output": 3989,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-03T15:50:22.133Z",
+          "calls": 7,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T12:17:58.802Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "deploy",
+      "api_calls": 6,
+      "subagent_calls": 0,
+      "total_tokens": 723289,
+      "input": {
+        "uncached": 8,
+        "cache_create": 11657,
+        "cache_read": 710931
+      },
+      "output": 693,
+      "context": [
+        {
+          "text": "check @app @scripts/ /refactor-clean then /test-coverage then /e2e",
+          "ts": "2026-06-21T11:31:05.963Z",
+          "calls": 52,
+          "here": false
+        },
+        {
+          "text": "commit all & push",
+          "ts": "2026-06-21T11:54:09.260Z",
+          "calls": 8,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-21T12:17:58.802Z",
+          "calls": 6,
+          "here": true
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T12:35:16.720Z",
+          "calls": 22,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T23:02:28.998Z",
+          "calls": 18,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:25:19.188Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/plan",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 684095,
+      "input": {
+        "uncached": 9,
+        "cache_create": 3706,
+        "cache_read": 678160
+      },
+      "output": 2220,
+      "context": [
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T14:20:00.819Z",
+          "calls": 10,
+          "here": false
+        },
+        {
+          "text": "reset circuit",
+          "ts": "2026-06-22T14:24:04.321Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T14:25:19.188Z",
+          "calls": 7,
+          "here": true
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T14:30:51.369Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "check log",
+          "ts": "2026-06-22T14:33:04.396Z",
+          "calls": 12,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-04T01:33:29.491Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "c70f497e-333e-481c-8204-194b92af5a49",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 16,
+      "subagent_calls": 0,
+      "total_tokens": 681345,
+      "input": {
+        "uncached": 130,
+        "cache_create": 33520,
+        "cache_read": 642270
+      },
+      "output": 5425,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-04T01:33:29.491Z",
+          "calls": 16,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-07-01T00:27:55.787Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "proceed",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 677438,
+      "input": {
+        "uncached": 9,
+        "cache_create": 54932,
+        "cache_read": 614232
+      },
+      "output": 8265,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-07-01T00:22:12.809Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "analyze impact su danh doi ve lost ngu nghia hay lam sai voi plan optimize nay",
+          "ts": "2026-07-01T00:25:59.799Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "proceed",
+          "ts": "2026-07-01T00:27:55.787Z",
+          "calls": 7,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-07-01T00:33:47.438Z",
+          "calls": 13,
+          "here": false
+        },
+        {
+          "text": "cahy session-report",
+          "ts": "2026-07-01T00:42:44.686Z",
+          "calls": 5,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T15:07:16.088Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "25f8b932-1ff3-4b51-989f-c96ea0255d83",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 11,
+      "subagent_calls": 0,
+      "total_tokens": 649623,
+      "input": {
+        "uncached": 90,
+        "cache_create": 54273,
+        "cache_read": 590665
+      },
+      "output": 4595,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-22T15:07:16.088Z",
+          "calls": 11,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-27T03:26:16.861Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/plan",
+      "api_calls": 8,
+      "subagent_calls": 0,
+      "total_tokens": 621403,
+      "input": {
+        "uncached": 10,
+        "cache_create": 9704,
+        "cache_read": 606987
+      },
+      "output": 4702,
+      "context": [
+        {
+          "text": "push it",
+          "ts": "2026-06-25T23:01:45.685Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "deploy ho xong chưa?",
+          "ts": "2026-06-27T03:24:33.776Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-27T03:26:16.861Z",
+          "calls": 8,
+          "here": true
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-27T03:29:40.834Z",
+          "calls": 27,
+          "here": false
+        },
+        {
+          "text": "push it",
+          "ts": "2026-06-27T06:30:07.822Z",
+          "calls": 2,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-07-01T00:14:26.026Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "deploy",
+      "api_calls": 6,
+      "subagent_calls": 0,
+      "total_tokens": 609383,
+      "input": {
+        "uncached": 8,
+        "cache_create": 6723,
+        "cache_read": 601937
+      },
+      "output": 715,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-30T23:51:17.406Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "Proceed Phase A+B principles + quik reference",
+          "ts": "2026-07-01T00:03:06.838Z",
+          "calls": 30,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-07-01T00:14:26.026Z",
+          "calls": 6,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-07-01T00:22:12.809Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "analyze impact su danh doi ve lost ngu nghia hay lam sai voi plan optimize nay",
+          "ts": "2026-07-01T00:25:59.799Z",
+          "calls": 1,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T15:32:03.219Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "bdb17a72-0b9e-46d0-9e1f-fd9088f6602b",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 6,
+      "subagent_calls": 0,
+      "total_tokens": 605679,
+      "input": {
+        "uncached": 50,
+        "cache_create": 89971,
+        "cache_read": 511232
+      },
+      "output": 4426,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-03T15:32:03.219Z",
+          "calls": 6,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T11:44:09.419Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "55f35647-6381-4537-9147-0680d6a026dd",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 13,
+      "subagent_calls": 0,
+      "total_tokens": 587944,
+      "input": {
+        "uncached": 106,
+        "cache_create": 47061,
+        "cache_read": 536510
+      },
+      "output": 4267,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-21T11:44:09.419Z",
+          "calls": 13,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T15:35:00.393Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "deploy",
+      "api_calls": 5,
+      "subagent_calls": 0,
+      "total_tokens": 544418,
+      "input": {
+        "uncached": 7,
+        "cache_create": 1744,
+        "cache_read": 541921
+      },
+      "output": 746,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T15:18:54.290Z",
+          "calls": 22,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-03T15:28:54.248Z",
+          "calls": 9,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-03T15:35:00.393Z",
+          "calls": 5,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T15:47:23.151Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-03T23:09:21.125Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T13:14:58.475Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/ecc:plan",
+      "api_calls": 6,
+      "subagent_calls": 0,
+      "total_tokens": 528404,
+      "input": {
+        "uncached": 8,
+        "cache_create": 184990,
+        "cache_read": 338395
+      },
+      "output": 5011,
+      "context": [
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-21T23:02:28.998Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-21T23:27:26.650Z",
+          "calls": 44,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:14:58.475Z",
+          "calls": 6,
+          "here": true
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T13:24:51.436Z",
+          "calls": 17,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T13:31:24.326Z",
+          "calls": 4,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T14:13:36.796Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "ee45a295-4821-4014-82ac-62c325a4d4e9",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 11,
+      "subagent_calls": 0,
+      "total_tokens": 513875,
+      "input": {
+        "uncached": 90,
+        "cache_create": 44147,
+        "cache_read": 465569
+      },
+      "output": 4069,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T14:13:36.796Z",
+          "calls": 11,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T01:01:01.225Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "22d33060-e7bd-4c18-a8ed-f2732e1f1d10",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 11,
+      "subagent_calls": 0,
+      "total_tokens": 493059,
+      "input": {
+        "uncached": 90,
+        "cache_create": 39949,
+        "cache_read": 449972
+      },
+      "output": 3048,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-16T01:01:01.225Z",
+          "calls": 11,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T12:20:04.111Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "3342212a-9b43-4713-a97c-ca66f2b29498",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 8,
+      "subagent_calls": 0,
+      "total_tokens": 486068,
+      "input": {
+        "uncached": 66,
+        "cache_create": 55774,
+        "cache_read": 425722
+      },
+      "output": 4506,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-16T12:20:04.111Z",
+          "calls": 8,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T04:56:55.146Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "backfill structured data cho plan hiện tại",
+      "api_calls": 4,
+      "subagent_calls": 0,
+      "total_tokens": 484821,
+      "input": {
+        "uncached": 6,
+        "cache_create": 110464,
+        "cache_read": 369657
+      },
+      "output": 4694,
+      "context": [
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T01:52:34.640Z",
+          "calls": 17,
+          "here": false
+        },
+        {
+          "text": "yes, implement all 3",
+          "ts": "2026-06-18T01:57:50.251Z",
+          "calls": 49,
+          "here": false
+        },
+        {
+          "text": "backfill structured data cho plan hiện tại",
+          "ts": "2026-06-18T04:56:55.146Z",
+          "calls": 4,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T05:15:42.410Z",
+          "calls": 23,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-18T11:48:47.675Z",
+          "calls": 34,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T15:43:21.555Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "bc22ab89-4258-451e-aa0d-b7dd1227bd7e",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 5,
+      "subagent_calls": 0,
+      "total_tokens": 458804,
+      "input": {
+        "uncached": 42,
+        "cache_create": 26102,
+        "cache_read": 428406
+      },
+      "output": 4254,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-03T15:43:21.555Z",
+          "calls": 5,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-19T23:48:30.445Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/plan",
+      "api_calls": 11,
+      "subagent_calls": 1,
+      "total_tokens": 452712,
+      "input": {
+        "uncached": 59,
+        "cache_create": 83729,
+        "cache_read": 360943
+      },
+      "output": 7981,
+      "context": [
+        {
+          "text": "/clear",
+          "ts": "2026-06-19T23:43:55.085Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-19T23:48:30.445Z",
+          "calls": 11,
+          "here": true
+        },
+        {
+          "text": "review lại source cho đầy đủ theo topics. sources đang quá ít. đánh giá lại các rủi ro, có thể giãn diều kiện ra để giảm rủi ro hoặc có biện pháp tốt",
+          "ts": "2026-06-19T23:58:09.367Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "proceed with implementation",
+          "ts": "2026-06-20T01:39:44.318Z",
+          "calls": 26,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-12T05:14:28.891Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "deploy",
+      "api_calls": 5,
+      "subagent_calls": 0,
+      "total_tokens": 443551,
+      "input": {
+        "uncached": 7,
+        "cache_create": 72068,
+        "cache_read": 371019
+      },
+      "output": 457,
+      "context": [
+        {
+          "text": "ẽit",
+          "ts": "2026-06-06T02:21:57.662Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "commit & push all & merge all to main & deploy. toi chuaan bi doi may",
+          "ts": "2026-06-11T05:19:40.553Z",
+          "calls": 3,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-12T05:14:28.891Z",
+          "calls": 5,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-15T23:00:57.405Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-15T23:15:33.601Z",
+          "calls": 32,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T01:53:52.499Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "a930ca56-b6a3-458e-8350-256660442ff2",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 9,
+      "subagent_calls": 0,
+      "total_tokens": 428936,
+      "input": {
+        "uncached": 74,
+        "cache_create": 39519,
+        "cache_read": 385138
+      },
+      "output": 4205,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T01:53:52.499Z",
+          "calls": 9,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-04T01:37:53.720Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "5a17d000-c872-40af-8e6d-d9bba3c78ffd",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 9,
+      "subagent_calls": 0,
+      "total_tokens": 427463,
+      "input": {
+        "uncached": 74,
+        "cache_create": 41632,
+        "cache_read": 381803
+      },
+      "output": 3954,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-04T01:37:53.720Z",
+          "calls": 9,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-30T23:51:17.406Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/plan",
+      "api_calls": 6,
+      "subagent_calls": 0,
+      "total_tokens": 418174,
+      "input": {
+        "uncached": 8,
+        "cache_create": 62145,
+        "cache_read": 351630
+      },
+      "output": 4391,
+      "context": [
+        {
+          "text": "push it",
+          "ts": "2026-06-27T06:30:07.822Z",
+          "calls": 2,
+          "here": false
+        },
+        {
+          "text": "/context-budget",
+          "ts": "2026-06-28T01:22:40.564Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-30T23:51:17.406Z",
+          "calls": 6,
+          "here": true
+        },
+        {
+          "text": "Proceed Phase A+B principles + quik reference",
+          "ts": "2026-07-01T00:03:06.838Z",
+          "calls": 30,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-07-01T00:14:26.026Z",
+          "calls": 6,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T05:24:31.502Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "f11f7498-32e5-4879-a45c-c6775a97d066",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 416136,
+      "input": {
+        "uncached": 58,
+        "cache_create": 54592,
+        "cache_read": 357076
+      },
+      "output": 4410,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T05:24:31.502Z",
+          "calls": 7,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T13:31:24.326Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "deploy",
+      "api_calls": 4,
+      "subagent_calls": 0,
+      "total_tokens": 403110,
+      "input": {
+        "uncached": 6,
+        "cache_create": 2215,
+        "cache_read": 400402
+      },
+      "output": 487,
+      "context": [
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:14:58.475Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "yes",
+          "ts": "2026-06-22T13:24:51.436Z",
+          "calls": 17,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-22T13:31:24.326Z",
+          "calls": 4,
+          "here": true
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:41:09.315Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T13:52:40.910Z",
+          "calls": 2,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:15:01.025Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "172da18b-d388-438e-a6c9-9a7b233bd444",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 401433,
+      "input": {
+        "uncached": 58,
+        "cache_create": 51631,
+        "cache_read": 345689
+      },
+      "output": 4055,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-22T14:15:01.025Z",
+          "calls": 7,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:20:30.733Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "761a9f19-b683-49b8-aeaf-ac8bc4b73e7a",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 9,
+      "subagent_calls": 0,
+      "total_tokens": 401152,
+      "input": {
+        "uncached": 74,
+        "cache_create": 36251,
+        "cache_read": 360377
+      },
+      "output": 4450,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-22T14:20:30.733Z",
+          "calls": 9,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T12:23:06.684Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "cd56293a-3557-4b47-b172-17bcedde73cc",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 9,
+      "subagent_calls": 0,
+      "total_tokens": 400940,
+      "input": {
+        "uncached": 74,
+        "cache_create": 36869,
+        "cache_read": 357271
+      },
+      "output": 6726,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-21T12:23:06.684Z",
+          "calls": 9,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T13:42:01.315Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "89c7f751-440e-4a6a-b607-ccfca3eec14f",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 8,
+      "subagent_calls": 0,
+      "total_tokens": 399137,
+      "input": {
+        "uncached": 66,
+        "cache_create": 42779,
+        "cache_read": 351229
+      },
+      "output": 5063,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-22T13:42:01.315Z",
+          "calls": 8,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T01:48:15.025Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "c92661ff-2128-4c1a-b8ca-fa05760e3e4a",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 8,
+      "subagent_calls": 0,
+      "total_tokens": 382136,
+      "input": {
+        "uncached": 66,
+        "cache_create": 40402,
+        "cache_read": 336302
+      },
+      "output": 5366,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-16T01:48:15.025Z",
+          "calls": 8,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T12:10:30.171Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "check CI passed",
+      "api_calls": 4,
+      "subagent_calls": 0,
+      "total_tokens": 373483,
+      "input": {
+        "uncached": 6,
+        "cache_create": 1017,
+        "cache_read": 372106
+      },
+      "output": 354,
+      "context": [
+        {
+          "text": "merge to main and deploy",
+          "ts": "2026-06-16T11:37:43.718Z",
+          "calls": 20,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:09:03.143Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "check CI passed",
+          "ts": "2026-06-16T12:10:30.171Z",
+          "calls": 4,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:11:48.696Z",
+          "calls": 21,
+          "here": false
+        },
+        {
+          "text": "fix gap.",
+          "ts": "2026-06-16T12:22:25.407Z",
+          "calls": 15,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-03T15:47:23.151Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 4,
+      "subagent_calls": 0,
+      "total_tokens": 372900,
+      "input": {
+        "uncached": 5242,
+        "cache_create": 70962,
+        "cache_read": 292482
+      },
+      "output": 4214,
+      "context": [
+        {
+          "text": "yes",
+          "ts": "2026-06-03T15:28:54.248Z",
+          "calls": 9,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-06-03T15:35:00.393Z",
+          "calls": 5,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-03T15:47:23.151Z",
+          "calls": 4,
+          "here": true
+        },
+        {
+          "text": "/model",
+          "ts": "2026-06-03T23:09:21.125Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mSonnet 4.6 (default)\u001b[22m",
+          "ts": "2026-06-03T23:09:21.125Z",
+          "calls": 0,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T12:09:03.143Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "/plan",
+      "api_calls": 4,
+      "subagent_calls": 0,
+      "total_tokens": 368871,
+      "input": {
+        "uncached": 6,
+        "cache_create": 2322,
+        "cache_read": 366046
+      },
+      "output": 497,
+      "context": [
+        {
+          "text": "Catch you later!",
+          "ts": "2026-06-16T11:32:57.841Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "merge to main and deploy",
+          "ts": "2026-06-16T11:37:43.718Z",
+          "calls": 20,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:09:03.143Z",
+          "calls": 4,
+          "here": true
+        },
+        {
+          "text": "check CI passed",
+          "ts": "2026-06-16T12:10:30.171Z",
+          "calls": 4,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-16T12:11:48.696Z",
+          "calls": 21,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-25T15:51:15.654Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "1f2167fc-2817-4c14-8311-8d07c3920b1b",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 367654,
+      "input": {
+        "uncached": 58,
+        "cache_create": 45682,
+        "cache_read": 318621
+      },
+      "output": 3293,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-25T15:51:15.654Z",
+          "calls": 7,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T15:31:10.474Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/plan",
+      "api_calls": 6,
+      "subagent_calls": 0,
+      "total_tokens": 365608,
+      "input": {
+        "uncached": 7,
+        "cache_create": 10351,
+        "cache_read": 353977
+      },
+      "output": 1273,
+      "context": [
+        {
+          "text": "Set model to \u001b[1mSonnet 4.6 (default)\u001b[22m and saved as your default for new sessions\u001b[2m\u001b[22m \u001b[2m .claude/settings.json pins \u001b[1mSonnet 4.6\u001b[22m\u001b[2m — that applies on restart\u001b[22m",
+          "ts": "2026-06-22T15:13:57.995Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T15:14:37.337Z",
+          "calls": 5,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T15:31:10.474Z",
+          "calls": 6,
+          "here": true
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-25T15:43:55.758Z",
+          "calls": 18,
+          "here": false
+        },
+        {
+          "text": "yes, implement cả 3",
+          "ts": "2026-06-25T15:51:05.285Z",
+          "calls": 41,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-07-01T00:42:44.686Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "cahy session-report",
+      "api_calls": 5,
+      "subagent_calls": 0,
+      "total_tokens": 364545,
+      "input": {
+        "uncached": 7,
+        "cache_create": 2329,
+        "cache_read": 361501
+      },
+      "output": 708,
+      "context": [
+        {
+          "text": "proceed",
+          "ts": "2026-07-01T00:27:55.787Z",
+          "calls": 7,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-07-01T00:33:47.438Z",
+          "calls": 13,
+          "here": false
+        },
+        {
+          "text": "cahy session-report",
+          "ts": "2026-07-01T00:42:44.686Z",
+          "calls": 5,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T02:17:08.278Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "6da8da46-8ae8-4647-b764-b63c8ec9f6ff",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 359481,
+      "input": {
+        "uncached": 58,
+        "cache_create": 44473,
+        "cache_read": 308535
+      },
+      "output": 6415,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T02:17:08.278Z",
+          "calls": 7,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T11:34:41.460Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "906998ec-5166-46fa-95bc-fb3f0ad033a1",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 8,
+      "subagent_calls": 0,
+      "total_tokens": 339570,
+      "input": {
+        "uncached": 66,
+        "cache_create": 34054,
+        "cache_read": 301864
+      },
+      "output": 3586,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-21T11:34:41.460Z",
+          "calls": 8,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:47:54.715Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "98fa87f3-ae7e-4ce1-bf5b-d6d55d8cce7c",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 335146,
+      "input": {
+        "uncached": 58,
+        "cache_create": 40254,
+        "cache_read": 291375
+      },
+      "output": 3459,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-22T14:47:54.715Z",
+          "calls": 7,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T14:54:18.228Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "a45620d7-d72d-4d38-b751-79a4aaaa938b",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 6,
+      "subagent_calls": 0,
+      "total_tokens": 333604,
+      "input": {
+        "uncached": 50,
+        "cache_create": 49953,
+        "cache_read": 279083
+      },
+      "output": 4518,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-22T14:54:18.228Z",
+          "calls": 6,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-07-01T00:22:12.809Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/plan",
+      "api_calls": 3,
+      "subagent_calls": 0,
+      "total_tokens": 333287,
+      "input": {
+        "uncached": 5,
+        "cache_create": 11440,
+        "cache_read": 317983
+      },
+      "output": 3859,
+      "context": [
+        {
+          "text": "Proceed Phase A+B principles + quik reference",
+          "ts": "2026-07-01T00:03:06.838Z",
+          "calls": 30,
+          "here": false
+        },
+        {
+          "text": "deploy",
+          "ts": "2026-07-01T00:14:26.026Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-07-01T00:22:12.809Z",
+          "calls": 3,
+          "here": true
+        },
+        {
+          "text": "analyze impact su danh doi ve lost ngu nghia hay lam sai voi plan optimize nay",
+          "ts": "2026-07-01T00:25:59.799Z",
+          "calls": 1,
+          "here": false
+        },
+        {
+          "text": "proceed",
+          "ts": "2026-07-01T00:27:55.787Z",
+          "calls": 7,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-22T15:14:37.337Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+      "text": "/ecc:plan",
+      "api_calls": 5,
+      "subagent_calls": 0,
+      "total_tokens": 330149,
+      "input": {
+        "uncached": 7,
+        "cache_create": 55366,
+        "cache_read": 274225
+      },
+      "output": 551,
+      "context": [
+        {
+          "text": "/model",
+          "ts": "2026-06-22T15:13:57.995Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Set model to \u001b[1mSonnet 4.6 (default)\u001b[22m and saved as your default for new sessions\u001b[2m\u001b[22m \u001b[2m .claude/settings.json pins \u001b[1mSonnet 4.6\u001b[22m\u001b[2m — that applies on restart\u001b[22m",
+          "ts": "2026-06-22T15:13:57.995Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "/ecc:plan",
+          "ts": "2026-06-22T15:14:37.337Z",
+          "calls": 5,
+          "here": true
+        },
+        {
+          "text": "/plan",
+          "ts": "2026-06-22T15:31:10.474Z",
+          "calls": 6,
+          "here": false
+        },
+        {
+          "text": "/orchestrate",
+          "ts": "2026-06-25T15:43:55.758Z",
+          "calls": 18,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-18T11:49:24.180Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "09b73dda-11b9-4802-86a3-c2decfcef446",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 329665,
+      "input": {
+        "uncached": 58,
+        "cache_create": 39521,
+        "cache_read": 285849
+      },
+      "output": 4237,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-18T11:49:24.180Z",
+          "calls": 7,
+          "here": true
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-16T05:13:03.667Z",
+      "project": "-home-tinhn-repo-Personal-AI-OS",
+      "session": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+      "text": "continue",
+      "api_calls": 5,
+      "subagent_calls": 0,
+      "total_tokens": 325690,
+      "input": {
+        "uncached": 7,
+        "cache_create": 55843,
+        "cache_read": 268248
+      },
+      "output": 1592,
+      "context": [
+        {
+          "text": "yes, implement all 1-7",
+          "ts": "2026-06-16T00:56:32.213Z",
+          "calls": 56,
+          "here": false
+        },
+        {
+          "text": "merge to main and deploy",
+          "ts": "2026-06-16T01:39:10.763Z",
+          "calls": 34,
+          "here": false
+        },
+        {
+          "text": "continue",
+          "ts": "2026-06-16T05:13:03.667Z",
+          "calls": 5,
+          "here": true
+        },
+        {
+          "text": "/exit",
+          "ts": "2026-06-16T11:32:57.840Z",
+          "calls": 0,
+          "here": false
+        },
+        {
+          "text": "Catch you later!",
+          "ts": "2026-06-16T11:32:57.841Z",
+          "calls": 1,
+          "here": false
+        }
+      ]
+    },
+    {
+      "ts": "2026-06-21T11:59:34.380Z",
+      "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+      "session": "aee74a9e-2ec8-436d-95ff-a403112db1fd",
+      "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+      "api_calls": 7,
+      "subagent_calls": 0,
+      "total_tokens": 323117,
+      "input": {
+        "uncached": 58,
+        "cache_create": 38327,
+        "cache_read": 281096
+      },
+      "output": 3636,
+      "context": [
+        {
+          "text": "IMPORTANT: You are running in non-interactive --print mode. You MUST use the Write tool directly to create files. Do NOT ask for permission, do NOT ask for confirmation, do NOT output summaries instead of writing. Just read, analyze, and…",
+          "ts": "2026-06-21T11:59:34.380Z",
+          "calls": 7,
+          "here": true
+        }
+      ]
+    }
+  ],
+  "by_day": [
+    {
+      "date": "2026-06-03",
+      "dow": "Wed",
+      "tokens": 77825268,
+      "sessions": [
+        {
+          "id": "549e8ef3-71c0-437e-bbf7-57e4ca0b35cb",
+          "project": "-home-tinhn-repo-Personal-AI-OS",
+          "tokens": 74991782,
+          "start_min": 1339,
+          "end_min": 24883
+        },
+        {
+          "id": "97fa010a-d67f-4578-84ab-a55573b897cf",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 255532,
+          "start_min": 1340,
+          "end_min": 1340
+        },
+        {
+          "id": "c9350212-76c6-4831-8d1d-4f861a46c0d5",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 785079,
+          "start_min": 1348,
+          "end_min": 1349
+        },
+        {
+          "id": "bdb17a72-0b9e-46d0-9e1f-fd9088f6602b",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 605679,
+          "start_min": 1352,
+          "end_min": 1353
+        },
+        {
+          "id": "bc22ab89-4258-451e-aa0d-b7dd1227bd7e",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 458804,
+          "start_min": 1363,
+          "end_min": 1364
+        },
+        {
+          "id": "acc55493-f673-4bc8-86d8-bdf5fee0d7f2",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 728392,
+          "start_min": 1370,
+          "end_min": 1371
+        }
+      ],
+      "peak": 2,
+      "peak_at_min": 1340
+    },
+    {
+      "date": "2026-06-04",
+      "dow": "Thu",
+      "tokens": 2011987,
+      "sessions": [
+        {
+          "id": "520a061a-eab5-4098-b224-14c2316b5650",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 903179,
+          "start_min": 483,
+          "end_min": 485
+        },
+        {
+          "id": "c70f497e-333e-481c-8204-194b92af5a49",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 681345,
+          "start_min": 513,
+          "end_min": 515
+        },
+        {
+          "id": "5a17d000-c872-40af-8e6d-d9bba3c78ffd",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 427463,
+          "start_min": 518,
+          "end_min": 519
+        }
+      ],
+      "peak": 2,
+      "peak_at_min": 510
+    },
+    {
+      "date": "2026-06-05",
+      "dow": "Fri",
+      "tokens": 1394223,
+      "sessions": [
+        {
+          "id": "75de667e-10dc-4e1f-8453-82bf1a7b4a2a",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 1201430,
+          "start_min": 519,
+          "end_min": 521
+        },
+        {
+          "id": "62072630-886d-4b4f-9c78-bfc63222c2af",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 192793,
+          "start_min": 537,
+          "end_min": 538
+        }
+      ],
+      "peak": 1,
+      "peak_at_min": 510
+    },
+    {
+      "date": "2026-06-06",
+      "dow": "Sat",
+      "tokens": 272088,
+      "sessions": [
+        {
+          "id": "f7588e29-9afd-4b51-8777-583ee1447ffb",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 272088,
+          "start_min": 540,
+          "end_min": 540
+        }
+      ],
+      "peak": 0,
+      "peak_at_min": 0
+    },
+    {
+      "date": "2026-06-08",
+      "dow": "Mon",
+      "tokens": 1759232,
+      "sessions": [
+        {
+          "id": "9a918b00-333d-451c-8f02-e2ad0e077f1b",
+          "project": "-home-tinhn-repo-TinhN-Home-Lab",
+          "tokens": 1759232,
+          "start_min": 1247,
+          "end_min": 5586
+        }
+      ],
+      "peak": 1,
+      "peak_at_min": 1240
+    },
+    {
+      "date": "2026-06-12",
+      "dow": "Fri",
+      "tokens": 312260,
+      "sessions": [
+        {
+          "id": "599c59fa-5bb3-4fc9-9dc6-1e51784a6727",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 312260,
+          "start_min": 736,
+          "end_min": 737
+        }
+      ],
+      "peak": 1,
+      "peak_at_min": 730
+    },
+    {
+      "date": "2026-06-16",
+      "dow": "Tue",
+      "tokens": 4088774,
+      "sessions": [
+        {
+          "id": "22d33060-e7bd-4c18-a8ed-f2732e1f1d10",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 493059,
+          "start_min": 481,
+          "end_min": 482
+        },
+        {
+          "id": "4107eac4-2c8f-49eb-9fdc-a8c081c13da0",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 912759,
+          "start_min": 488,
+          "end_min": 489
+        },
+        {
+          "id": "12e64b52-d0a4-49d5-931e-0bbc686158f5",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 238909,
+          "start_min": 520,
+          "end_min": 521
+        },
+        {
+          "id": "c92661ff-2128-4c1a-b8ca-fa05760e3e4a",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 382136,
+          "start_min": 528,
+          "end_min": 529
+        },
+        {
+          "id": "c6f1ea0f-dfa8-492f-9402-23e37fc7f41d",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 224083,
+          "start_min": 738,
+          "end_min": 739
+        },
+        {
+          "id": "3901098f-b42b-4fdf-acb4-d46d4e2a9bd6",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 286372,
+          "start_min": 1118,
+          "end_min": 1119
+        },
+        {
+          "id": "e5295350-723e-4471-8b14-5b1b1f2e29ff",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 245633,
+          "start_min": 1124,
+          "end_min": 1125
+        },
+        {
+          "id": "a12f192e-dbd8-4421-9b2e-7e63625303ab",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 296556,
+          "start_min": 1138,
+          "end_min": 1138
+        },
+        {
+          "id": "a8b9ba52-73e7-451d-b28e-f91b4d1ae4ef",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 201051,
+          "start_min": 1151,
+          "end_min": 1152
+        },
+        {
+          "id": "3342212a-9b43-4713-a97c-ca66f2b29498",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 486068,
+          "start_min": 1160,
+          "end_min": 1161
+        },
+        {
+          "id": "080763f1-5509-4692-83e2-5ddd0de52571",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 322148,
+          "start_min": 1166,
+          "end_min": 1167
+        }
+      ],
+      "peak": 2,
+      "peak_at_min": 480
+    },
+    {
+      "date": "2026-06-18",
+      "dow": "Thu",
+      "tokens": 6942040,
+      "sessions": [
+        {
+          "id": "a930ca56-b6a3-458e-8350-256660442ff2",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 428936,
+          "start_min": 534,
+          "end_min": 535
+        },
+        {
+          "id": "f6097ad5-8363-498c-bbd9-5298f5190993",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 1001439,
+          "start_min": 541,
+          "end_min": 543
+        },
+        {
+          "id": "d6acc95c-61f6-462a-98da-ff60f2625e55",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 787516,
+          "start_min": 548,
+          "end_min": 549
+        },
+        {
+          "id": "6da8da46-8ae8-4647-b764-b63c8ec9f6ff",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 359481,
+          "start_min": 557,
+          "end_min": 559
+        },
+        {
+          "id": "a6115316-0ae7-43ca-92c2-8f6d9a1c908b",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 298884,
+          "start_min": 723,
+          "end_min": 724
+        },
+        {
+          "id": "8686da12-4063-47a8-a024-5554511c4554",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 308515,
+          "start_min": 738,
+          "end_min": 739
+        },
+        {
+          "id": "f11f7498-32e5-4879-a45c-c6775a97d066",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 416136,
+          "start_min": 745,
+          "end_min": 745
+        },
+        {
+          "id": "09b73dda-11b9-4802-86a3-c2decfcef446",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 329665,
+          "start_min": 1129,
+          "end_min": 1130
+        },
+        {
+          "id": "40ad99ab-6d65-42d8-94e8-75eb757b0820",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 1170392,
+          "start_min": 1138,
+          "end_min": 1139
+        },
+        {
+          "id": "55323311-d108-4e63-b1a2-9c193e030235",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 302170,
+          "start_min": 1162,
+          "end_min": 1163
+        },
+        {
+          "id": "e5928bb9-d844-4335-96ba-833d5349fd12",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 272044,
+          "start_min": 1172,
+          "end_min": 1173
+        },
+        {
+          "id": "79910982-c5e9-4507-a17e-872a04b8e590",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 752987,
+          "start_min": 1179,
+          "end_min": 1181
+        },
+        {
+          "id": "ee45a295-4821-4014-82ac-62c325a4d4e9",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 513875,
+          "start_min": 1274,
+          "end_min": 1275
+        }
+      ],
+      "peak": 2,
+      "peak_at_min": 540
+    },
+    {
+      "date": "2026-06-20",
+      "dow": "Sat",
+      "tokens": 55529423,
+      "sessions": [
+        {
+          "id": "d74c59e5-a073-4bcc-b2d1-4df13d8f1bf6",
+          "project": "-home-tinhn-repo-Personal-AI-OS",
+          "tokens": 53877976,
+          "start_min": 404,
+          "end_min": 16304
+        },
+        {
+          "id": "05fe9807-536a-41e5-842c-a63d578458f0",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 150527,
+          "start_min": 520,
+          "end_min": 521
+        },
+        {
+          "id": "b94e1997-b85d-442c-846b-1de0d8c7fb99",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 1500920,
+          "start_min": 525,
+          "end_min": 527
+        }
+      ],
+      "peak": 3,
+      "peak_at_min": 520
+    },
+    {
+      "date": "2026-06-21",
+      "dow": "Sun",
+      "tokens": 2483606,
+      "sessions": [
+        {
+          "id": "906998ec-5166-46fa-95bc-fb3f0ad033a1",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 339570,
+          "start_min": 1115,
+          "end_min": 1116
+        },
+        {
+          "id": "55f35647-6381-4537-9147-0680d6a026dd",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 587944,
+          "start_min": 1124,
+          "end_min": 1125
+        },
+        {
+          "id": "bd4ebb7d-2246-4e5a-a90d-161eca3c61b7",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 832035,
+          "start_min": 1130,
+          "end_min": 1132
+        },
+        {
+          "id": "aee74a9e-2ec8-436d-95ff-a403112db1fd",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 323117,
+          "start_min": 1140,
+          "end_min": 1140
+        },
+        {
+          "id": "cd56293a-3557-4b47-b172-17bcedde73cc",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 400940,
+          "start_min": 1163,
+          "end_min": 1164
+        }
+      ],
+      "peak": 1,
+      "peak_at_min": 1110
+    },
+    {
+      "date": "2026-06-22",
+      "dow": "Mon",
+      "tokens": 6745097,
+      "sessions": [
+        {
+          "id": "f2455116-c3fb-4c68-9aee-9cb710265419",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 746073,
+          "start_min": 1218,
+          "end_min": 1220
+        },
+        {
+          "id": "6443a73a-fe6b-43fd-b962-41ab3a6276a0",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 313381,
+          "start_min": 1226,
+          "end_min": 1227
+        },
+        {
+          "id": "2fbf5b47-6dfd-4f92-a942-4afd1c5ad8f1",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 130238,
+          "start_min": 1232,
+          "end_min": 1233
+        },
+        {
+          "id": "89c7f751-440e-4a6a-b607-ccfca3eec14f",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 399137,
+          "start_min": 1242,
+          "end_min": 1243
+        },
+        {
+          "id": "38149f24-198c-4a0d-b210-b5e9e62b00c2",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 278261,
+          "start_min": 1248,
+          "end_min": 1249
+        },
+        {
+          "id": "7550d342-e078-4d95-80f8-e94b4f2cab44",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 259047,
+          "start_min": 1262,
+          "end_min": 1263
+        },
+        {
+          "id": "2a57b2cf-bfa9-4fa7-a315-178c9b7f652a",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 221805,
+          "start_min": 1268,
+          "end_min": 1269
+        },
+        {
+          "id": "172da18b-d388-438e-a6c9-9a7b233bd444",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 401433,
+          "start_min": 1275,
+          "end_min": 1276
+        },
+        {
+          "id": "761a9f19-b683-49b8-aeaf-ac8bc4b73e7a",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 401152,
+          "start_min": 1281,
+          "end_min": 1282
+        },
+        {
+          "id": "87699d1a-186c-43a4-9257-ddb11d37cf3d",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 282056,
+          "start_min": 1286,
+          "end_min": 1287
+        },
+        {
+          "id": "34de91b0-f159-4c61-a3c5-d49054803d0a",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 262024,
+          "start_min": 1294,
+          "end_min": 1294
+        },
+        {
+          "id": "92626c48-e3c1-4e97-b709-3c36bcf6d105",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 296375,
+          "start_min": 1300,
+          "end_min": 1300
+        },
+        {
+          "id": "98fa87f3-ae7e-4ce1-bf5b-d6d55d8cce7c",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 335146,
+          "start_min": 1308,
+          "end_min": 1309
+        },
+        {
+          "id": "a45620d7-d72d-4d38-b751-79a4aaaa938b",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 333604,
+          "start_min": 1314,
+          "end_min": 1315
+        },
+        {
+          "id": "8118fc81-946a-4d78-9034-d85372866cce",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 738304,
+          "start_min": 1321,
+          "end_min": 1324
+        },
+        {
+          "id": "25f8b932-1ff3-4b51-989f-c96ea0255d83",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 649623,
+          "start_min": 1327,
+          "end_min": 1329
+        },
+        {
+          "id": "ac26c0e6-9bbd-4b74-a59f-c083201b8a01",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 304056,
+          "start_min": 1336,
+          "end_min": 1336
+        },
+        {
+          "id": "b8fdfdbe-a2db-44c2-aeaa-9fe89b2e4980",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 270972,
+          "start_min": 1346,
+          "end_min": 1346
+        },
+        {
+          "id": "7c1f3893-1e4f-4106-bd29-04a32294b407",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 122410,
+          "start_min": 1352,
+          "end_min": 1352
+        }
+      ],
+      "peak": 2,
+      "peak_at_min": 1240
+    },
+    {
+      "date": "2026-06-25",
+      "dow": "Thu",
+      "tokens": 1575016,
+      "sessions": [
+        {
+          "id": "ddbe3710-6ebe-4eb1-853b-ee0ee57e82b1",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 205134,
+          "start_min": 1366,
+          "end_min": 1367
+        },
+        {
+          "id": "1f2167fc-2817-4c14-8311-8d07c3920b1b",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 367654,
+          "start_min": 1371,
+          "end_min": 1372
+        },
+        {
+          "id": "675cd5ec-bf30-453d-a93c-5779f5abf441",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 1002228,
+          "start_min": 1378,
+          "end_min": 1380
+        }
+      ],
+      "peak": 2,
+      "peak_at_min": 1370
+    },
+    {
+      "date": "2026-06-27",
+      "dow": "Sat",
+      "tokens": 1500629,
+      "sessions": [
+        {
+          "id": "f3f83086-ceb5-44c8-93f9-f3b312f1bfe9",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 181605,
+          "start_min": 627,
+          "end_min": 627
+        },
+        {
+          "id": "0d3466a2-11d4-4aff-85cc-db6ec747383f",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 1191073,
+          "start_min": 632,
+          "end_min": 634
+        },
+        {
+          "id": "0783d9b7-d738-4da6-af69-95b62fccbea8",
+          "project": "-home-tinhn--claude-homunculus-projects-bb760f1a52a7",
+          "tokens": 127951,
+          "start_min": 640,
+          "end_min": 641
+        }
+      ],
+      "peak": 1,
+      "peak_at_min": 620
+    }
+  ]
+}</script>
+
+<script>
+(function() {
+  const DATA = JSON.parse(document.getElementById('report-data').textContent || '{}');
+  const $ = id => document.getElementById(id);
+  const fmt = n => n>=1e9 ? (n/1e9).toFixed(2)+'B' : n>=1e6 ? (n/1e6).toFixed(2)+'M'
+              : n>=1e3 ? (n/1e3).toFixed(1)+'k' : String(n);
+  const pct = (a,b) => b>0 ? ((100*a/b).toFixed(1)+'%') : '—';
+  const esc = s => String(s).replace(/[&<>"]/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const short = p => String(p||'').replace(/^-Users-[^-]+-/,'').replace(/^code-/,'');
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const niceDate = iso => { const d = new Date(iso); return isNaN(d) ? '' :
+    `${MON[d.getMonth()]} ${d.getDate()} · ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+
+  if (!DATA.overall) { $('meta-line').textContent = 'no data — embed JSON in #report-data.'; return; }
+
+  // header + hero
+  const o = DATA.overall, it = o.input_tokens;
+  const GRAND = it.total + o.output_tokens;
+  const share = n => GRAND>0 ? (100*n/GRAND).toFixed(1)+'%' : '—';
+  const span = o.span;
+  $('cmd-flags').innerHTML = DATA.since
+    ? `<span class="flag">--since</span> ${esc(DATA.since)}` : '';
+  $('meta-line').textContent =
+    (span ? `${span.from.slice(0,10)} → ${span.to.slice(0,10)}` : '') +
+    ` · ${DATA.root || ''}`;
+  $('foot-gen').textContent = `generated ${DATA.generated_at?.slice(0,16).replace('T',' ') || ''}`;
+  $('foot-stats').textContent =
+    `${o.sessions} sessions · ${o.api_calls} api calls · ${o.human_messages} prompts`;
+
+  const num = fmt(GRAND), m = num.match(/^([\d.]+)([A-Za-z]*)$/);
+  $('hero-total').innerHTML =
+    `${m?m[1]:num}<span class="unit">${m?m[2]:''}</span><span class="label">tokens</span>`;
+  const cacheCls = it.pct_cached>=85 ? 'ok' : 'warn';
+  $('hero-split').innerHTML =
+    `<b>${fmt(it.total)}</b> input <span class="${cacheCls}">(${it.pct_cached}% cache-read)</span> · `+
+    `<b>${fmt(o.output_tokens)}</b> output · all figures below are % of this total`;
+
+  // overall stat grid
+  $('overall-grid').innerHTML = [
+    ['sessions', o.sessions],
+    ['api calls', o.api_calls],
+    ['human msgs', o.human_messages],
+    ['active hours', o.hours.active, `${o.hours.wall_clock} wall-clock`],
+    ['cache breaks', o.cache_breaks_over_100k, '>100k uncached'],
+    ['subagent calls', o.subagent.calls, `avg ${fmt(o.subagent.avg_tokens_per_call)}`],
+  ].map(([l,v,d]) =>
+    `<div class="stat"><div class="label">${l}</div>`+
+    `<div class="val">${typeof v==='number'&&v>=1e4?fmt(v):v}</div>`+
+    (d?`<div class="detail">${d}</div>`:'')+`</div>`).join('');
+
+  // session timeline by day
+  (function() {
+    const days = (DATA.by_day||[]).slice(-14);
+    if (!days.length) { $('timeline-section').style.display='none'; return; }
+    const PCOL = ['rgb(177,185,249)','rgb(78,186,101)','#D97757','rgb(255,193,7)',
+                  'rgb(255,107,128)','#9b8cff','#6ec1d6','#c792ea'];
+    const dayTotal = days.reduce((a,d)=>a+d.tokens,0) || 1;
+    const tokMax = Math.max(...days.map(d=>d.tokens));
+    const projects = [...new Set(days.flatMap(d=>d.sessions.map(s=>s.project)))];
+    const colorOf = p => PCOL[projects.indexOf(p)%PCOL.length];
+    const hhmm = m => (m>=1440?`+${Math.floor(m/1440)}d `:'') +
+      `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+    const md = iso => { const [,mo,da]=iso.split('-'); return `${MON[+mo-1]} ${+da}`; };
+    let sel = days.findIndex(d=>d.tokens===tokMax);
+
+    function pills() {
+      $('day-pills').innerHTML = days.map((d,i)=>
+        `<button class="dpill${d.tokens===tokMax?' heaviest':''}${i===sel?' sel':''}" data-i="${i}">`+
+        `<span class="dow">${esc(d.dow)}</span>`+
+        `<span class="date">${esc(md(d.date))}</span>`+
+        `<span class="pct">${(100*d.tokens/dayTotal).toFixed(1)}%</span>`+
+        `<span class="ns">${d.sessions.length} sess</span></button>`
+      ).join('');
+      $('day-pills').querySelectorAll('.dpill').forEach(el=>
+        el.onclick=()=>{sel=+el.dataset.i;pills();gantt();});
+    }
+    function gantt() {
+      const d = days[sel], DAY = 1440;
+      $('g-day').textContent = `${d.dow} ${md(d.date)}`;
+      $('g-stats').innerHTML = `${d.sessions.length} sessions · ${fmt(d.tokens)} tokens`+
+        ` · peak <b>${d.peak}</b> concurrent at <b>${hhmm(d.peak_at_min)}</b>`;
+      const lanes = [];
+      for (const s of d.sessions) {
+        let placed = false;
+        for (const L of lanes) if (L[L.length-1].end_min <= s.start_min) { L.push(s); placed=true; break; }
+        if (!placed) lanes.push([s]);
+      }
+      let h = '';
+      for (let t=0;t<=24;t+=6) h += `<div class="gantt-rule" style="left:${100*t/24}%"></div>`;
+      h += lanes.map(L=>`<div class="lane">${L.map(s=>{
+        const end = Math.min(s.end_min, DAY);
+        const w = Math.max(0.15, 100*(end-s.start_min)/DAY);
+        const tip = `folder: ${short(s.project)}\n`+
+          `${hhmm(s.start_min)}–${hhmm(s.end_min)} · ${fmt(s.tokens)} tokens\n`+
+          `session ${s.id}`;
+        return `<span class="seg" style="left:${100*s.start_min/DAY}%;width:${w}%;`+
+          `background:${colorOf(s.project)}" title="${esc(tip)}"></span>`;
+      }).join('')}</div>`).join('');
+      $('gantt').innerHTML = h || '<div class="callout">no sessions</div>';
+    }
+    document.addEventListener('keydown',e=>{
+      if (e.key==='ArrowRight'&&sel<days.length-1){sel++;pills();gantt();e.preventDefault();}
+      if (e.key==='ArrowLeft'&&sel>0){sel--;pills();gantt();e.preventDefault();}
+    });
+    $('gantt-leg').innerHTML = projects.slice(0,12).map(p=>
+      `<span><span class="sw" style="background:${colorOf(p)}"></span>${esc(short(p))}</span>`).join('');
+    pills(); gantt();
+  })();
+
+  // block-char project bars
+  (function() {
+    const W = 48;
+    const rows = Object.entries(DATA.by_project||{})
+      .map(([k,v]) => [k, v.input_tokens.total + v.output_tokens])
+      .sort((a,b)=>b[1]-a[1]).slice(0,15);
+    const max = rows[0]?.[1] || 1;
+    $('project-bars').innerHTML = rows.map(([k,v]) => {
+      const n = Math.max(1, Math.round(W*v/max));
+      return `<div class="bar"><span class="name" title="${esc(k)} — ${fmt(v)}">${esc(short(k))}</span>`+
+        `<span class="blocks">${'█'.repeat(n)}<span class="empty">${'░'.repeat(W-n)}</span></span>`+
+        `<span class="pct">${share(v)}</span></div>`;
+    }).join('');
+  })();
+
+  // ±2 user-message transcript context
+  function renderContext(ctx, mark) {
+    if (!ctx || !ctx.length) return '<div class="ctx-gap">no transcript context available</div>';
+    let h = '<div class="ctx">';
+    ctx.forEach((m, i) => {
+      const who = m.here ? '&gt; user' : '  user';
+      h += `<div class="ctx-msg${m.here?' here':''}">`+
+           `<span class="who">${who}</span>  ${esc(m.text||'(non-text)')}`+
+           `<span class="ts">${niceDate(m.ts)}</span></div>`;
+      if (m.here && mark) h += mark;
+      if (i < ctx.length-1 || m.here)
+        h += `<div class="ctx-gap">${m.calls} api call${m.calls===1?'':'s'}</div>`;
+    });
+    return h + '</div>';
+  }
+
+  // expandable drill-down list with "show N more" toggle
+  function drillList(hostId, items, rowFn, empty) {
+    const SHOW = 5;
+    const host = $(hostId);
+    if (!items.length) { host.innerHTML = `<div class="callout">${empty}</div>`; return; }
+    const head = items.slice(0,SHOW).map(rowFn).join('');
+    const rest = items.slice(SHOW).map(rowFn).join('');
+    host.innerHTML = head + (rest
+      ? `<div hidden>${rest}</div><button class="more-btn">show ${items.length-SHOW} more</button>`
+      : '');
+    const btn = host.querySelector('.more-btn');
+    if (btn) btn.onclick = () => {
+      const r = btn.previousElementSibling; r.hidden = !r.hidden;
+      btn.textContent = r.hidden ? `show ${items.length-SHOW} more` : 'show less';
+    };
+  }
+
+  drillList('top-prompts', (DATA.top_prompts||[]).slice(0,100), p => {
+    const inTot = p.input.uncached+p.input.cache_create+p.input.cache_read;
+    return `<details><summary>`+
+      `<span class="amt">${share(p.total_tokens)}</span>`+
+      `<span class="desc">${esc(p.text)}</span>`+
+      `<span class="meta">${niceDate(p.ts)} · ${esc(short(p.project))} · ${p.api_calls} calls`+
+        (p.subagent_calls?` · ${p.subagent_calls} subagents`:'')+
+        ` · ${pct(p.input.cache_read,inTot)} cached</span>`+
+      `</summary><div class="body">`+
+      renderContext(p.context)+
+      `<div>session <code>${esc(p.session)}</code></div>`+
+      `<div>in: uncached ${fmt(p.input.uncached)} · cache-create ${fmt(p.input.cache_create)} · `+
+      `cache-read ${fmt(p.input.cache_read)} · out ${fmt(p.output)}</div>`+
+      `</div></details>`;
+  }, 'No prompts in range.');
+
+  drillList('cache-breaks', (DATA.cache_breaks||[]).slice(0,100), b =>
+    `<details><summary>`+
+    `<span class="amt">${fmt(b.uncached)}</span>`+
+    `<span class="desc">${esc(short(b.project))} · `+
+      `${b.kind==='subagent'?esc(b.agentType||'subagent'):'main'}</span>`+
+    `<span class="meta">${niceDate(b.ts)} · ${pct(b.uncached,b.total)} of ${fmt(b.total)} uncached</span>`+
+    `</summary><div class="body">`+
+    renderContext(b.context,
+      `<div class="ctx-break"><b>${fmt(b.uncached)}</b> uncached `+
+      `(${pct(b.uncached,b.total)} of ${fmt(b.total)}) — cache break here</div>`)+
+    `<div>session <code>${esc(b.session)}</code></div>`+
+    `</div></details>`,
+  'No cache breaks over threshold.');
+
+  // sortable table
+  function table(el, cols, rows) {
+    let sortIdx = cols.findIndex(c=>c.sort), asc = false;
+    function render() {
+      const sorted = rows.slice().sort((a,b)=>{
+        const va=a[sortIdx], vb=b[sortIdx];
+        return (asc?1:-1)*(typeof va==='number' ? va-vb : String(va).localeCompare(String(vb)));
+      });
+      el.innerHTML = `<thead><tr>${cols.map((c,i)=>
+        `<th class="${c.num?'num':''} ${i===sortIdx?'sorted'+(asc?' asc':''):''}" data-i="${i}">${c.h}</th>`
+      ).join('')}</tr></thead><tbody>${sorted.map(r=>
+        `<tr>${r.map((v,i)=>`<td class="${cols[i].num?'num':''}">${
+          cols[i].fmt?cols[i].fmt(v):esc(v)}</td>`).join('')}</tr>`
+      ).join('')}</tbody>`;
+      el.querySelectorAll('th').forEach(th=>th.onclick=()=>{
+        const i=+th.dataset.i; if(i===sortIdx)asc=!asc; else{sortIdx=i;asc=false;} render();
+      });
+    }
+    render();
+  }
+
+  function statRows(obj) {
+    return Object.entries(obj||{}).map(([k,v])=>[
+      short(k), GRAND>0 ? 100*(v.input_tokens.total+v.output_tokens)/GRAND : 0,
+      v.sessions, v.api_calls, v.human_messages,
+      v.input_tokens.total, v.input_tokens.pct_cached, v.output_tokens,
+      v.hours.active, v.cache_breaks_over_100k,
+      v.subagent.calls, v.subagent.avg_tokens_per_call,
+    ]);
+  }
+  const statCols = [
+    {h:'name'},{h:'% total',num:1,sort:1,fmt:v=>v.toFixed(1)+'%'},
+    {h:'sess',num:1},{h:'calls',num:1},{h:'msgs',num:1},
+    {h:'input',num:1,fmt:fmt},{h:'%cached',num:1,fmt:v=>v+'%'},
+    {h:'output',num:1,fmt:fmt},{h:'active h',num:1},{h:'breaks',num:1},
+    {h:'subagents',num:1},{h:'avg sub tok',num:1,fmt:fmt},
+  ];
+  table($('tbl-projects'), statCols, statRows(DATA.by_project));
+  table($('tbl-subagents'), statCols, statRows(DATA.by_subagent_type));
+  table($('tbl-skills'), statCols, statRows(DATA.by_skill));
+})();
+</script>
+</body>
+</html>
