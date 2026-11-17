@@ -21,6 +21,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date | Module |
 |----|------|-------|----------|----------|------|--------|
+| [ISS-024](#iss-024--codex-mac-environment-validation) | enhancement | Codex Mac environment validation | Medium | U+AI | 2026-11-16 | Development setup |
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
 | [ISS-014](#iss-014--no-onboarding-guide-for-physiology-config-fields) | feature | No onboarding guide for physiology config fields (LTHR, rFTP) | Low | U+AI | 2026-04-26 | `docs/`, `config.example.json` |
 | [ISS-023](#iss-023--runalyze-mcp-ingestion) | feature | Runalyze MCP ingestion (training load, HRV baseline, races) | Medium | U | 2026-10-04 | `app/agents/coach/runalyze_client.py` |
@@ -528,3 +529,17 @@ User types `/plan` in Telegram. Coach responds with a daily training suggestion 
 - `RUNALYZE_API_TOKEN` (Personal API Token, `token` header) authenticates the MCP session
 - `task_runalyze_sync` stores one row/day with CTL/ATL/TSB, ACWR, HRV baseline
 - Auth failure logs an actionable error and never crashes the scheduler
+
+
+### ISS-024 — Codex Mac environment validation
+
+Shared instructions migrated to AGENTS.md from the T440 checkpoint 7fef9de.
+Claude, Cursor, Copilot and legacy rules now defer to the shared playbook.
+Runtime source and providers are unchanged. Original Mac edits remain in stash.
+
+Validation completed on 2026-11-16 in a disposable Python 3.11.18 environment:
+65 smoke tests passed; full suite 1262 passed, 5 skipped, exit 0.
+PyPI TLS was resolved using the system CA bundle, with verification enabled.
+Source copy excluded production .env/data. Runtime integrations were not exercised.
+Keep this issue open until the migration changes are committed and a persistent
+Python 3.11 development environment is configured; no commit hash is available yet.

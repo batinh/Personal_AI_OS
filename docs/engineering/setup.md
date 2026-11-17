@@ -289,3 +289,42 @@ APScheduler will stop if an unhandled exception occurs in a job. Check Docker lo
 ### ChromaDB errors on first start
 
 The first startup downloads ONNX model files to `data/chroma_cache/`. This can take 1–2 minutes on a slow connection. The Docker volume mount ensures they persist across restarts.
+
+## Codex development on Mac
+
+The T440 checkpoint is `7fef9de` on `migration/t440-to-codex`. Develop on Mac
+and deploy reviewed commits to T440. Follow AGENTS.md for the shared workflow.
+Existing Claude Code and Cursor entry points remain usable.
+
+Use Python 3.11 to match Docker, from the repository root:
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest tests/test_smoke.py -v
+.venv/bin/python -m pytest tests/ -q
+```
+
+If .venv was created with another Python version, preserve it under another name
+before creating the Python 3.11 environment. Do not copy production .env or data
+from T440 for unit tests. The running T440 checkout is bind-mounted into Docker;
+use a separate checkout there for development tests.
+
+Migration validation (2026-11-16): Python 3.11.18 and all development dependencies
+were installed in an isolated temporary environment. Smoke: 65 passed. Full suite:
+1262 passed, 5 skipped, exit status 0. Execution used a separate source copy without
+production .env/data. Gemini and ChromaDB are stubbed by the test suite; this does
+not validate live Runalyze, Telegram, Gemini or deployment on Linux.
+
+PyPI initially failed TLS verification. Setting `SSL_CERT_FILE=/etc/ssl/cert.pem`
+for uv (or `PIP_CERT=/etc/ssl/cert.pem` for pip) used the macOS system CA bundle
+successfully, without disabling verification.
+
+Validation interpreter: `/tmp/personal-ai-os-test-venv/bin/python`.
+Source copy: `/tmp/personal-ai-os-validation`. These are disposable; recreate a
+persistent Python 3.11 environment using the commands above for daily development.
+The existing repository .venv is still Python 3.13 and is not the validated environment.
+
+The original Mac changes remain in the stash named
+`Codex migration edits before T440 sync`. Do not apply it wholesale to this newer
+Runalyze-based code. No production deployment or runtime provider was changed.

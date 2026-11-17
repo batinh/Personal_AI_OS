@@ -1,14 +1,16 @@
 # Personal AI OS — Copilot Instructions
 
+Read AGENTS.md first; it is authoritative over this summary.
+
 ## Build & Test
 
 ```bash
-python -m pytest tests/ -q          # Must pass: 273 tests, 0 failures
+python -m pytest tests/ -q          # Record actual results; zero failures required
 docker compose up --build           # Run full stack (requires .env + data/config.json)
 ```
 
-**Before every commit**: run `docs/pragmatic_review_checklist.md` mentally.
-**New feature**: read `docs/feature_design_template.md` first.
+**Before every commit**: run `docs/process/review-checklist.md` mentally.
+**New feature**: read `docs/features/_template.md` first.
 
 ---
 
@@ -91,6 +93,6 @@ See `app/agents/coach/prompts.py` for the full 8-layer system.
 ## Conventions
 
 - Logging tags: `logger.info("[MODULE] message")` — e.g. `[TOOL-USE]`, `[SCHEDULER]`, `[DB_ERROR]`
-- Git commits: `type: description` + trailer `Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>`
+- Git commits: `type: description` (no attribution trailers)
 - Multi-role review lens: Running Coach · AI Expert · SW Architect · System Architect · Prompt Engineer · DB Architect
 - Roadmap lives in `README.md` — update it in-place, never create a new one

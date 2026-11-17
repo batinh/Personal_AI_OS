@@ -489,6 +489,9 @@ bash scripts/fetch-logs.sh -m coach --since 1h   # look for [POLL] lines
 
 ### 🚧 In Progress / Planned
 
+- [x] Shared Codex / Claude / Cursor instructions in `AGENTS.md`
+- [x] Codex Mac validation — Python 3.11.18: 1262 passed, 5 skipped in an isolated environment; see [setup](docs/engineering/setup.md#codex-development-on-mac)
+
 - [ ] **Race Day Forecast** — 5-day weather forecast injection during Taper week for race strategy planning
 - [ ] **HRV/Resting HR Integration** — event-driven training adjustment from Garmin/Apple Health overnight signals
 - [ ] **FastAPI Lifespan Migration** — replace deprecated `@app.on_event` with `lifespan` context manager

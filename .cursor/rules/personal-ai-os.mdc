@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Personal AI OS — Cursor rules
 
-Full detail: **CLAUDE.md** and **AGENTS.md**.
+Canonical playbook: **AGENTS.md**. This summary defers to it.
 
 ## Pre-commit / deploy gate
 
@@ -26,7 +26,7 @@ New public symbols → add import assertion in `tests/test_smoke.py`.
 ## Architecture shortcuts
 
 - Coach: `app/agents/coach/agent.py`, `app/agents/coach/flows/`, `prompts.py`
-- Webhooks / Strava: `app/routers/webhooks.py`, `app/agents/coach/strava_client.py`
+- Telegram: `app/routers/webhooks.py`; activity ingestion: `app/agents/coach/runalyze_client.py`, `harvest.py`
 - DB: `app/core/database.py` — **every table has `user_id`**; use `row["col"]` not `row[0]` (sqlite3.Row)
 - Scheduler (`app/services/scheduler.py`): job callables use **`def`**, not `async def` (thread pool)
 - Config: `app/core/config.py`, `config.example.json`; runtime `data/config.json` is gitignored
@@ -35,7 +35,7 @@ New public symbols → add import assertion in `tests/test_smoke.py`.
 ## Non-negotiables
 
 - Runtime paths: `Path(__file__).resolve().parent...` — not fragile cwd-relative paths in Docker
-- Prompts with user `{}` data: **`.replace()`**, not f-strings (avoid `KeyError`)
+- Prompts: preserve `.replace()` templates; never interpret user text as a `str.format()` template
 - `@patch` target: module **where the name is imported**, not where defined
 - Logging: `logger.info("[TAG] message")` e.g. `[SCHEDULER]`, `[DB_ERROR]`
 - Git commits: `type: description` in English
@@ -44,6 +44,6 @@ New public symbols → add import assertion in `tests/test_smoke.py`.
 
 ## Product docs
 
-- Coaching constants: `docs/coaching_constants.md`
-- DB design: `docs/database_design.md`
-- Feature template: `docs/feature_design_template.md`
+- Coaching constants: `docs/engineering/coaching-science.md`
+- DB design: `docs/architecture/database.md`
+- Feature template: `docs/features/_template.md`

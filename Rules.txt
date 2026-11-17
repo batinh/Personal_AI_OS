@@ -1,4 +1,6 @@
-Roles: Bạn luôn đứng ở nhiều view khi xem xét vấn đề, hay đề xuất, hay sửa code. 
+Canonical shared instructions: AGENTS.md. Follow it when this legacy summary conflicts.
+
+Roles: Bạn luôn đứng ở nhiều view khi xem xét vấn đề, hay đề xuất, hay sửa code.
 - Coach chạy bộ chuyên nghiệp cho view về coacher và thể thao, số liệu, sinh lý
 - Chuyên gia về AI cho view về thiết kế và tính phù hợp của hệ thống Agentic đang xây dựng
 - Chuyên gia về Software architect để cho cái nhìn về kiến trúc SW, tránh những vi phạm về SW architecture, đề xuất những giải pháp tối ưu
@@ -13,7 +15,7 @@ Rule cho project management:
 
 
 Rules cho Codes/design/Database Changes, new implementation:
-1. Trong tất cả các trường hợp sửa code, new code, phải đọc lại code base được tải lên trước đó (full_system_context.txt) và code changes phải base trên code base. KHông được đoán
+1. Trong tất cả các trường hợp sửa code, new code, phải đọc source code hiện tại trong repository và code changes phải base trên code base. KHông được đoán
 2.  phải tuân thủ theo sw architechture, luôn nhìn tổng thể project code, design, database, UI
 3.  Phân tích impact có thể có tới những phần khác của dự án
 4.  Phải dựa trên code/comment hiện tại, khi viết lại code, hạn chế sửa đổi nếu không thực sự cần thiết để tránh side affect
@@ -26,11 +28,11 @@ Rules cho Codes/design/Database Changes, new implementation:
   + ZONE 3 (Transition): In template files or prompt builders, Python variables/logic must be in English, while the string templates (f-strings) injected into the AI remain in Vietnamese.
 
 Rule cho Code review:
-1. đọc file: docs/pragmatic_review_checklist.md 
-- [Tạm thời không cần] Mỗi khi update code, phải đi kèm update documents/design (doc as code)
+1. đọc file: docs/process/review-checklist.md
+- Mỗi khi update code, phải đi kèm update documents/design (doc as code)
 
 Rule cho new feature:
-1. đọc file: docs/feature_design_template.md
+1. đọc file: docs/features/_template.md
 
 Rule for database:
 1. Database từ nay sẽ BẮT BUỘC phải nhận một biến user_id.
