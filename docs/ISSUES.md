@@ -21,6 +21,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date | Module |
 |----|------|-------|----------|----------|------|--------|
+| [ISS-025](#iss-025--gemini-credit-exhaustion-misreported-as-server-overload) | bug | Gemini credit exhaustion misreported as server overload | High | U+AI | 2026-11-17 | `coach/agent.py`, `routers/webhooks.py` |
 | [ISS-024](#iss-024--codex-mac-environment-validation) | enhancement | Codex Mac environment validation | Medium | U+AI | 2026-11-16 | Development setup |
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
 | [ISS-014](#iss-014--no-onboarding-guide-for-physiology-config-fields) | feature | No onboarding guide for physiology config fields (LTHR, rFTP) | Low | U+AI | 2026-04-26 | `docs/`, `config.example.json` |
@@ -543,3 +544,17 @@ PyPI TLS was resolved using the system CA bundle, with verification enabled.
 Source copy excluded production .env/data. Runtime integrations were not exercised.
 Keep this issue open until the migration changes are committed and a persistent
 Python 3.11 development environment is configured; no commit hash is available yet.
+
+### ISS-025 — Gemini credit exhaustion misreported as server overload
+
+Production logs on 2026-11-17 show Gemini returning HTTP 402 RESOURCE_EXHAUSTED
+with the message "Your prepayment credits are depleted." Chat failed at 21:56:28
+and 22:01:47, and run analysis failed at 22:00:28 (Asia/Ho_Chi_Minh).
+Runalyze ingestion succeeded and saved the activities.
+
+The generic chat exception handler reports maintenance or overload. The run
+fallback reports a Gemini timeout. Both messages obscure the billing failure.
+Restore credits for the Google AI Studio project used by production, then verify
+Gemini generation. Update error handling to distinguish exhausted credits from
+transient errors and use accurate Vietnamese Telegram messages. Runtime fixes
+and billing changes remain pending. This issue was recorded during log review.
