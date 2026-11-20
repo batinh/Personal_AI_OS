@@ -23,6 +23,7 @@ from app.core.database import (
     get_latest_run_date,
     get_run_totals_km,
     has_run_activity,
+    needs_run_detail,
     list_run_activity_ids_in_date_range,
     upsert_run_computed_metrics,
 )
@@ -112,6 +113,7 @@ def _ingest_one_activity(
 
     # Step 1: Save/overwrite basic record (distance, TRIMP, HR)
     activity_data = build_activity_record(act_summary, max_hr, rest_hr, gender)
+    activity_data["analysis_status"] = "silent"
     trimp_data = activity_data.pop("_trimp_data")
 
     # Same workout already stored under another id (e.g. legacy Strava row)? Skip.
@@ -131,7 +133,7 @@ def _ingest_one_activity(
 
     # Step 2: RAG gateway — skip expensive detail fetch if memory exists
     existing = rag_db.collection.get(ids=[act_id])
-    if existing and existing["ids"]:
+    if existing and existing["ids"] and source != "repair":
         logger.info(f"[INGEST] Skipped RAG fetch for {act_id} (memory exists)")
         result["skipped_rag"] = True
         return result
@@ -420,16 +422,23 @@ def poll_new_runs(
 
     config = load_config()
     for activity in reversed(recent):  # oldest first
-        if activity.get("type") not in RUN_TYPES or not _is_unseen(chat_id, activity):
+        if activity.get("type") not in RUN_TYPES:
+            continue
+        if not _is_unseen(chat_id, activity):
+            if needs_run_detail(chat_id, str(activity["id"])):
+                repaired = _ingest_one_activity(
+                    activity, chat_id, config, activity_client, source="repair"
+                )
+                counts["silent"] += int(bool(repaired["loaded"]))
             continue
         if _age_hours(activity, now) <= POLL_FULL_ANALYSIS_MAX_AGE_HOURS:
             run_workflow(str(activity["id"]))
             counts["workflow"] += 1
         else:
-            _ingest_one_activity(
+            result = _ingest_one_activity(
                 activity, chat_id, config, activity_client, source="poll"
             )
-            counts["silent"] += 1
+            counts["silent"] += int(bool(result["loaded"]))
     if counts["workflow"] or counts["silent"]:
         logger.info(f"[POLL] Processed new runs: {counts}")
     return counts

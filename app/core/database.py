@@ -97,6 +97,8 @@ def init_db():
 
     # [PHASE 1] Coach Strava Metrics Upgrade — 25 new computed metric columns
     _metric_migrations = [
+        "ALTER TABLE run_activities ADD COLUMN rpe_score INTEGER",
+        "ALTER TABLE run_activities ADD COLUMN analysis_status TEXT",
         # Group A — Aerobic Base
         "ALTER TABLE run_activities ADD COLUMN aerobic_decoupling_pct REAL DEFAULT NULL",
         "ALTER TABLE run_activities ADD COLUMN cardiac_drift_pct REAL DEFAULT NULL",
@@ -383,8 +385,7 @@ def get_user(user_id: str) -> Optional[Dict]:
 # ==========================================
 def save_run_activity(user_id: str, activity_data: dict):
     """Save run activity to SQLite. Use UPSERT to ensure Data Integrity between Webhook and Harvest pipelines."""
-    try:
-        conn = get_db_connection()
+    with get_db() as conn:
         c = conn.cursor()
 
         # [ARCHITECTURE UPDATE] Use ON CONFLICT DO UPDATE (UPSERT)
@@ -392,8 +393,8 @@ def save_run_activity(user_id: str, activity_data: dict):
         c.execute(
             """
             INSERT INTO run_activities 
-            (activity_id, user_id, name, start_date, distance_km, moving_time_min, avg_hr, max_hr, suffer_score, trimp_score, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (activity_id, user_id, name, start_date, distance_km, moving_time_min, avg_hr, max_hr, suffer_score, trimp_score, source, analysis_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(activity_id) DO UPDATE SET
                 name=excluded.name,
                 start_date=excluded.start_date,
@@ -403,6 +404,7 @@ def save_run_activity(user_id: str, activity_data: dict):
                 max_hr=excluded.max_hr,
                 suffer_score=excluded.suffer_score,
                 trimp_score=excluded.trimp_score
+            WHERE run_activities.user_id = excluded.user_id
         """,
             (
                 str(activity_data["activity_id"]),
@@ -416,13 +418,11 @@ def save_run_activity(user_id: str, activity_data: dict):
                 activity_data.get("suffer_score"),
                 activity_data.get("trimp_score"),
                 activity_data.get("source") or "strava",
+                activity_data.get("analysis_status"),
             ),
         )
-
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to save/upsert run activity: {e}")
+        if not c.rowcount:
+            raise ValueError("Activity owner does not match existing record")
 
 
 def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
@@ -437,8 +437,8 @@ def update_run_gcs_score(activity_id: str, user_id: str, gcs_score: int):
         )
         # Then update the GCS score
         c.execute(
-            "UPDATE run_activities SET gcs_score = ? WHERE activity_id = ?",
-            (gcs_score, str(activity_id)),
+            "UPDATE run_activities SET gcs_score = ?, analysis_status = 'complete' WHERE activity_id = ? AND user_id = ?",
+            (gcs_score, str(activity_id), str(user_id)),
         )
         conn.commit()
         conn.close()
@@ -504,6 +504,21 @@ def has_run_activity(activity_id: str) -> bool:
     except Exception as e:
         logger.error(f"[DB_ERROR] has_run_activity failed: {e}")
         return False
+
+
+def needs_run_detail(user_id: str, activity_id: str) -> bool:
+    """Return whether this user's Runalyze summary still lacks raw detail."""
+    with get_db() as conn:
+        return (
+            conn.execute(
+                """SELECT 1 FROM run_activities AS a
+               WHERE a.user_id = ? AND a.activity_id = ? AND a.source = 'runalyze'
+                 AND NOT EXISTS (SELECT 1 FROM run_activity_raw AS r
+                                 WHERE r.user_id = a.user_id AND r.activity_id = a.activity_id)""",
+                (str(user_id), str(activity_id)),
+            ).fetchone()
+            is not None
+        )
 
 
 def find_duplicate_run(
@@ -632,10 +647,10 @@ def get_activities_needing_analysis(user_id: str, days_back: int = 3) -> List[Di
         cursor = conn.cursor()
         cursor.execute(
             """
-            SELECT activity_id, name, start_date, distance_km
+            SELECT activity_id, name, start_date, distance_km, source
             FROM run_activities
             WHERE user_id = ?
-              AND gcs_score IS NULL
+              AND (analysis_status = 'pending' OR (analysis_status IS NULL AND gcs_score IS NULL))
               AND date(start_date) >= date('now', ? || ' days')
             ORDER BY start_date DESC
             """,
@@ -649,6 +664,7 @@ def get_activities_needing_analysis(user_id: str, days_back: int = 3) -> List[Di
                 "name": r["name"],
                 "start_date": r["start_date"],
                 "distance_km": r["distance_km"],
+                "source": r["source"],
             }
             for r in rows
         ]
@@ -670,8 +686,7 @@ def save_run_activity_raw(
     full_meta: extended_meta from Strava (splits, laps, best_efforts, device_name, etc.).
     stream_file_path: relative path from data/ to JSON file (e.g. streams/user_id/activity_id.json).
     """
-    try:
-        conn = get_db_connection()
+    with get_db() as conn:
         c = conn.cursor()
         meta_json = json.dumps(full_meta, ensure_ascii=False, default=str)
         c.execute(
@@ -679,12 +694,12 @@ def save_run_activity_raw(
             INSERT INTO run_activity_raw (activity_id, user_id, activity_name, full_meta, stream_csv, stream_file_path, fetched_at)
             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(activity_id) DO UPDATE SET
-                user_id=excluded.user_id,
                 activity_name=excluded.activity_name,
                 full_meta=excluded.full_meta,
                 stream_csv=excluded.stream_csv,
                 stream_file_path=excluded.stream_file_path,
                 fetched_at=CURRENT_TIMESTAMP
+            WHERE run_activity_raw.user_id = excluded.user_id
         """,
             (
                 str(activity_id),
@@ -695,11 +710,6 @@ def save_run_activity_raw(
                 stream_file_path or "",
             ),
         )
-        conn.commit()
-        conn.close()
-        logger.info(f"[DB] Saved full run data for activity {activity_id}.")
-    except Exception as e:
-        logger.error(f"[DB_ERROR] Failed to save run_activity_raw {activity_id}: {e}")
 
 
 def get_run_activity_raw(activity_id: str) -> Optional[Dict]:
@@ -1946,20 +1956,26 @@ def _ensure_runalyze_schema(conn) -> None:
             conn.execute(f"ALTER TABLE runalyze_daily_load ADD COLUMN {name} {sqltype}")
 
 
-def upsert_runalyze_daily_load(user_id: str, date_str: str, metrics: dict) -> None:
+def upsert_runalyze_daily_load(
+    user_id: str, date_str: str, metrics: dict, *, sections: Optional[dict] = None
+) -> None:
     """Upsert one Runalyze daily load row. Raises on DB failure."""
-    cols = ["user_id", "date", *_RUNALYZE_METRIC_NAMES, "raw_json"]
+    names = [name for name in _RUNALYZE_METRIC_NAMES if name in metrics]
+    cols = ["user_id", "date", *names, "raw_json"]
     placeholders = ",".join(["?"] * len(cols)) + ",CURRENT_TIMESTAMP"
     col_list = ",".join([*cols, "created_at"])
-    updates = ",".join(
-        f"{name}=excluded.{name}" for name in [*_RUNALYZE_METRIC_NAMES, "raw_json"]
-    )
-    values = [
-        user_id,
-        date_str,
-        *[metrics.get(name) for name in _RUNALYZE_METRIC_NAMES],
-        metrics.get("raw_json"),
-    ]
+    assignments = [f"{name}=excluded.{name}" for name in names]
+    values = [user_id, date_str, *[metrics[name] for name in names]]
+    if sections is None:
+        assignments.append("raw_json=excluded.raw_json")
+        values.append(metrics.get("raw_json"))
+    else:
+        values.append(json.dumps(sections))
+        pairs = ", ".join("?, json(?)" for _ in sections)
+        assignments.append(f"raw_json=json_set(COALESCE(raw_json, '{{}}'), {pairs})")
+        for key, payload in sections.items():
+            values.extend([f"$.{key}", json.dumps(payload)])
+    updates = ",".join(assignments)
     with get_db() as conn:
         _ensure_runalyze_schema(conn)
         conn.execute(

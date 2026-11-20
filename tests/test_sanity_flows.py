@@ -20,6 +20,7 @@ Coverage goals:
 """
 
 import json
+import pytest
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -49,7 +50,11 @@ def _make_config(**overrides):
 def _make_client():
     from app.main import app
 
-    return TestClient(app, raise_server_exceptions=False)
+    return TestClient(
+        app,
+        raise_server_exceptions=False,
+        headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+    )
 
 
 def _db_patches_for_briefing():
@@ -811,3 +816,9 @@ class TestAgenticLoopFlow(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+@pytest.fixture(autouse=True)
+def _webhook_credentials(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "99999")

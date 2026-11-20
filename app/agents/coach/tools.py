@@ -16,6 +16,7 @@ from app.core.database import (
     get_monthly_volume,
     get_yearly_volume,
 )
+from app.core.user_context import get_primary_user_id
 from app.services.rag_memory import rag_db
 from app.services.stream_storage import (
     load_activity_stream_from_file,
@@ -134,7 +135,12 @@ def search_long_term_memory(query: str) -> str:
     """
     logger.info(f"[TOOL-USE] 🤖 AI querying RAG memory: '{query}'")
     try:
-        results = rag_db.recall(query=query, domain="coach", n_results=3)
+        owner = get_primary_user_id()
+        if not owner:
+            return "Chưa cấu hình người dùng cho bộ nhớ."
+        results = rag_db.recall(
+            query=query, domain="coach", n_results=3, user_id=str(owner)
+        )
         if not results or not results.get("documents") or not results["documents"][0]:
             return "Không tìm thấy ký ức nào liên quan."
         docs = results["documents"][0]

@@ -421,7 +421,8 @@ docker logs airunningcoach --tail 20
 docker exec airunningcoach python scripts/backfill_runalyze.py --dry-run
 
 # 5. Register Telegram webhook (one-time)
-curl "https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook?url=https://your-domain.com/telegram-webhook"
+# Set TELEGRAM_WEBHOOK_SECRET in the app environment and registration shell first.
+curl "https://api.telegram.org/botYOUR_BOT_TOKEN/setWebhook" --data-urlencode "url=https://your-domain.com/telegram-webhook" --data-urlencode "secret_token=$TELEGRAM_WEBHOOK_SECRET"
 ```
 
 The `docker-compose.yml` includes:

@@ -21,6 +21,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date | Module |
 |----|------|-------|----------|----------|------|--------|
+| [ISS-026](#iss-026--production-reliability-review) | bug | Production reliability review | High | U+AI | 2026-11-20 | Webhooks, ingestion, operations |
 | [ISS-025](#iss-025--gemini-credit-exhaustion-misreported-as-server-overload) | bug | Gemini credit exhaustion misreported as server overload | High | U+AI | 2026-11-17 | `coach/agent.py`, `routers/webhooks.py` |
 | [ISS-024](#iss-024--codex-mac-environment-validation) | enhancement | Codex Mac environment validation | Medium | U+AI | 2026-11-16 | Development setup |
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
@@ -556,5 +557,9 @@ The generic chat exception handler reports maintenance or overload. The run
 fallback reports a Gemini timeout. Both messages obscure the billing failure.
 Restore credits for the Google AI Studio project used by production, then verify
 Gemini generation. Update error handling to distinguish exhausted credits from
-transient errors and use accurate Vietnamese Telegram messages. Runtime fixes
-and billing changes remain pending. This issue was recorded during log review.
+transient errors and use accurate Vietnamese Telegram messages. The fix branch reports billing failures in chat and run notifications. Billing
+recovery requires credits in the production project.
+
+### ISS-026 — Production reliability review
+
+Scope includes Telegram webhook authentication, callback ownership, database write failures, partial Runalyze sync, configuration writes, backup consistency and service-specific rollback. Register the Telegram webhook with the same secret as the service before deploying the branch. Use an isolated restore drill before production rollout.

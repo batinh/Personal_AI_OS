@@ -1,4 +1,8 @@
 import os
+import json
+import sqlite3
+from contextlib import closing
+from pathlib import Path
 import logging
 from contextlib import asynccontextmanager
 
@@ -85,18 +89,28 @@ app.include_router(metrics.router)  # Coverage / test metrics
 
 # 5. Health check endpoint for Docker and uptime monitoring
 @app.get("/health", tags=["System"])
-async def health_check():
+def health_check():
     """Returns system health status. Used by Docker HEALTHCHECK and uptime monitors."""
-    db_ok = os.path.exists(DB_PATH)
-    config_ok = os.path.exists(CONFIG_PATH)
+    try:
+        uri = Path(DB_PATH).resolve().as_uri() + "?mode=ro"
+        with closing(sqlite3.connect(uri, uri=True, timeout=1)) as conn:
+            conn.execute("SELECT 1 FROM users LIMIT 1").fetchone()
+        db_ok = True
+    except sqlite3.Error:
+        db_ok = False
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as source:
+            config_ok = isinstance(json.load(source), dict)
+    except (OSError, ValueError):
+        config_ok = False
     scheduler_ok = scheduler.running
     healthy = db_ok and config_ok and scheduler_ok
     return JSONResponse(
         status_code=200 if healthy else 503,
         content={
             "status": "healthy" if healthy else "degraded",
-            "db": "ok" if db_ok else "missing",
-            "config": "ok" if config_ok else "missing",
+            "db": "ok" if db_ok else "unavailable",
+            "config": "ok" if config_ok else "unavailable",
             "scheduler": "running" if scheduler_ok else "stopped",
         },
     )

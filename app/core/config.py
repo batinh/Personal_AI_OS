@@ -2,6 +2,10 @@ import json
 import logging
 import os
 import shutil
+from copy import deepcopy
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from threading import RLock
 import time
 from dotenv import load_dotenv
 
@@ -10,8 +14,10 @@ _logger = logging.getLogger("config")
 # Load environment variables from the root directory
 load_dotenv()
 
-CONFIG_PATH = "data/config.json"
-_EXAMPLE_CONFIG_PATH = "config.example.json"
+_ROOT = Path(__file__).resolve().parents[2]
+_lock = RLock()
+CONFIG_PATH = str(_ROOT / "data/config.json")
+_EXAMPLE_CONFIG_PATH = str(_ROOT / "config.example.json")
 
 # In-memory cache to avoid reading JSON from disk on every request
 _config_cache: dict = {}
@@ -20,6 +26,11 @@ _CONFIG_CACHE_TTL: int = 60  # seconds
 
 
 def load_config() -> dict:
+    with _lock:
+        return deepcopy(_load_config())
+
+
+def _load_config() -> dict:
     """
     Load configuration from the central JSON file.
     Uses a 60-second in-memory cache to prevent repeated disk reads on every request.
@@ -56,8 +67,16 @@ def save_config(data: dict):
     Immediately invalidates the in-memory cache so next load_config() reads fresh data.
     """
     global _config_cache, _config_cache_time
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-    # Invalidate cache so Admin UI changes take effect immediately
-    _config_cache = {}
-    _config_cache_time = 0.0
+    with _lock:
+        with NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=Path(CONFIG_PATH).parent, delete=False
+        ) as temp:
+            try:
+                json.dump(data, temp, indent=4, ensure_ascii=False)
+                temp.flush()
+                os.fsync(temp.fileno())
+                os.replace(temp.name, CONFIG_PATH)
+            finally:
+                Path(temp.name).unlink(missing_ok=True)
+        _config_cache = {}
+        _config_cache_time = 0.0

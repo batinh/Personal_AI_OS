@@ -67,7 +67,7 @@ class TestSendMessageWithRetry(unittest.TestCase):
         self.assertEqual(result.text, "OK")
         mock_session.send_message.assert_called_once_with("hello")
 
-    @patch("app.agents.coach.agent.time.sleep")
+    @patch("app.agents.coach.utils.time.sleep")
     def test_retries_on_503_then_succeeds(self, mock_sleep):
         fn = self._get_fn()
         mock_session = MagicMock()
@@ -81,7 +81,7 @@ class TestSendMessageWithRetry(unittest.TestCase):
             5
         )  # server error first backoff = 5 * 2^0 = 5s
 
-    @patch("app.agents.coach.agent.time.sleep")
+    @patch("app.agents.coach.utils.time.sleep")
     def test_retries_on_429_then_succeeds(self, mock_sleep):
         fn = self._get_fn()
         mock_session = MagicMock()
@@ -92,7 +92,7 @@ class TestSendMessageWithRetry(unittest.TestCase):
         result = fn(mock_session, "msg", max_retries=3)
         self.assertEqual(result.text, "OK")
 
-    @patch("app.agents.coach.agent.time.sleep")
+    @patch("app.agents.coach.utils.time.sleep")
     def test_raises_after_max_retries(self, mock_sleep):
         fn = self._get_fn()
         mock_session = MagicMock()
@@ -101,7 +101,7 @@ class TestSendMessageWithRetry(unittest.TestCase):
             fn(mock_session, "msg", max_retries=3)
         self.assertEqual(mock_session.send_message.call_count, 3)
 
-    @patch("app.agents.coach.agent.time.sleep")
+    @patch("app.agents.coach.utils.time.sleep")
     def test_non_503_error_raises_immediately_without_retry(self, mock_sleep):
         fn = self._get_fn()
         mock_session = MagicMock()

@@ -182,7 +182,8 @@ docker exec airunningcoach python scripts/backfill_runalyze.py
 ### Telegram Webhook
 
 ```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://your-domain.com/telegram-webhook"
+# Set TELEGRAM_WEBHOOK_SECRET in the app environment and registration shell first.
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" --data-urlencode "url=https://your-domain.com/telegram-webhook" --data-urlencode "secret_token=$TELEGRAM_WEBHOOK_SECRET"
 ```
 
 ---

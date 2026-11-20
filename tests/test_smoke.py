@@ -422,3 +422,22 @@ class TestE2EIntegrationEdgeCasesImports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_run_detail_repair_query_importable():
+    from app.core.database import needs_run_detail
+
+    assert callable(needs_run_detail)
+
+
+def test_coach_zone_formatter_importable():
+    from app.agents.coach.utils import build_zone_texts
+
+    assert callable(build_zone_texts)
+
+
+def test_gemini_billing_classifier():
+    from app.core.gemini_utils import is_billing_error
+
+    assert is_billing_error(Exception("Your prepayment credits are depleted."))
+    assert not is_billing_error(Exception("429 RESOURCE_EXHAUSTED"))

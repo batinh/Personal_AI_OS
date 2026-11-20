@@ -43,19 +43,21 @@ fi
 BACKUP_ID=$(docker image inspect "$BACKUP_TAG" --format '{{.Id}}' | cut -c8-19)
 log "Found backup image: $BACKUP_ID"
 
-# --- Stop current container ---
-log "Stopping current container..."
-docker compose down --remove-orphans 2>/dev/null || true
-
-# --- Tag backup as the primary image ---
-log "Restoring backup image as ai-coach..."
-# Extract the built image name from compose config
-SERVICE_IMAGE=$(docker compose config --format json 2>/dev/null | python3 -c "import sys,json; cfg=json.load(sys.stdin); print(cfg['services']['ai-coach'].get('image','airunningcoach'))" 2>/dev/null || echo "airunningcoach")
-docker tag "$BACKUP_TAG" "${SERVICE_IMAGE}:latest" 2>/dev/null || true
-
-# Bring up with the restored image (no rebuild)
-log "Restarting containers from backup image..."
-docker compose up -d --no-build || fail "docker compose up failed after rollback"
+# Load code from the saved image and only mount persistent runtime directories.
+override=$(mktemp)
+trap 'rm -f "$override"' EXIT
+cat > "$override" <<'YAML'
+services:
+  ai-coach:
+    image: ${ROLLBACK_IMAGE:?}
+    volumes: !override
+      - ./data:/app/data
+      - ./data/chroma_cache:/root/.cache/chroma
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+YAML
+export ROLLBACK_IMAGE="$BACKUP_TAG"
+docker compose -f docker-compose.yml -f "$override" up -d --no-build --no-deps --force-recreate ai-coach
 
 # --- Health check ---
 log "Waiting for health check at $HEALTH_ENDPOINT ..."

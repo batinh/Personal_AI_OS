@@ -1,9 +1,12 @@
 import json
+import os
+import secrets
 
-from fastapi import APIRouter, Request, BackgroundTasks
+from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
 
 from app.core.user_context import get_primary_user_id
 from app.core.config import load_config
+from app.core.gemini_utils import is_billing_error
 from app.core.notification import (
     send_telegram_msg,
     send_html_email,
@@ -50,6 +53,7 @@ def _ingest_realtime_run(
     # Reuse shared helper — Single Source of Truth for activity calculation
     activity_data = build_activity_record(meta_data, max_hr, rest_hr)
     # Override activity_id and name from webhook context (more reliable than meta_data keys)
+    activity_data["analysis_status"] = "pending"
     activity_data["activity_id"] = activity_id
     activity_data["name"] = act_name
     activity_data.pop("_trimp_data", None)
@@ -129,7 +133,16 @@ def run_activity_workflow(activity_id: str):
 
     # 2. Handover to AI for semantic analysis and GCS scoring
     logger.info("[*] Sending Data to Gemini...")
-    analysis_text = analyze_run_with_gemini(activity_id, act_name, meta_data, config)
+    failure_reason = "Gemini chưa tạo được phân tích cho bài này."
+    try:
+        analysis_text = analyze_run_with_gemini(
+            activity_id, act_name, meta_data, config, report_billing_error=True
+        )
+    except Exception as exc:
+        if not is_billing_error(exc):
+            raise
+        analysis_text = None
+        failure_reason = "Dự án Gemini đã hết tín dụng trả trước. Hãy kiểm tra thanh toán trong Google AI Studio."
 
     # [NEW ARCHITECTURE] 2.5: Inject immediately into RAG Memory (Tier 3)
     if analysis_text and chat_id:
@@ -198,7 +211,7 @@ def run_activity_workflow(activity_id: str):
         fallback_msg = (
             f"✅ <b>Đã lưu bài chạy:</b> {act_name}\n"
             f"📏 {dist_km}km · ⏱ {moving_min} phút · ❤️ {avg_hr} bpm\n"
-            f"⚠️ Phân tích AI tạm thời không khả dụng (Gemini timeout). Dữ liệu đã được lưu."
+            f"⚠️ {failure_reason}"
         )
         send_telegram_msg(chat_id, fallback_msg)
         logger.warning(
@@ -233,16 +246,23 @@ def handle_telegram_callback(callback_query: dict) -> None:
                 activity_id = parts[1]
                 score = int(parts[2])
 
+                if not 1 <= score <= 10:
+                    raise ValueError("RPE out of range")
+
                 # Save RPE to run_activities table
                 from app.core.database import get_db
 
                 with get_db() as conn:
                     c = conn.cursor()
                     c.execute(
-                        "UPDATE run_activities SET rpe_score = ? WHERE activity_id = ?",
-                        (score, activity_id),
+                        "UPDATE run_activities SET rpe_score = ? WHERE activity_id = ? AND user_id = ?",
+                        (score, activity_id, user_id),
                     )
-                    conn.commit()
+                    if c.rowcount != 1:
+                        answer_callback_query(
+                            callback_id, text="Không tìm thấy bài chạy"
+                        )
+                        return
 
                 logger.info(f"[TELEGRAM] Saved RPE {score} to activity {activity_id}")
 
@@ -251,8 +271,8 @@ def handle_telegram_callback(callback_query: dict) -> None:
                 with get_db() as conn:
                     c = conn.cursor()
                     c.execute(
-                        "SELECT start_date FROM run_activities WHERE activity_id = ?",
-                        (activity_id,),
+                        "SELECT start_date FROM run_activities WHERE activity_id = ? AND user_id = ?",
+                        (activity_id, user_id),
                     )
                     row = c.fetchone()
                     if row:
@@ -280,23 +300,17 @@ def handle_telegram_callback(callback_query: dict) -> None:
                 )
                 answer_callback_query(callback_id, text="Lỗi lưu RPE")
 
-    elif callback_data == "plan:accept":
-        # Plan accept callback
-        send_telegram_msg(
-            user_id,
-            "✅ Đã chấp nhận giáo án. Bắt đầu luyện tập theo kế hoạch ngay hôm nay!",
+    elif callback_data in ("plan:accept", "plan:reject"):
+        from app.agents.coach.flows.weekly_plan_generation import (
+            accept_weekly_plan,
+            reject_weekly_plan,
         )
-        answer_callback_query(callback_id, text="Đã chấp nhận giáo án ✓")
-        # TODO: implement accept_weekly_plan logic in future phase
 
-    elif callback_data == "plan:reject":
-        # Plan reject callback
-        send_telegram_msg(
-            user_id,
-            "❌ Từ chối giáo án. Gõ /reject <lý do> để cung cấp phản hồi chi tiết.",
+        action = (
+            accept_weekly_plan if callback_data == "plan:accept" else reject_weekly_plan
         )
-        answer_callback_query(callback_id, text="Từ chối giáo án")
-        # TODO: implement reject_weekly_plan logic in future phase
+        send_telegram_msg(user_id, action(user_id))
+        answer_callback_query(callback_id)
 
     else:
         logger.warning(f"[TELEGRAM] Unknown callback data: {callback_data}")
@@ -306,22 +320,51 @@ def handle_telegram_callback(callback_query: dict) -> None:
 # --- TELEGRAM WORKFLOW ---
 @router.post("/telegram-webhook")
 async def telegram_event(request: Request, background_tasks: BackgroundTasks):
+    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+    if not secret:
+        raise HTTPException(503, "Webhook configuration missing")
+    supplied = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not secrets.compare_digest(supplied.encode(), secret.encode()):
+        raise HTTPException(403, "Forbidden")
     try:
         data = await request.json()
-    except (json.JSONDecodeError, Exception):
+    except (json.JSONDecodeError, UnicodeDecodeError):
         logger.warning("[WEBHOOK] Malformed JSON in telegram-webhook body; ignoring.")
         return {"status": "ok"}
     if not isinstance(data, dict):
         return {"status": "ok"}
 
     # Route callback_query (inline button presses)
+    owner = get_primary_user_id()
     if "callback_query" in data:
+        callback = data["callback_query"]
+        sender = callback.get("from") if isinstance(callback, dict) else None
+        if (
+            not owner
+            or not isinstance(sender, dict)
+            or str(sender.get("id")) != str(owner)
+        ):
+            return {"status": "ok"}
         background_tasks.add_task(handle_telegram_callback, data["callback_query"])
         return {"status": "ok"}
 
     if "message" in data:
-        chat_id = data["message"]["chat"]["id"]
-        text = data["message"].get("text", "")
+        message = data["message"]
+        if not isinstance(message, dict):
+            return {"status": "ok"}
+        chat = message.get("chat") or {}
+        if not isinstance(chat, dict):
+            return {"status": "ok"}
+        chat_id = chat.get("id")
+        if (
+            not owner
+            or str(chat_id) != str(owner)
+            or chat.get("type", "private") != "private"
+        ):
+            return {"status": "ok"}
+        text = message.get("text", "")
+        if not isinstance(text, str):
+            return {"status": "ok"}
 
         # 1. Catch manual /sync command
         if text.strip().startswith("/sync"):

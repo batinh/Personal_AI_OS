@@ -46,3 +46,11 @@ def strip_thought_preamble(text: str) -> str | None:
     if not anchor:
         return None
     return text[anchor.start() :].strip() or None
+
+
+def is_billing_error(exc: Exception) -> bool:
+    """Identify a Gemini prepaid credit failure without matching rate limits."""
+    return (
+        getattr(exc, "code", None) == 402
+        or "prepayment credits are depleted" in str(exc).lower()
+    )

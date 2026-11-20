@@ -14,6 +14,7 @@ Run:
 
 from __future__ import annotations
 
+import pytest
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -145,7 +146,11 @@ class TestNewsCommandE2E(unittest.TestCase):
         from app.main import app
         from fastapi.testclient import TestClient
 
-        self.client = TestClient(app, raise_server_exceptions=False)
+        self.client = TestClient(
+            app,
+            raise_server_exceptions=False,
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+        )
 
     @patch("app.routers.webhooks.load_config", return_value=_STUB_CONFIG)
     @patch("app.agents.news.telegram_handler.handle_news_command")
@@ -188,3 +193,9 @@ class TestNewsCommandE2E(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+@pytest.fixture(autouse=True)
+def _webhook_credentials(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "999")

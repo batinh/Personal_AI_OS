@@ -27,33 +27,42 @@ def _make_client():
 class TestBackupTask(unittest.TestCase):
     """REQ-CS04 — Backup task compresses data/ into a zip archive."""
 
-    @patch("shutil.make_archive")
-    @patch("os.makedirs")
-    @patch("os.listdir", return_value=[])
-    def test_backup_task_creates_zip_file(
-        self, mock_listdir, mock_makedirs, mock_archive
-    ):
-        """perform_backup() must call make_archive targeting the backups/ directory."""
-        from app.services.backup import perform_backup
+    def test_restore_includes_committed_wal_rows(self):
+        import sqlite3
+        import tempfile
+        import zipfile
+        from pathlib import Path
+        from contextlib import closing
+        from app.services import backup
 
-        perform_backup()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "data").mkdir()
+            with closing(sqlite3.connect(root / "data/os_core.db")) as live:
+                live.execute("PRAGMA journal_mode=WAL")
+                live.execute("CREATE TABLE sample(value INTEGER)")
+                live.execute("INSERT INTO sample VALUES (42)")
+                live.commit()
+                with patch.object(backup, "_ROOT", root):
+                    backup.perform_backup()
+            with zipfile.ZipFile(next((root / "backups").glob("*.zip"))) as archive:
+                archive.extract("os_core.db", root)
+            with closing(sqlite3.connect(root / "os_core.db")) as restored:
+                self.assertEqual(
+                    restored.execute("SELECT value FROM sample").fetchone(), (42,)
+                )
 
-        mock_archive.assert_called_once()
-        args = mock_archive.call_args[0]
-        self.assertEqual(args[1], "zip")
-        # First arg is the archive path — must be inside backups/
-        self.assertIn("backups", args[0])
+    def test_missing_database_does_not_publish_backup(self):
+        import tempfile
+        from pathlib import Path
+        from app.services import backup
 
-    @patch("shutil.make_archive", side_effect=OSError("disk full"))
-    @patch("os.makedirs")
-    def test_backup_task_handles_error_gracefully(self, mock_makedirs, mock_archive):
-        """perform_backup() must not raise — errors are logged, not propagated."""
-        from app.services.backup import perform_backup
-
-        try:
-            perform_backup()
-        except Exception as exc:
-            self.fail(f"perform_backup raised unexpectedly: {exc}")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "data").mkdir()
+            with patch.object(backup, "_ROOT", root):
+                backup.perform_backup()
+            self.assertEqual(list((root / "backups").glob("*.zip")), [])
 
 
 class TestSetupCleanupTask(unittest.TestCase):

@@ -45,14 +45,25 @@ else
     log "Skipping pull (--skip-pull)"
 fi
 
+# Validate the candidate service configuration before replacing the running app.
+cd "$REPO_DIR"
+docker compose config --format json | python3 -c '
+import json, sys
+env = json.load(sys.stdin)["services"]["ai-coach"]["environment"]
+if not env.get("TELEGRAM_WEBHOOK_SECRET") or not env.get("TELEGRAM_CHAT_ID"):
+    sys.exit("Configure TELEGRAM_WEBHOOK_SECRET and TELEGRAM_CHAT_ID before deployment")
+'
 # --- Step 2: Backup current image before rebuild ---
 log "Tagging current image as backup..."
-docker tag airunningcoach:latest airunningcoach:backup 2>/dev/null || warn "No existing image to back up (first deploy?)"
+if docker container inspect airunningcoach >/dev/null 2>&1; then
+    previous_image=$(docker inspect --format '{{.Image}}' airunningcoach)
+    docker tag "$previous_image" airunningcoach:backup
+fi
 
 # --- Step 3: Rebuild and restart containers ---
 log "Rebuilding and restarting containers..."
 cd "$REPO_DIR"
-docker compose up --build -d || fail "docker compose up failed"
+docker compose up --build -d --no-deps --force-recreate ai-coach || fail "docker compose up failed"
 
 # --- Step 3: Wait for health check ---
 log "Waiting for health check at $HEALTH_ENDPOINT ..."
@@ -94,7 +105,7 @@ run_test() {
 run_test "GET /health"           "$BASE_URL/health"    "200"
 run_test "GET /console (auth)"   "$BASE_URL/console"   "401"
 run_test "GET /admin (auth)"     "$BASE_URL/admin"     "401"
-run_test "GET /webhook (Strava)" "$BASE_URL/webhook"   "200"
+run_test "Removed Strava webhook" "$BASE_URL/webhook"   "404"
 
 # Scheduler check
 HEALTH_BODY=$(curl -s "$HEALTH_ENDPOINT" 2>/dev/null)

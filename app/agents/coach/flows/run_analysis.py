@@ -1,4 +1,5 @@
 import json
+from app.core.gemini_utils import is_billing_error
 from app.core.user_context import get_primary_user_id
 from datetime import datetime
 from app.core.timezone_utils import get_local_tz
@@ -14,6 +15,7 @@ from app.core.database import (
     get_run_metrics_from_db,
 )
 from app.agents.coach.utils import (
+    build_zone_texts,
     calculate_acwr,
     calculate_training_phase,
     debug_log_prompt,
@@ -38,11 +40,16 @@ from app.core.database import get_training_loads, get_weekly_volume
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
 
 
 def analyze_run_with_gemini(
-    activity_id: str, activity_name: str, meta_data: dict, config: dict
+    activity_id: str,
+    activity_name: str,
+    meta_data: dict,
+    config: dict,
+    *,
+    report_billing_error: bool = False,
 ):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
     tz = get_local_tz()
@@ -108,15 +115,20 @@ def analyze_run_with_gemini(
     rest_hr = int(config.get("rest_hr", 55))
     gender = config.get("gender", "male")
     taper_factor = phase_info.get("taper_factor", 1.0)
+    hr_text, hr_label, power_text, pace_text = build_zone_texts(config)
     system_inst = build_system_instruction(
         config.get("system_instruction", ""),
         config.get("user_profile", ""),
         max_hr,
         rest_hr,
-        gender,
-        "",
-        "",
-        taper_factor,
+        gender=gender,
+        taper_factor=taper_factor,
+        hr_zones_text=hr_text,
+        hr_zones_label=hr_label,
+        power_zones_text=power_text,
+        pace_zones_text=pace_text,
+        rftp_watts=int(config.get("rftp_watts", 0)),
+        lthr_bpm=int(config.get("lthr_bpm", 0)),
     )
 
     shared_context = get_shared_context_block(
@@ -189,6 +201,8 @@ def analyze_run_with_gemini(
         result = json.loads(response.text)
 
         analysis_text = result.get("analysis_text", "")
+        if not analysis_text.strip():
+            return analysis_text
         update_run_gcs_score(activity_id, user_id_str, result.get("gcs_score", 0))
 
         if chat_id:
@@ -201,4 +215,6 @@ def analyze_run_with_gemini(
         return analysis_text
     except Exception as e:
         logger.error(f"[COACH AGENT] Analysis Error: {e}")
+        if report_billing_error and is_billing_error(e):
+            raise
         return None

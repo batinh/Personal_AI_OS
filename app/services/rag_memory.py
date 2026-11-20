@@ -66,9 +66,18 @@ class RagMemory:
         self.collection.upsert(documents=[content], metadatas=[metadata], ids=[doc_id])
         logger.debug(f"[RAG] Successfully memorized item: {doc_id}")
 
-    def recall(self, query: str, domain: Optional[str] = None, n_results: int = 5):
+    def recall(
+        self,
+        query: str,
+        domain: Optional[str] = None,
+        n_results: int = 5,
+        *,
+        user_id: str,
+    ):
         """Recall memories based on the query."""
-        where_clause = {"domain": domain} if domain else None
+        where_clause = {"user_id": user_id}
+        if domain:
+            where_clause = {"$and": [where_clause, {"domain": domain}]}
 
         results = self.collection.query(
             query_texts=[query], n_results=n_results, where=where_clause

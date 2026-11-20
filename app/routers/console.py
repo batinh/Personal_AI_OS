@@ -552,22 +552,19 @@ async def upload_garmin_token(request: Request, _=Depends(verify_admin)):
 
     # Quick verification (with timeout) using the new token
     client = GarminClient()
-    import concurrent.futures
+    import asyncio
 
     def _verify():
         c = client._get_client()
         return c.get_full_name() or "OK"
 
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(_verify)
-    executor.shutdown(wait=False)
     try:
-        name = future.result(timeout=15)
+        name = await asyncio.wait_for(asyncio.to_thread(_verify), timeout=15)
         logger.info(f"[GARMIN-SETUP] OAuth token upload verified — user={name}")
         return JSONResponse(
             {"success": True, "message": f"Token hợp lệ! Đã xác thực: {name}"}
         )
-    except concurrent.futures.TimeoutError:
+    except asyncio.TimeoutError:
         logger.warning(
             "[GARMIN-SETUP] OAuth token upload: verification timed out (token saved anyway)"
         )

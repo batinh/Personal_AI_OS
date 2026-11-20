@@ -167,6 +167,12 @@ class TestSetActualWeeklyTarget(unittest.TestCase):
 # 6. search_long_term_memory
 # ══════════════════════════════════════════════════════════════════════════════
 class TestSearchLongTermMemory(unittest.TestCase):
+    def setUp(self):
+        owner = patch(
+            "app.agents.coach.tools.get_primary_user_id", return_value="owner"
+        )
+        owner.start()
+        self.addCleanup(owner.stop)
 
     @patch("app.agents.coach.tools.rag_db")
     def test_returns_formatted_memories(self, mock_rag):

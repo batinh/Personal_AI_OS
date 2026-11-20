@@ -35,6 +35,7 @@ def env(monkeypatch):
     monkeypatch.setattr(harvest, "load_config", lambda: {})
     monkeypatch.setattr(harvest, "has_run_activity", lambda _id: False)
     monkeypatch.setattr(harvest, "find_duplicate_run", lambda *a, **k: None)
+    monkeypatch.setattr(harvest, "needs_run_detail", lambda *_: False)
     ingest = MagicMock()
     monkeypatch.setattr(harvest, "_ingest_one_activity", ingest)
     alerts = MagicMock()

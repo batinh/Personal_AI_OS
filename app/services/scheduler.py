@@ -633,9 +633,10 @@ def task_retry_pending_analyses():
             if analysis_text:
                 telegram_msg = (
                     f"🔁 <b>Phân tích bài chạy (retry):</b> {act_name}\n\n"
-                    f"{analysis_text}\n\n"
-                    f"🔗 Xem trên Strava: https://www.strava.com/activities/{activity_id}"
+                    f"{analysis_text}"
                 )
+                if act.get("source") == "strava":
+                    telegram_msg += f"\n\n🔗 Xem trên Strava: https://www.strava.com/activities/{activity_id}"
                 send_telegram_msg(user_id, telegram_msg)
                 logger.info(f"[SCHEDULER] Retry analysis sent for {activity_id}")
             else:

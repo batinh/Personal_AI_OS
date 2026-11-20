@@ -522,6 +522,34 @@ _RETRYABLE_ERRORS = (
 )
 
 
+def build_zone_texts(config: dict) -> tuple[str, str, str, str]:
+    """Compute HR, power, and pace zone texts from config for prompt injection."""
+    max_hr = int(config.get("max_hr", 185))
+    rest_hr = int(config.get("rest_hr", 55))
+    lthr_bpm = int(config.get("lthr_bpm", 0))
+    rftp_watts = int(config.get("rftp_watts", 0))
+    threshold_pace = int(config.get("threshold_pace_per_km", 0))
+
+    if lthr_bpm > 0:
+        hr_zones_text = format_lthr_zones_for_prompt(calculate_lthr_zones(lthr_bpm))
+        hr_zones_label = f"JOE FRIEL — LTHR {lthr_bpm} bpm"
+    else:
+        hr_zones_text = format_hr_zones_for_prompt(calculate_hr_zones(max_hr, rest_hr))
+        hr_zones_label = "KARVONEN — HRR"
+
+    power_zones_text = (
+        format_power_zones_for_prompt(calculate_power_zones(rftp_watts))
+        if rftp_watts > 0
+        else ""
+    )
+    pace_zones_text = (
+        format_pace_zones_for_prompt(calculate_pace_zones(threshold_pace))
+        if threshold_pace > 0
+        else "Chưa cấu hình ngưỡng pace (threshold_pace_per_km)."
+    )
+    return hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text
+
+
 def send_message_with_retry(chat_session, message, max_retries=3):
     """
     Canonical retry wrapper for all Gemini chat calls.

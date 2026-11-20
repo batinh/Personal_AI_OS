@@ -159,3 +159,23 @@ class TestSyncRoundTrip:
         client.call_tool = boom
         assert client.fetch_and_store_daily_load(_USER) is False
         assert database.get_runalyze_daily_load(_USER, date.today().isoformat()) is None
+
+
+def test_partial_sync_preserves_previous_calculations(temp_db):
+    client = TestSyncRoundTrip()._client_with_tools()
+    today = date.fromisoformat(_DATE)
+    assert client.fetch_and_store_daily_load(_USER, today)
+    original = client.call_tool
+
+    def partial(name, args=None):
+        if name == "get_calculations":
+            raise rc.RunalyzeError("unavailable")
+        if name == "get_planned_races":
+            return {"items": [{"name": "Race"}]}
+        return original(name, args)
+
+    client.call_tool = partial
+    assert not client.fetch_and_store_daily_load(_USER, today)
+    row = database.get_runalyze_daily_load(_USER, _DATE)
+    assert row["tsb"] == -17
+    assert json.loads(row["raw_json"])["planned_races"]["items"][0]["name"] == "Race"

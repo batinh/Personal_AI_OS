@@ -3,7 +3,6 @@ import json
 import re
 import unicodedata
 import pytz
-import time
 from datetime import datetime, timedelta
 
 from google import genai
@@ -12,40 +11,34 @@ from google.genai import types
 # [REFACTOR] Removed Pydantic models from here to comply with Single Responsibility Principle
 
 from app.core.notification import send_telegram_msg, send_typing_action
-from app.core.gemini_utils import extract_text as _extract_gemini_text
+from app.core.gemini_utils import extract_text as _extract_gemini_text, is_billing_error
 from app.core.database import (
     save_message,
     load_history_for_gemini,
     clear_history,
     get_training_loads,
     get_recent_runs_log,
-    update_run_gcs_score,
     get_upcoming_plans,
     get_plan_for_date,
-    update_plan_status,
     get_weekly_volume,
     insert_memory,
     get_all_active_memories,
-    get_run_metrics_from_db,
     set_athlete_state,
 )
 from app.agents.coach.setup_flow import is_setup_in_progress, advance_setup, start_setup
 from app.agents.coach.flows.weekly_plan_generation import (
     generate_weekly_plan,
 )
+from app.agents.coach.flows.run_analysis import (
+    analyze_run_with_gemini as analyze_run_with_gemini,
+)
 from app.agents.coach.flows.morning_briefing import generate_morning_briefing
 from app.agents.coach.utils import (
+    send_message_with_retry,
+    build_zone_texts,
     calculate_acwr,
-    calculate_hr_zones,
-    calculate_lthr_zones,
-    calculate_pace_zones,
-    calculate_power_zones,
     calculate_training_phase,
     debug_log_prompt,
-    format_hr_zones_for_prompt,
-    format_lthr_zones_for_prompt,
-    format_pace_zones_for_prompt,
-    format_power_zones_for_prompt,
     get_formatted_weekly_context,
 )
 from app.services.rag_memory import rag_db
@@ -56,12 +49,7 @@ from app.agents.coach.prompts import (
     build_system_instruction,
     build_core_system_instruction,
     get_shared_context_block,
-    build_universal_run_analysis_prompt,
     build_chat_prompt,
-    DEFAULT_ANALYSIS_TASK,
-    DEFAULT_ANALYSIS_REQUIREMENTS,
-    DEFAULT_REPORT_STRUCTURE,
-    UNIVERSAL_FORMAT_RULES,
     build_weekly_reflection_prompt,
     build_memory_extraction_prompt,
 )
@@ -80,66 +68,15 @@ from app.agents.coach.tools import (
     get_volume_for_week,
     get_volume_summary,
 )
-from app.agents.coach.metrics_engine import build_run_metrics_block
 from app.agents._prompt_telemetry import log_prompt_metrics
 
 # [ARCHITECTURE UPDATE] Import Strict Data Contracts
-from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
+from app.core.schemas import MemoryExtractionResult
 
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("coach")
 client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
-
-
-# ==========================================
-# 🛡️ RESILIENCE PATTERN: EXPONENTIAL BACKOFF
-# ==========================================
-def send_message_with_retry(chat_session, message, max_retries=3):
-    """
-    Wrapper to call Gemini API with an exponential backoff retry mechanism
-    when the Google Server is overloaded.
-    Gracefully handles 503 (Unavailable) and 429 (Too Many Requests) errors.
-    """
-    for attempt in range(max_retries):
-        try:
-            return chat_session.send_message(message)
-        except Exception as e:
-            error_msg = str(e)
-            _RETRYABLE = (
-                "503",
-                "504",
-                "429",
-                "Unavailable",
-                "DEADLINE_EXCEEDED",
-                "timed out",
-                "timeout",
-                "ssl",
-                "SSL",
-                "handshake",
-            )
-            if any(token in error_msg for token in _RETRYABLE):
-                if attempt < max_retries - 1:
-                    _server_error = any(
-                        t in error_msg
-                        for t in ("503", "504", "DEADLINE_EXCEEDED", "Unavailable")
-                    )
-                    wait_time = min(
-                        5 * (2**attempt) if _server_error else 2**attempt, 60
-                    )
-                    logger.warning(
-                        f"[API RESILIENCE] Transient error ({error_msg[:80]}). Retrying in {wait_time}s... (Attempt {attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                else:
-                    logger.error(
-                        "[API RESILIENCE] Max retries reached. Last error: %s",
-                        error_msg[:120],
-                    )
-                    raise e
-            else:
-                # Non-retryable error (e.g., invalid API Key) — fail immediately
-                raise e
 
 
 # ==========================================
@@ -441,172 +378,6 @@ def _is_degenerate_response(text: str | None) -> bool:
     return not text or not text.strip()
 
 
-def _build_zone_texts(config: dict) -> tuple[str, str, str, str]:
-    """Compute HR, power, and pace zone texts from config for prompt injection."""
-    max_hr = int(config.get("max_hr", 185))
-    rest_hr = int(config.get("rest_hr", 55))
-    lthr_bpm = int(config.get("lthr_bpm", 0))
-    rftp_watts = int(config.get("rftp_watts", 0))
-    threshold_pace = int(config.get("threshold_pace_per_km", 0))
-
-    if lthr_bpm > 0:
-        hr_zones_text = format_lthr_zones_for_prompt(calculate_lthr_zones(lthr_bpm))
-        hr_zones_label = f"JOE FRIEL — LTHR {lthr_bpm} bpm"
-    else:
-        hr_zones_text = format_hr_zones_for_prompt(calculate_hr_zones(max_hr, rest_hr))
-        hr_zones_label = "KARVONEN — HRR"
-
-    power_zones_text = (
-        format_power_zones_for_prompt(calculate_power_zones(rftp_watts))
-        if rftp_watts > 0
-        else ""
-    )
-    pace_zones_text = (
-        format_pace_zones_for_prompt(calculate_pace_zones(threshold_pace))
-        if threshold_pace > 0
-        else "Chưa cấu hình ngưỡng pace (threshold_pace_per_km)."
-    )
-    return hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text
-
-
-# --- FLOW 1: RUN ANALYSIS ---
-def analyze_run_with_gemini(
-    activity_id: str, activity_name: str, meta_data: dict, config: dict
-):
-    logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
-    now = datetime.now(tz)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    user_id_str = str(chat_id)
-
-    # 1. Prepare Context data
-    start_date_raw = meta_data.get("start_date_local", "")
-    run_date_str = start_date_raw[:10] if start_date_raw else now.strftime("%Y-%m-%d")
-    race_date_str = config.get("race_date", "")
-
-    phase_info = calculate_training_phase(race_date_str)
-    phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
-    countdown_text = (
-        f"Còn {phase_info['weeks_left']} tuần đến ngày đua."
-        if race_date_str
-        else "Duy trì thể lực."
-    )
-
-    loads = get_training_loads(user_id_str)
-    acwr_data = calculate_acwr(
-        loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0)
-    )
-    actual_volume = get_weekly_volume(user_id_str, now)
-    weekly_decision_context = get_formatted_weekly_context(user_id_str)
-
-    today_plan = get_plan_for_date(user_id_str, run_date_str)
-    plan_context = (
-        f"Tên bài: {today_plan['workout_title']}\nChi tiết: {today_plan['description']}"
-        if today_plan
-        else "Chạy tự do."
-    )
-    # 2. BUILD PROMPT (Lego Architecture)
-    hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text = (
-        _build_zone_texts(config)
-    )
-    system_inst = build_system_instruction(
-        config.get("system_instruction", ""),
-        config.get("user_profile", ""),
-        int(config.get("max_hr", 185)),
-        int(config.get("rest_hr", 55)),
-        hr_zones_text=hr_zones_text,
-        pace_zones_text=pace_zones_text,
-        rftp_watts=int(config.get("rftp_watts", 0)),
-        lthr_bpm=int(config.get("lthr_bpm", 0)),
-        hr_zones_label=hr_zones_label,
-        power_zones_text=power_zones_text,
-    )
-
-    shared_context = get_shared_context_block(
-        now.strftime("%Y-%m-%d %H:%M"),
-        user_id_str,
-        phase_text,
-        countdown_text,
-        f"{acwr_data['acwr']} ({acwr_data['status']})",
-        actual_volume,
-        weekly_decision_context,
-    )
-
-    meta_text = "\n".join(
-        [
-            f"Km {s['km']}: {s['pace']:.2f} m/s | HR {int(s['hr'])}"
-            for s in meta_data.get("splits", [])
-        ]
-    )
-
-    # Load pre-computed metrics block (computed at webhook time, stored in DB)
-    raw_metrics = get_run_metrics_from_db(activity_id, user_id_str)
-    metrics_block = build_run_metrics_block(raw_metrics, config)
-
-    # USE OMNICHANNEL BUILDER, OUTPUT FORMAT FOR STRAVA
-    prompt = build_universal_run_analysis_prompt(
-        shared_context=shared_context,
-        run_name=activity_name,
-        meta_text=meta_text,
-        today_plan=plan_context,
-        # Fetching from Admin Config
-        task_desc=config.get("task_description", DEFAULT_ANALYSIS_TASK),
-        analysis_req=config.get("analysis_requirements", DEFAULT_ANALYSIS_REQUIREMENTS),
-        report_structure=config.get("report_structure", DEFAULT_REPORT_STRUCTURE),
-        format_rules=config.get("output_format", UNIVERSAL_FORMAT_RULES),
-        metrics_block=metrics_block,
-    )
-
-    debug_log_prompt(
-        "DEBUG STRAVA PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"
-    )
-    log_prompt_metrics(
-        flow="coach.run_analysis",
-        system_inst=system_inst,
-        user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.5-flash"),
-    )
-
-    # 3. Call Gemini with Native Schema
-    try:
-        chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.5-flash"),
-            config=types.GenerateContentConfig(
-                system_instruction=system_inst,  # Explicit System Instruction separation
-                temperature=0.7,
-                response_mime_type="application/json",
-                response_schema=RunAnalysisResult,
-                tools=[
-                    update_todays_plan,
-                    set_actual_weekly_target,
-                ],  # Grant AI permission to adjust schedule post-run
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-            ),
-        )
-        response = send_message_with_retry(chat_session, prompt)
-        if not response.text:
-            logger.warning(
-                "[RUN-ANALYSIS] Gemini returned empty response (MALFORMED_RESPONSE or blocked)"
-            )
-            return None
-        result = json.loads(response.text)
-
-        analysis_text = result.get("analysis_text", "")
-        update_run_gcs_score(activity_id, user_id_str, result.get("gcs_score", 0))
-
-        if chat_id:
-            save_message(
-                user_id_str, "model", f"[ANALYSIS] {activity_name}: {analysis_text}"
-            )
-            if today_plan:
-                update_plan_status(user_id_str, run_date_str, "Completed")
-
-        return analysis_text
-    except Exception as e:
-        logger.error(f"[COACH AGENT] Analysis Error: {e}")
-        return None
-
-
 def handle_telegram_chat(chat_id: str, text: str, config: dict):
     chat_id = str(chat_id)
 
@@ -785,8 +556,8 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     # 2. BUILD PROMPT (Lego Architecture)
     # Fast path uses core-only system prompt (identity + psychology, ~300 tokens).
     # Standard path uses full system prompt (zones, GCS rubric, tool discipline, ~2000 tokens).
-    hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text = (
-        _build_zone_texts(config)
+    hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text = build_zone_texts(
+        config
     )
     if intent == "fast":
         system_inst = build_core_system_instruction(
@@ -945,7 +716,11 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         # [ZONE 3] User-facing notification remains in Vietnamese
         send_telegram_msg(
             chat_id,
-            "⚠️ Google AI Server đang bảo trì hoặc quá tải. Hãy thử lại sau một chút nhé!",
+            (
+                "⚠️ Dự án Gemini đã hết tín dụng trả trước. Hãy kiểm tra thanh toán trong Google AI Studio."
+                if is_billing_error(e)
+                else "⚠️ Coach chưa nhận được phản hồi từ Gemini. Hãy thử lại sau."
+            ),
         )
 
 
@@ -996,8 +771,8 @@ def generate_weekly_reflection(config: dict):
     next_monday_str = next_monday.strftime("%Y-%m-%d")
 
     # 2. Build Prompt using Lego blocks
-    hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text = (
-        _build_zone_texts(config)
+    hr_zones_text, hr_zones_label, power_zones_text, pace_zones_text = build_zone_texts(
+        config
     )
     system_inst = build_system_instruction(
         config.get("system_instruction", ""),

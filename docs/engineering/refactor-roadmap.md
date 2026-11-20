@@ -1,5 +1,13 @@
 # Architecture Refactoring Plan — Personal_AI_OS (v2)
 
+## 2026-11-20 implementation update
+
+The Telegram webhook now checks the registered secret and the configured owner before dispatch. Runalyze persists successful sections independently. Run analysis and Gemini chat retries each have one implementation. New activities carry an explicit analysis status, and the scheduler preserves the source when retrying older records. The configuration service serializes local file reads and writes and publishes updates with an atomic rename.
+
+The service deploy and rollback scripts target ai-coach. Rollback uses the saved image's application code with persistent data mounts. Test rollback on an isolated stack with the intended Compose version before production rollout. The SQLite backup restore test covers committed WAL rows. Validate Chroma retrieval separately during a full restore drill.
+
+The April inventory below is historical. Strava webhook hardening no longer applies. The admin authentication dependency rejects missing credentials, and Telegram HTTP requests have explicit timeouts. Future module splits should follow changes to the individual flows and preserve public imports.
+
 **Date**: 2026-04-20 (v3)
 **Auditors**:
 - v1 — Principal Systems Architect (Claude Sonnet 4.6)

@@ -154,41 +154,53 @@ class RunalyzeClient:
         Returns True on success, False on failure (logged, never raised).
         """
         target_date = target_date or date.today()
-        try:
-            calc = self.call_tool("get_calculations")
-            health = self.call_tool("get_health_metrics")
-            races = self.call_tool(
-                "get_planned_races",
-                {
-                    "start_date": target_date.isoformat(),
-                    "end_date": (
-                        target_date + timedelta(days=RACES_LOOKAHEAD_DAYS)
-                    ).isoformat(),
-                },
-            )
-            prognosis = self.call_tool("get_prognosis")
-        except RunalyzeAuthError as e:
-            logger.error(f"[RUNALYZE] Auth failed — check RUNALYZE_API_TOKEN: {e}")
+        arguments = {
+            "calculations": None,
+            "health": None,
+            "planned_races": {
+                "start_date": target_date.isoformat(),
+                "end_date": (
+                    target_date + timedelta(days=RACES_LOOKAHEAD_DAYS)
+                ).isoformat(),
+            },
+            "prognosis": None,
+        }
+        names = {"health": "get_health_metrics"}
+        sections = {}
+        for section, args in arguments.items():
+            try:
+                sections[section] = self.call_tool(
+                    names.get(section, f"get_{section}"), args
+                )
+            except RunalyzeAuthError:
+                logger.error("[RUNALYZE] Authentication failed")
+                break
+            except (RunalyzeError, requests.RequestException, ValueError) as exc:
+                logger.warning(
+                    "[RUNALYZE] Could not sync %s: %s", section, type(exc).__name__
+                )
+        if not sections:
             return False
-        except (RunalyzeError, requests.RequestException, ValueError) as e:
-            logger.error(f"[RUNALYZE] Sync failed: {e}", exc_info=True)
-            return False
-
-        metrics = build_daily_load_metrics(calc, health)
-        metrics["raw_json"] = json.dumps(
-            {
-                "calculations": calc,
-                "health": health,
-                "planned_races": races,
-                "prognosis": prognosis,
-            }
+        metrics = build_daily_load_metrics(
+            sections.get("calculations", {}), sections.get("health", {})
         )
-        upsert_runalyze_daily_load(user_id, target_date.isoformat(), metrics)
-        logger.info(
-            f"[RUNALYZE] Synced {user_id}/{target_date}: "
-            f"TSB={metrics.get('tsb')} ACWR={metrics.get('acwr')}"
+        health_fields = {
+            "hrv_last",
+            "resting_hr",
+            "sleep_duration_min",
+            "sleep_quality",
+            "weight_kg",
+        }
+        metrics = {
+            key: value
+            for key, value in metrics.items()
+            if ("health" if key in health_fields else "calculations") in sections
+        }
+        upsert_runalyze_daily_load(
+            user_id, target_date.isoformat(), metrics, sections=sections
         )
-        return True
+        logger.info("[RUNALYZE] Synced sections: %s", ", ".join(sections))
+        return len(sections) == len(arguments)
 
 
 def build_daily_load_metrics(calc: dict, health: dict) -> dict:

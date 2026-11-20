@@ -10,6 +10,7 @@ Covers:
   - Edge cases: malformed payloads, non-run activities
 """
 
+import pytest
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -111,7 +112,11 @@ class TestTelegramWebhook(unittest.TestCase):
     def setUp(self):
         from app.main import app
 
-        self.client = TestClient(app, raise_server_exceptions=False)
+        self.client = TestClient(
+            app,
+            raise_server_exceptions=False,
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+        )
 
     @patch("app.routers.webhooks.execute_manual_sync")
     def test_sync_command_default(self, mock_sync):
@@ -219,7 +224,11 @@ class TestWebhookPayloadValidation(unittest.TestCase):
     def setUp(self):
         from app.main import app
 
-        self.client = TestClient(app, raise_server_exceptions=False)
+        self.client = TestClient(
+            app,
+            raise_server_exceptions=False,
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+        )
 
     def test_telegram_webhook_malformed_json_returns_ok(self):
         """/telegram-webhook explicitly swallows JSON errors and returns 200."""
@@ -251,7 +260,11 @@ class TestStravaEndpointsRemoved(unittest.TestCase):
     def setUp(self):
         from app.main import app
 
-        self.client = TestClient(app, raise_server_exceptions=False)
+        self.client = TestClient(
+            app,
+            raise_server_exceptions=False,
+            headers={"X-Telegram-Bot-Api-Secret-Token": "test-secret"},
+        )
 
     def test_post_webhook_no_longer_routes(self):
         resp = self.client.post(
@@ -267,3 +280,9 @@ class TestStravaEndpointsRemoved(unittest.TestCase):
     def test_telegram_webhook_still_routes(self):
         resp = self.client.post("/telegram-webhook", json={})
         self.assertEqual(resp.status_code, 200)
+
+
+@pytest.fixture(autouse=True)
+def _webhook_credentials(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", "test-secret")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "12345")
