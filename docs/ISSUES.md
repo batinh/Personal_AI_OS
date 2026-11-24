@@ -21,6 +21,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date | Module |
 |----|------|-------|----------|----------|------|--------|
+| [ISS-028](#iss-028--adaptive-personal-endurance-coach) | feature | Adaptive personal endurance coach | High | U+AI | 2026-11-24 | Coach, Telegram, scheduler |
 | [ISS-027](#iss-027--proactive-load-alert-reads-a-missing-acwr-field) | bug | Proactive load alert reads a missing ACWR field | High | AI | 2026-11-24 | Scheduler, coach |
 | [ISS-024](#iss-024--codex-mac-environment-validation) | enhancement | Codex Mac environment validation | Medium | U+AI | 2026-11-16 | Development setup |
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
@@ -581,3 +582,9 @@ The scheduler unit test supplies an `acwr` key that the real query never returns
 The scheduler and coach utility also apply different labels to the same ratios.
 Reconcile the intended policy, use the shared computation, and exercise the
 database-to-scheduler path with an isolated database and notification sink.
+
+### ISS-028 — Adaptive personal endurance coach
+
+Implement the [approved design](features/adaptive-endurance-coach.md) on
+`feat/adaptive-endurance-coach`. Start with the context baseline and ISS-027,
+then deliver missed-workout follow-up and weekly reflection end to end.
