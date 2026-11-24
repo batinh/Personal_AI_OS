@@ -22,8 +22,6 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 | ID | Type | Title | Priority | Reporter | Date | Module |
 |----|------|-------|----------|----------|------|--------|
 | [ISS-027](#iss-027--proactive-load-alert-reads-a-missing-acwr-field) | bug | Proactive load alert reads a missing ACWR field | High | AI | 2026-11-24 | Scheduler, coach |
-| [ISS-026](#iss-026--coach-model-unavailable-on-configured-api-version) | bug | Coach model unavailable on configured API version | High | U+AI | 2026-11-24 | Coach, settings |
-| [ISS-025](#iss-025--gemini-credit-exhaustion-misreported-as-server-overload) | bug | Gemini credit exhaustion misreported as server overload | High | U+AI | 2026-11-17 | `coach/agent.py`, `routers/webhooks.py` |
 | [ISS-024](#iss-024--codex-mac-environment-validation) | enhancement | Codex Mac environment validation | Medium | U+AI | 2026-11-16 | Development setup |
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
 | [ISS-014](#iss-014--no-onboarding-guide-for-physiology-config-fields) | feature | No onboarding guide for physiology config fields (LTHR, rFTP) | Low | U+AI | 2026-04-26 | `docs/`, `config.example.json` |
@@ -35,6 +33,8 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
 |----|------|-------|----------|----------|------------|--------|--------|--------|
+| [ISS-026](#iss-026--coach-model-unavailable-on-configured-api-version) | bug | Coach model unavailable on configured API version | High | U+AI | 2026-11-24 | 2026-11-24 | `cf885c4` | Coach, settings |
+| [ISS-025](#iss-025--gemini-credit-exhaustion-misreported-as-server-overload) | bug | Gemini credit exhaustion misreported as server overload | High | U+AI | 2026-11-17 | 2026-11-24 | `cf885c4` | `coach/agent.py`, `routers/webhooks.py` |
 | [ISS-022](#iss-022--plan-command-shows-daily-suggestion-instead-of-generating-plan) | bug | `/plan` shows daily suggestion instead of generating a plan | High | U | 2026-05-22 | 2026-05-22 | `70565ae` | `coach/agent.py`, `database.py` |
 | [ISS-021](#iss-021--news-agent-504503-causes-silent-topic-drops-no-retry) | bug | News agent 504/503 causes silent topic drops — no retry logic | High | U+AI | 2026-05-18 | 2026-05-18 | `f8d5c27` | `news/agent.py`, `news/memory.py`, `config.example.json` |
 | [ISS-020](#iss-020--webhook-gemini-timeout--silent-analysis-failure-no-run-report) | bug | Webhook Gemini timeout → silent analysis failure, no run report | High | U+AI | 2026-05-17 | 2026-05-17 | feat/garmin-coach-planning | `webhooks.py`, `agent.py`, `utils.py`, `database.py`, `scheduler.py` |
