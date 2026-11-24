@@ -1,9 +1,12 @@
 from typing import Optional
 
-from fastapi import APIRouter, Request, Form, Depends
+from starlette.concurrency import run_in_threadpool
+from fastapi import HTTPException, APIRouter, Request, Form, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+from app.agents.coach.agent import client as coach_client
+from app.core.gemini_utils import GeminiFailure, validate_coach_model
 from app.core.config import load_config, save_config
 from app.core.notification import send_html_email
 from app.core.logging_conf import log_capture_string
@@ -58,11 +61,22 @@ async def save_settings(
     harvest_minute: str = Form("15"),
     email_enabled: Optional[str] = Form(None),
     debug_mode: Optional[str] = Form(None),
-    model_name: str = Form("models/gemini-flash-latest"),
+    model_name: Optional[str] = Form(None),
     username: str = Depends(verify_admin),
 ):
     """Process configuration saving form from Admin UI."""
     config = load_config()
+    if model_name is not None and model_name != config.get("model_name"):
+        try:
+            await run_in_threadpool(validate_coach_model, coach_client, model_name)
+        except Exception as exc:
+            logger.warning(
+                "[CONFIG] Coach model validation failed: %s", type(exc).__name__
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=f"Chưa lưu cấu hình. {GeminiFailure.from_error(exc)}",
+            ) from exc
 
     # 1. Update AI Persona information
     config["system_instruction"] = system_instruction
@@ -101,7 +115,8 @@ async def save_settings(
 
     # 5. Update System settings
     config["debug_mode"] = True if debug_mode == "on" else False
-    config["model_name"] = model_name
+    if model_name is not None:
+        config["model_name"] = model_name
 
     save_config(config)
     reload_scheduler()

@@ -31,6 +31,7 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 
+from app.core.gemini_utils import DEFAULT_MODEL, GEMINI_API_VERSION
 from app.core.notification import send_telegram_msg, send_telegram_html
 from app.core.user_context import get_primary_user_id
 from app.core.timezone_utils import get_local_tz
@@ -54,7 +55,7 @@ from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("news")
 client = genai.Client(
-    http_options=types.HttpOptions(timeout=90000)
+    http_options=types.HttpOptions(api_version=GEMINI_API_VERSION, timeout=90000)
 )  # 90s in ms — grounded search needs more time than regular calls
 
 # Briefings with links use send_telegram_html(); plain notifications use send_telegram_msg().
@@ -138,7 +139,7 @@ def _session_header(session: str, date_str: str) -> str:
 
 _DEBUG_NEWS = os.getenv("DEBUG_NEWS", "").lower() in ("1", "true", "yes")
 
-_DEFAULT_MODEL = "models/gemini-2.5-flash"
+_DEFAULT_MODEL = DEFAULT_MODEL
 
 _SEARCH_TOOL = [types.Tool(google_search=types.GoogleSearch())]
 

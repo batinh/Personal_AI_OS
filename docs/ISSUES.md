@@ -21,6 +21,8 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date | Module |
 |----|------|-------|----------|----------|------|--------|
+| [ISS-027](#iss-027--proactive-load-alert-reads-a-missing-acwr-field) | bug | Proactive load alert reads a missing ACWR field | High | AI | 2026-11-24 | Scheduler, coach |
+| [ISS-026](#iss-026--coach-model-unavailable-on-configured-api-version) | bug | Coach model unavailable on configured API version | High | U+AI | 2026-11-24 | Coach, settings |
 | [ISS-025](#iss-025--gemini-credit-exhaustion-misreported-as-server-overload) | bug | Gemini credit exhaustion misreported as server overload | High | U+AI | 2026-11-17 | `coach/agent.py`, `routers/webhooks.py` |
 | [ISS-024](#iss-024--codex-mac-environment-validation) | enhancement | Codex Mac environment validation | Medium | U+AI | 2026-11-16 | Development setup |
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
@@ -556,5 +558,26 @@ The generic chat exception handler reports maintenance or overload. The run
 fallback reports a Gemini timeout. Both messages obscure the billing failure.
 Restore credits for the Google AI Studio project used by production, then verify
 Gemini generation. Update error handling to distinguish exhausted credits from
-transient errors and use accurate Vietnamese Telegram messages. Runtime fixes
-and billing changes remain pending. This issue was recorded during log review.
+transient errors and use accurate Vietnamese Telegram messages. This issue was recorded during log review.
+
+On November 24, production generation succeeded and all four pending activities
+since November 17 were analyzed. The retry query then returned zero activities.
+For error reporting and scheduler handling, see [the recovery design](features/gemini-error-recovery.md).
+
+### ISS-026 — Coach model unavailable on configured API version
+
+Telegram chat received 404 twice on November 24 for the Flash alias on v1.
+A production probe on v1 also rejected function calling with a listed Flash model.
+The existing model checker verified the Flash alias on v1beta. A production-key
+chat and the four historical analyses succeeded. Both settings forms now probe
+structured generation before persisting a changed coach model.
+See [the recovery design](features/gemini-error-recovery.md).
+
+### ISS-027 — Proactive load alert reads a missing ACWR field
+
+The proactive check reads `loads.get("acwr", 0.0)`. The database returns
+`acute_load_7d` and `chronic_load_28d`, so the load alert branches are skipped.
+The scheduler unit test supplies an `acwr` key that the real query never returns.
+The scheduler and coach utility also apply different labels to the same ratios.
+Reconcile the intended policy, use the shared computation, and exercise the
+database-to-scheduler path with an isolated database and notification sink.

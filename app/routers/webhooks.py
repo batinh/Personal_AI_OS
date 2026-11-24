@@ -19,6 +19,7 @@ from app.core.database import (
     get_plan_for_date,
 )
 from app.core.logging_conf import get_module_logger
+from app.core.gemini_utils import GeminiFailure
 from app.agents.coach.agent import analyze_run_with_gemini, handle_telegram_chat
 from app.agents.coach.runalyze_activities import get_activity_client
 from app.agents.coach.harvest import (
@@ -129,7 +130,14 @@ def run_activity_workflow(activity_id: str):
 
     # 2. Handover to AI for semantic analysis and GCS scoring
     logger.info("[*] Sending Data to Gemini...")
-    analysis_text = analyze_run_with_gemini(activity_id, act_name, meta_data, config)
+    reason = "Chưa có kết quả phân tích AI."
+    try:
+        analysis_text = analyze_run_with_gemini(
+            activity_id, act_name, meta_data, config
+        )
+    except GeminiFailure as exc:
+        analysis_text = None
+        reason = str(exc)
 
     # [NEW ARCHITECTURE] 2.5: Inject immediately into RAG Memory (Tier 3)
     if analysis_text and chat_id:
@@ -198,7 +206,7 @@ def run_activity_workflow(activity_id: str):
         fallback_msg = (
             f"✅ <b>Đã lưu bài chạy:</b> {act_name}\n"
             f"📏 {dist_km}km · ⏱ {moving_min} phút · ❤️ {avg_hr} bpm\n"
-            f"⚠️ Phân tích AI tạm thời không khả dụng (Gemini timeout). Dữ liệu đã được lưu."
+            f"⚠️ {reason}"
         )
         send_telegram_msg(chat_id, fallback_msg)
         logger.warning(

@@ -1,37 +1,59 @@
+"""List Gemini models or verify the selected coach model with a small request."""
+
+import argparse
 import json
-import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-import google.generativeai as genai
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
-load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+ROOT = Path(__file__).resolve().parents[2]
+if __package__ in (None, ""):
+    sys.path.insert(0, str(ROOT))
 
-# Default output: ../../ from script (project root), filename includes date
-SCRIPT_DIR = Path(__file__).resolve().parent
-OUTPUT_DIR = (SCRIPT_DIR / ".." / "..").resolve()
-OUTPUT_FILE = (
-    OUTPUT_DIR
-    / f"available_models_{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.json"
+from app.core.gemini_utils import (  # noqa: E402
+    DEFAULT_MODEL,
+    GEMINI_API_VERSION,
+    validate_coach_model,
 )
 
-print("=== DANH SÁCH MODEL KHẢ DỤNG ===")
-try:
-    model_list = []
-    for m in genai.list_models():
-        if "generateContent" in m.supported_generation_methods:
-            model_list.append(m.name)
-            print(f"- {m.name}")
 
-    payload = {
-        "fetched_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "models": model_list,
-    }
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-    print(f"\nĐã lưu {len(model_list)} model vào: {OUTPUT_FILE}")
-except Exception as e:
-    print(f"Lỗi API Key: {e}")
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", nargs="?", const=DEFAULT_MODEL, metavar="MODEL")
+    args = parser.parse_args()
+    load_dotenv(ROOT / ".env")
+    with genai.Client(
+        http_options=types.HttpOptions(api_version=GEMINI_API_VERSION, timeout=30000)
+    ) as client:  # 30s in ms
+        models = [
+            m.name
+            for m in client.models.list()
+            if "generateContent" in (m.supported_actions or [])
+        ]
+        if args.check:
+            validate_coach_model(client, args.check)
+            print(f"{args.check}: sinh nội dung thành công ({GEMINI_API_VERSION})")
+            return
+        now = datetime.now(timezone.utc)
+        output = ROOT / f"available_models_{now:%Y-%m-%d}.json"
+        output.write_text(
+            json.dumps(
+                {
+                    "fetched_at": now.isoformat().replace("+00:00", "Z"),
+                    "models": models,
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        print(*models, sep="\n")
+        print(f"Đã lưu {len(models)} model vào {output}")
+
+
+if __name__ == "__main__":
+    main()

@@ -15,10 +15,13 @@ from typing import Optional
 from google import genai
 from google.genai import types
 
+from app.core.gemini_utils import GEMINI_API_VERSION
 from app.core.database import get_news_state, set_news_state
 from app.core.logging_conf import get_module_logger
 
-_client = genai.Client(http_options=types.HttpOptions(timeout=60000))  # 60s in ms
+_client = genai.Client(
+    http_options=types.HttpOptions(api_version=GEMINI_API_VERSION, timeout=60000)
+)  # 60s in ms
 
 logger = get_module_logger("news")
 

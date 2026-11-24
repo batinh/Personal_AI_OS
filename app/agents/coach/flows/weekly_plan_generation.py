@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from typing import Optional
 
+from app.core.gemini_utils import DEFAULT_MODEL, GEMINI_API_VERSION
 from app.core.logging_conf import get_module_logger
 from app.core.user_context import get_primary_user_id
 from app.core.notification import send_telegram_msg
@@ -290,9 +291,11 @@ def _call_gemini_for_plan(config: dict, prompt: str) -> Optional[WeeklyPlanResul
         from google.genai import types
 
         client = genai.Client(
-            http_options=types.HttpOptions(timeout=120000)
+            http_options=types.HttpOptions(
+                api_version=GEMINI_API_VERSION, timeout=120000
+            )
         )  # 120s in ms
-        model = config.get("model_name", "models/gemini-flash-latest")
+        model = config.get("model_name", DEFAULT_MODEL)
 
         log_prompt_metrics(
             flow="coach.flows.weekly_plan",

@@ -15,7 +15,7 @@
     "report_structure": "",
     "output_format": "",
     "debug_mode": false,
-    "model_name": "models/gemini-2.5-flash",
+    "model_name": "models/gemini-flash-latest",
     "scheduler": {
         "briefing_time": "06:00",
         "backup_time": "02:00",
@@ -61,7 +61,7 @@
     "race_target_time_min": 240,
     "news_agent": {
         "enabled": true,
-        "news_model": "models/gemini-2.5-flash",
+        "news_model": "models/gemini-flash-latest",
         "timezone": "Asia/Ho_Chi_Minh",
         "morning_time": "06:30",
         "afternoon_time": "17:30",

@@ -1,3 +1,4 @@
+from app.core.gemini_utils import DEFAULT_MODEL, GEMINI_API_VERSION
 from app.core.user_context import get_primary_user_id
 from datetime import datetime, timedelta
 from app.core.timezone_utils import get_local_tz
@@ -51,7 +52,7 @@ from app.core.logging_conf import get_module_logger
 from app.agents._prompt_telemetry import log_prompt_metrics
 
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(api_version=GEMINI_API_VERSION))
 
 
 def _has_active_plan_this_week(user_id: str) -> bool:
@@ -319,11 +320,11 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         flow="coach.flows.morning_briefing",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.5-flash"),
+        model=config.get("model_name", DEFAULT_MODEL),
     )
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.5-flash"),
+            model=config.get("model_name", DEFAULT_MODEL),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 # [FIX BUG] Cung cấp đầy đủ các Tool mà System Prompt yêu cầu để tránh KeyError

@@ -1155,13 +1155,13 @@
                 <label class="form-label fw-semibold small"><i class="fas fa-robot me-1"></i>AI Model</label>
                 <select class="form-select" name="model_name">
                   <optgroup label="── Gemini 3.1 ──">
-                    <option value="models/gemini-3.1-flash"          {{ 'selected' if config.get('model_name')=='models/gemini-3.1-flash' else '' }}>Gemini 3.1 Flash</option>
-                    <option value="models/gemini-3.1-flash-preview"  {{ 'selected' if config.get('model_name')=='models/gemini-3.1-flash-preview' else '' }}>Gemini 3.1 Flash Preview</option>
-                    <option value="models/gemini-3.1-pro-preview"    {{ 'selected' if config.get('model_name')=='models/gemini-3.1-pro-preview' else '' }}>Gemini 3.1 Pro Preview</option>
+                    <option value="models/gemini-3.1-flash"          {{ 'selected' if config.get('model_name', 'models/gemini-flash-latest')=='models/gemini-3.1-flash' else '' }}>Gemini 3.1 Flash</option>
+                    <option value="models/gemini-3.1-flash-preview"  {{ 'selected' if config.get('model_name', 'models/gemini-flash-latest')=='models/gemini-3.1-flash-preview' else '' }}>Gemini 3.1 Flash Preview</option>
+                    <option value="models/gemini-3.1-pro-preview"    {{ 'selected' if config.get('model_name', 'models/gemini-flash-latest')=='models/gemini-3.1-pro-preview' else '' }}>Gemini 3.1 Pro Preview</option>
                   </optgroup>
                   <optgroup label="── Aliases ──">
-                    <option value="models/gemini-flash-latest"       {{ 'selected' if config.get('model_name')=='models/gemini-flash-latest' else '' }}>Gemini Flash Latest (Default)</option>
-                    <option value="models/gemini-pro-latest"         {{ 'selected' if config.get('model_name')=='models/gemini-pro-latest' else '' }}>Gemini Pro Latest</option>
+                    <option value="models/gemini-flash-latest"       {{ 'selected' if config.get('model_name', 'models/gemini-flash-latest')=='models/gemini-flash-latest' else '' }}>Gemini Flash Latest (Default)</option>
+                    <option value="models/gemini-pro-latest"         {{ 'selected' if config.get('model_name', 'models/gemini-flash-latest')=='models/gemini-pro-latest' else '' }}>Gemini Pro Latest</option>
                   </optgroup>
                 </select>
               </div>
@@ -1377,7 +1377,7 @@
                 </div>
                 <div class="d-flex justify-content-between py-1 border-bottom">
                   <span class="text-muted">AI Model</span>
-                  <span class="fw-bold">{{ config.get('model_name', 'gemini-2.0-flash').split('/')[-1] }}</span>
+                  <span class="fw-bold">{{ config.get('model_name', 'models/gemini-flash-latest').split('/')[-1] }}</span>
                 </div>
                 <div class="d-flex justify-content-between py-1 border-bottom">
                   <span class="text-muted">Morning Briefing</span>

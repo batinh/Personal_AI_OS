@@ -422,3 +422,11 @@ class TestE2EIntegrationEdgeCasesImports(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_gemini_model_recovery_symbols():
+    from app.core.gemini_utils import DEFAULT_MODEL, GeminiFailure, validate_coach_model
+
+    assert DEFAULT_MODEL == "models/gemini-flash-latest"
+    assert callable(validate_coach_model)
+    assert issubclass(GeminiFailure, Exception)

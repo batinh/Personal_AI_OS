@@ -1,3 +1,4 @@
+from app.core.gemini_utils import DEFAULT_MODEL, GEMINI_API_VERSION
 from app.core.user_context import get_primary_user_id
 from datetime import datetime, timedelta
 from app.core.timezone_utils import get_local_tz
@@ -38,7 +39,7 @@ from app.core.logging_conf import get_module_logger
 from app.agents._prompt_telemetry import log_prompt_metrics
 
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(api_version=GEMINI_API_VERSION))
 
 
 def generate_weekly_reflection(config: dict):
@@ -147,13 +148,13 @@ def generate_weekly_reflection(config: dict):
         flow="coach.flows.weekly_reflection",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.5-flash"),
+        model=config.get("model_name", DEFAULT_MODEL),
     )
 
     # 3. Call Gemini with Action Tool allowed
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.5-flash"),
+            model=config.get("model_name", DEFAULT_MODEL),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,

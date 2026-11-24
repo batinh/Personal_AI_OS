@@ -1,4 +1,5 @@
 import json
+from app.core.gemini_utils import DEFAULT_MODEL, GEMINI_API_VERSION
 from app.core.user_context import get_primary_user_id
 from datetime import datetime
 from app.core.timezone_utils import get_local_tz
@@ -38,7 +39,7 @@ from app.core.database import get_training_loads, get_weekly_volume
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(api_version=GEMINI_API_VERSION))
 
 
 def analyze_run_with_gemini(
@@ -161,13 +162,13 @@ def analyze_run_with_gemini(
         flow="coach.flows.run_analysis",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.5-flash"),
+        model=config.get("model_name", DEFAULT_MODEL),
     )
 
     # 3. Call Gemini with Native Schema
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.5-flash"),
+            model=config.get("model_name", DEFAULT_MODEL),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,  # Explicit System Instruction separation
                 temperature=0.7,

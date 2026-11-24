@@ -11,8 +11,10 @@ from google.genai import types
 
 # [REFACTOR] Removed Pydantic models from here to comply with Single Responsibility Principle
 
+from app.core.gemini_utils import DEFAULT_MODEL, GEMINI_API_VERSION
+from app.core.user_context import get_primary_user_id
 from app.core.notification import send_telegram_msg, send_typing_action
-from app.core.gemini_utils import extract_text as _extract_gemini_text
+from app.core.gemini_utils import GeminiFailure, extract_text as _extract_gemini_text
 from app.core.database import (
     save_message,
     load_history_for_gemini,
@@ -89,7 +91,9 @@ from app.core.schemas import RunAnalysisResult, MemoryExtractionResult
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("coach")
-client = genai.Client(http_options=types.HttpOptions(timeout=120000))  # 120s in ms
+client = genai.Client(
+    http_options=types.HttpOptions(api_version=GEMINI_API_VERSION, timeout=120000)
+)  # 120s in ms
 
 
 # ==========================================
@@ -471,12 +475,17 @@ def _build_zone_texts(config: dict) -> tuple[str, str, str, str]:
 
 # --- FLOW 1: RUN ANALYSIS ---
 def analyze_run_with_gemini(
-    activity_id: str, activity_name: str, meta_data: dict, config: dict
+    activity_id: str,
+    activity_name: str,
+    meta_data: dict,
+    config: dict,
+    *,
+    historical=False,
 ):
     logger.info(f"[COACH AGENT] Analyzing run: {activity_name}")
     tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
     now = datetime.now(tz)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
     user_id_str = str(chat_id)
 
     # 1. Prepare Context data
@@ -564,22 +573,26 @@ def analyze_run_with_gemini(
         flow="coach.run_analysis",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.5-flash"),
+        model=config.get("model_name", DEFAULT_MODEL),
     )
 
     # 3. Call Gemini with Native Schema
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.5-flash"),
+            model=config.get("model_name", DEFAULT_MODEL),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,  # Explicit System Instruction separation
                 temperature=0.7,
                 response_mime_type="application/json",
                 response_schema=RunAnalysisResult,
-                tools=[
-                    update_todays_plan,
-                    set_actual_weekly_target,
-                ],  # Grant AI permission to adjust schedule post-run
+                tools=(
+                    None
+                    if historical
+                    else [
+                        update_todays_plan,
+                        set_actual_weekly_target,
+                    ]
+                ),  # Grant AI permission to adjust schedule post-run
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
@@ -589,22 +602,23 @@ def analyze_run_with_gemini(
                 "[RUN-ANALYSIS] Gemini returned empty response (MALFORMED_RESPONSE or blocked)"
             )
             return None
-        result = json.loads(response.text)
-
-        analysis_text = result.get("analysis_text", "")
-        update_run_gcs_score(activity_id, user_id_str, result.get("gcs_score", 0))
+        result = RunAnalysisResult.model_validate_json(response.text)
+        analysis_text = result.analysis_text.strip()
+        if not analysis_text or not 0 <= result.gcs_score <= 100:
+            return None
+        update_run_gcs_score(activity_id, user_id_str, result.gcs_score)
 
         if chat_id:
             save_message(
                 user_id_str, "model", f"[ANALYSIS] {activity_name}: {analysis_text}"
             )
-            if today_plan:
+            if today_plan and not historical:
                 update_plan_status(user_id_str, run_date_str, "Completed")
 
         return analysis_text
     except Exception as e:
         logger.error(f"[COACH AGENT] Analysis Error: {e}")
-        return None
+        raise GeminiFailure.from_error(e) from e
 
 
 def handle_telegram_chat(chat_id: str, text: str, config: dict):
@@ -846,7 +860,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         system_inst=system_inst,
         user_prompt=f"{task_prompt}\n{text}",
         intent=intent,
-        model=config.get("model_name", "models/gemini-2.5-flash"),
+        model=config.get("model_name", DEFAULT_MODEL),
     )
 
     try:
@@ -879,7 +893,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         # Fast path caps output for greetings; standard path needs room for full answers
         max_tokens = 512 if intent == "fast" else 2000
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.5-flash"),
+            model=config.get("model_name", DEFAULT_MODEL),
             history=formatted_history[:-1],  # Pass previous history
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
@@ -915,10 +929,10 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
                 system_inst=standard_inst,
                 user_prompt=f"{task_prompt}\n{text}",
                 intent="standard",
-                model=config.get("model_name", "models/gemini-2.5-flash"),
+                model=config.get("model_name", DEFAULT_MODEL),
             )
             retry_session = client.chats.create(
-                model=config.get("model_name", "models/gemini-2.5-flash"),
+                model=config.get("model_name", DEFAULT_MODEL),
                 history=formatted_history[:-1],
                 config=types.GenerateContentConfig(
                     system_instruction=standard_inst,
@@ -945,7 +959,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
         # [ZONE 3] User-facing notification remains in Vietnamese
         send_telegram_msg(
             chat_id,
-            "⚠️ Google AI Server đang bảo trì hoặc quá tải. Hãy thử lại sau một chút nhé!",
+            f"⚠️ {GeminiFailure.from_error(e)}",
         )
 
 
@@ -1037,13 +1051,13 @@ def generate_weekly_reflection(config: dict):
         flow="coach.weekly_reflection",
         system_inst=system_inst,
         user_prompt=prompt,
-        model=config.get("model_name", "models/gemini-2.5-flash"),
+        model=config.get("model_name", DEFAULT_MODEL),
     )
 
     # 3. Call Gemini with Action Tool allowed
     try:
         chat_session = client.chats.create(
-            model=config.get("model_name", "models/gemini-2.5-flash"),
+            model=config.get("model_name", DEFAULT_MODEL),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,
@@ -1135,10 +1149,10 @@ def extract_implicit_memory(user_id_str: str):
             flow="coach.memory_extraction",
             system_inst="",
             user_prompt=prompt,
-            model=cfg.get("model_name", "models/gemini-2.5-flash"),
+            model=cfg.get("model_name", DEFAULT_MODEL),
         )
         chat_session = client.chats.create(
-            model=cfg.get("model_name", "models/gemini-2.5-flash"),
+            model=cfg.get("model_name", DEFAULT_MODEL),
             config=types.GenerateContentConfig(
                 temperature=0.2,  # Lowered temperature to minimize hallucinations
                 response_mime_type="application/json",

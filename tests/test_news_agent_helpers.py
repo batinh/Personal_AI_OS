@@ -13,7 +13,7 @@ from app.agents.news.agent import (
     _DOC_THEM_RE,
 )
 
-_DEFAULT_MODEL = "models/gemini-2.5-flash"
+_DEFAULT_MODEL = "models/gemini-flash-latest"
 
 
 class TestResolveChatId:

@@ -16,6 +16,7 @@ from app.core.notification import send_telegram_msg
 from app.agents.coach.harvest import harvest_data, poll_new_runs
 from app.agents.coach.utils import calculate_training_phase
 from app.services.backup import perform_backup
+from app.core.gemini_utils import GeminiFailure
 from app.agents.coach.agent import (
     generate_weekly_reflection,
     extract_implicit_memory,
@@ -627,9 +628,17 @@ def task_retry_pending_analyses():
             meta_data = raw.get("full_meta", {})
             logger.info(f"[SCHEDULER] Retrying analysis: {act_name} ({activity_id})")
 
-            analysis_text = analyze_run_with_gemini(
-                activity_id, act_name, meta_data, config
-            )
+            try:
+                analysis_text = analyze_run_with_gemini(
+                    activity_id, act_name, meta_data, config
+                )
+            except GeminiFailure as exc:
+                if exc.blocks_batch:
+                    logger.warning(
+                        "[SCHEDULER] Stopping analysis retries after provider failure."
+                    )
+                    break
+                analysis_text = None
             if analysis_text:
                 telegram_msg = (
                     f"🔁 <b>Phân tích bài chạy (retry):</b> {act_name}\n\n"

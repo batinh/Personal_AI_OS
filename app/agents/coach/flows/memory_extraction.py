@@ -5,6 +5,7 @@ import json
 from google import genai
 from google.genai import types
 
+from app.core.gemini_utils import DEFAULT_MODEL, GEMINI_API_VERSION
 from app.core.database import (
     load_history_for_gemini,
     get_all_active_memories,
@@ -18,7 +19,7 @@ from app.agents._prompt_telemetry import log_prompt_metrics
 from app.core.logging_conf import get_module_logger
 
 logger = get_module_logger("coach")
-client = genai.Client()
+client = genai.Client(http_options=types.HttpOptions(api_version=GEMINI_API_VERSION))
 
 
 def extract_implicit_memory(user_id_str: str):
@@ -66,10 +67,10 @@ def extract_implicit_memory(user_id_str: str):
             flow="coach.flows.memory_extraction",
             system_inst="",
             user_prompt=prompt,
-            model=cfg.get("model_name", "models/gemini-2.5-flash"),
+            model=cfg.get("model_name", DEFAULT_MODEL),
         )
         chat_session = client.chats.create(
-            model=cfg.get("model_name", "models/gemini-2.5-flash"),
+            model=cfg.get("model_name", DEFAULT_MODEL),
             config=types.GenerateContentConfig(
                 temperature=0.2,  # Lowered temperature to minimize hallucinations
                 response_mime_type="application/json",
