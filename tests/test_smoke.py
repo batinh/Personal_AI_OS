@@ -430,3 +430,9 @@ def test_gemini_model_recovery_symbols():
     assert DEFAULT_MODEL == "models/gemini-flash-latest"
     assert callable(validate_coach_model)
     assert issubclass(GeminiFailure, Exception)
+
+
+def test_coaching_review_import():
+    from app.core.database import get_coaching_review
+
+    assert callable(get_coaching_review)

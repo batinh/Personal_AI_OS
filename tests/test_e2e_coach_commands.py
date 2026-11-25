@@ -449,3 +449,47 @@ class TestUpcomingMondayHelper(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_reflect_webhook_uses_week_evidence_and_saves_delivered_reply(
+    tmp_path, monkeypatch
+):
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+    from app.agents.coach import agent
+    from app.core import database
+    from app.core.timezone_utils import get_local_tz
+
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "reflect.db"))
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "999")
+    database.init_db()
+    now = datetime.now(get_local_tz())
+    monday = (now - timedelta(days=now.weekday())).date()
+    with database.get_db() as db:
+        db.execute(
+            "INSERT INTO training_plans(user_id,date,workout_title,target_distance_km) VALUES (?,?,?,?)",
+            ("999", monday.isoformat(), "Morning intervals", 5),
+        )
+    database.save_message("999", "user", "Tuần này em làm ca tối.")
+    reply = "Buổi interval trùng tuần làm ca tối. Sáng nào thuận tiện hơn cho anh?"
+    with (
+        patch(
+            _LOAD_CONFIG,
+            return_value={**_STUB_CONFIG, "current_goal": "giữ nhịp hai buổi"},
+        ),
+        patch(_AGENT_TYPING),
+        patch(_AGENT_SEND) as delivery,
+        patch.object(agent, "extract_implicit_memory"),
+        patch.object(
+            agent, "send_message_with_retry", return_value=SimpleNamespace(text=reply)
+        ) as generate,
+    ):
+        assert _post_telegram(_make_app_client(), 999, "/reflect") == {"status": "ok"}
+    prompt = generate.call_args.args[1]
+    assert "Morning intervals" in prompt and "Tuần này em làm ca tối." in prompt
+    assert "giữ nhịp hai buổi" in prompt
+    delivery.assert_called_with("999", reply)
+    assert (
+        database.load_history_for_gemini("999", 1)[0]["parts"][0]
+        == "[WEEKLY REFLECTION]\n" + reply
+    )

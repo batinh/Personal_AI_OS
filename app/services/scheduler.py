@@ -14,7 +14,7 @@ from app.core.database import (
 )
 from app.core.notification import send_telegram_msg
 from app.agents.coach.harvest import harvest_data, poll_new_runs
-from app.agents.coach.utils import calculate_training_phase
+from app.agents.coach.utils import calculate_acwr, calculate_training_phase
 from app.services.backup import perform_backup
 from app.core.gemini_utils import GeminiFailure
 from app.agents.coach.agent import (
@@ -193,7 +193,7 @@ def task_proactive_coach_check():
 
         config = load_config()
         loads = get_training_loads(str(chat_id))
-        acwr = loads.get("acwr", 0.0)
+        acwr = calculate_acwr(loads["acute_load_7d"], loads["chronic_load_28d"])["acwr"]
         race_distance_km = float(config.get("race_distance_km", 21.1))
         phase_info = calculate_training_phase(
             config.get("race_date", ""), race_distance_km
@@ -205,14 +205,14 @@ def task_proactive_coach_check():
         if acwr > 1.5:
             alerts.append(
                 f"🚨 <b>CẢNH BÁO TẢI TRỌNG CAO</b>\n"
-                f"ACWR hiện tại: <b>{acwr:.2f}</b> (ngưỡng nguy hiểm > 1.5)\n"
-                f"Khuyến nghị: Giảm khối lượng ngay hôm nay. Bài Easy hoặc nghỉ hoàn toàn."
+                f"ACWR hiện tại: <b>{acwr:.2f}</b>\n"
+                f"Gần đây tải tập cao hơn nền bốn tuần. Hôm nay chân và mức mệt của anh thế nào?"
             )
         elif acwr > 1.3:
             alerts.append(
                 f"⚠️ <b>Tải trọng tăng cao</b>\n"
-                f"ACWR: <b>{acwr:.2f}</b> (ngưỡng thận trọng > 1.3)\n"
-                f"Khuyến nghị: Không tăng thêm khối lượng tuần này."
+                f"ACWR: <b>{acwr:.2f}</b>\n"
+                f"Nếu đang trong tuần tăng tải theo kế hoạch, mình sẽ theo dõi thêm cảm nhận sau bài."
             )
 
         if 1 <= weeks_left <= 3:

@@ -8,12 +8,12 @@ requirements:
     - test_sanity_flows.py::TestMorningBriefingGuard1
     - test_e2e_coach_commands.py::TestCoachBriefCommand::test_brief_command_sends_telegram_message
   REQ-C02:
-    description: Morning briefing Guard 1 — prompts /setup when race_date not configured
+    description: Morning briefing Guard 1 — supports maintenance training without a race date
     priority: HIGH
     module: coach
     coverage_status: covered
     covered_by:
-    - test_sanity_flows.py::TestMorningBriefingGuard1::test_message_contains_setup_keyword
+    - test_sanity_flows.py::TestMorningBriefingGuard1::test_message_supports_running_without_race
   REQ-C03:
     description: Morning briefing Guard 2 — generates daily suggestion when no active
       plan

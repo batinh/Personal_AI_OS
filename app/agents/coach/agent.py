@@ -20,7 +20,7 @@ from app.core.database import (
     load_history_for_gemini,
     clear_history,
     get_training_loads,
-    get_recent_runs_log,
+    get_coaching_review,
     update_run_gcs_score,
     get_upcoming_plans,
     get_plan_for_date,
@@ -38,6 +38,7 @@ from app.agents.coach.flows.weekly_plan_generation import (
 from app.agents.coach.flows.morning_briefing import generate_morning_briefing
 from app.agents.coach.utils import (
     calculate_acwr,
+    build_agent_context,
     calculate_hr_zones,
     calculate_lthr_zones,
     calculate_pace_zones,
@@ -649,7 +650,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
     if text in ["/reflect", "/reflection", "/refect"]:
         send_telegram_msg(
             chat_id,
-            "⚙️ [TEST MODE] Đang kích hoạt luồng Phân tích Ký ức & Tổng kết tuần. Quá trình này sẽ mất khoảng 15-30 giây...",
+            "Mình đang xem lại giáo án và các buổi chạy của anh trong tuần.",
         )
 
         try:
@@ -832,6 +833,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             actual_volume,
             weekly_decision_context,
             runalyze_text=get_runalyze_text(str(chat_id)),
+            athlete_goal=config.get("current_goal", ""),
         )
         today_plan_row = get_plan_for_date(
             str(chat_id), datetime.now(tz).strftime("%Y-%m-%d")
@@ -846,6 +848,7 @@ def handle_telegram_chat(chat_id: str, text: str, config: dict):
             get_upcoming_plans(chat_id, limit_days=7),
             active_memories_text,
             today_plan_text=today_plan_text,
+            review=get_coaching_review(chat_id, datetime.now(tz)),
         )
     else:
         # Fast path: skip heavy context — casual chat doesn't need training block
@@ -971,32 +974,14 @@ def generate_weekly_reflection(config: dict):
     Strictly follows Data Injection (no tool calling for data gathering).
     """
     logger.info("[COACH AGENT] Generating Weekly Self-Reflection...")
-    tz = pytz.timezone(os.getenv("TZ", "Asia/Ho_Chi_Minh"))
-    now = datetime.now(tz)
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    chat_id = get_primary_user_id()
+    if not chat_id:
+        return
     user_id_str = str(chat_id)
+    context = build_agent_context(user_id_str, config)
+    now = context.now
+    recent_logs = get_coaching_review(user_id_str, now)
 
-    # 1. Gather Context (Data Injection Pattern)
-    race_date_str = config.get("race_date", "")
-    phase_info = calculate_training_phase(race_date_str)
-    phase_text = f"{phase_info['phase']} | Cycle: {phase_info['microcycle']}"
-    countdown_text = (
-        f"Còn {phase_info['weeks_left']} tuần đến ngày đua."
-        if race_date_str
-        else "Duy trì thể lực."
-    )
-
-    loads = get_training_loads(user_id_str)
-    acwr_data = calculate_acwr(
-        loads.get("acute_load_7d", 0), loads.get("chronic_load_28d", 0)
-    )
-    actual_volume = get_weekly_volume(user_id_str, now)
-    weekly_decision_context = get_formatted_weekly_context(user_id_str)
-
-    # Fetch recent runs directly from DB (No AI Tool needed)
-    recent_logs = get_recent_runs_log(user_id_str)
-
-    # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
     memories = get_all_active_memories(user_id_str)
 
     if memories:
@@ -1027,19 +1012,8 @@ def generate_weekly_reflection(config: dict):
         power_zones_text=power_zones_text,
     )
 
-    shared_context = get_shared_context_block(
-        now.strftime("%A, %Y-%m-%d %H:%M"),
-        user_id_str,
-        phase_text,
-        countdown_text,
-        f"{acwr_data['acwr']} ({acwr_data['status']})",
-        actual_volume,
-        weekly_decision_context,
-    )
-
-    # [NEW FIX] Inject active_memories_text into the builder
     prompt = build_weekly_reflection_prompt(
-        shared_context,
+        context.shared_context,
         recent_logs,
         next_monday_str,
         active_memories=active_memories_text,
@@ -1054,26 +1028,23 @@ def generate_weekly_reflection(config: dict):
         model=config.get("model_name", DEFAULT_MODEL),
     )
 
-    # 3. Call Gemini with Action Tool allowed
+    # Reflection records a proposal; the plan writer owns schedule changes.
     try:
         chat_session = client.chats.create(
             model=config.get("model_name", DEFAULT_MODEL),
             config=types.GenerateContentConfig(
                 system_instruction=system_inst,
                 temperature=0.7,
-                tools=[
-                    set_actual_weekly_target
-                ],  # Crucial: Let AI act on its reflection
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
             ),
         )
 
         # Re-use Resilience Pattern
         response = send_message_with_retry(chat_session, prompt)
-        reflection_text = (
-            _extract_gemini_text(response)
-            or "⚠️ Coach Dyno encountered an error generating the reflection."
-        )
+        reflection_text = _extract_gemini_text(response)
+        if not reflection_text:
+            send_telegram_msg(chat_id, "Mình chưa tạo được bản tổng kết tuần này.")
+            return
 
         # 4. Inject Memory into RAG (Long-term autonomous memory)
         week_str = now.strftime("%Y-%m-%d")
@@ -1101,6 +1072,7 @@ def generate_weekly_reflection(config: dict):
 
     except Exception as e:
         logger.error(f"[COACH AGENT] Weekly Reflection Error: {e}")
+        send_telegram_msg(chat_id, f"⚠️ {GeminiFailure.from_error(e)}")
 
 
 # --- FLOW 3: AUTONOMOUS MEMORY MANAGER ---

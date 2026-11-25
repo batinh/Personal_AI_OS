@@ -12,6 +12,7 @@ from app.core.database import (
     load_history_for_gemini,
     get_plan_for_date,
     get_runs_in_last_days,
+    get_coaching_review,
     get_all_active_memories,
     get_training_loads,
     get_weekly_volume,
@@ -92,7 +93,7 @@ def _get_recent_runs(user_id: str, days: int = 7) -> list:
         return []
 
 
-def _days_since_last_run(user_id: str) -> int:
+def _days_since_last_run(user_id: str) -> int | None:
     """Calculate days since last run activity."""
     try:
         from app.core.database import get_db
@@ -109,7 +110,7 @@ def _days_since_last_run(user_id: str) -> int:
             row = cursor.fetchone()
 
             if not row:
-                return 999  # No runs recorded
+                return None
 
             last_run_date = datetime.strptime(row["date"][:10], "%Y-%m-%d").date()
             today = datetime.now().date()
@@ -117,7 +118,7 @@ def _days_since_last_run(user_id: str) -> int:
             return delta.days
     except Exception as e:
         logger.warning(f"[MORNING_BRIEFING] Failed to get days_since_last_run: {e}")
-        return 0
+        return None
 
 
 def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
@@ -222,6 +223,7 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         planned_km_this_week=planned_km_this_week,
         garmin_status_text=garmin_status_text,
         runalyze_text=get_runalyze_text(user_id_str, now.date()),
+        athlete_goal=config.get("current_goal", ""),
     )
 
     # [ARCHITECTURE UPDATE] Fetch existing active memories globally (Cross-Domain Deduplication)
@@ -247,29 +249,26 @@ def generate_morning_briefing(config: dict, weather_data: str = "N/A"):
         active_memories=active_memories_text,
     )
 
+    prompt += "\n" + get_coaching_review(user_id_str, now)
+    prompt += (
+        "\nNếu một buổi đã lên lịch nhưng chưa có dữ liệu chạy, chỉ hỏi xem anh có tập "
+        "hay dữ liệu chưa đồng bộ khi câu trả lời ảnh hưởng đến hôm nay. Dùng lại câu trả lời "
+        "trong cuộc trò chuyện gần nhất, đừng nhắc lại cùng câu hỏi."
+    )
+    if not race_date_str:
+        prompt += (
+            "\nAnh đang ở giai đoạn duy trì, chưa có giải. Theo mục tiêu gần nhất của anh; "
+            "nếu chưa rõ, hỏi anh muốn giữ điều gì khi chạy tuần này. Đừng yêu cầu chọn giải."
+        )
+
     debug_log_prompt(
         "DEBUG STANDUP PROMPT", f"[SYSTEM]:\n{system_inst}\n[USER]:\n{prompt}"
     )
 
     # 3. Execution (Resilience Pattern)
     # Phase 3.5: Check if no active plan → show daily suggestion instead of LLM call
-    if not has_active_plan:
+    if not has_active_plan and race_date_str:
         try:
-            # Check if race_date is configured; if not, show setup prompt
-            if not race_date_str:
-                setup_prompt = (
-                    "ℹ️ Anh chưa thiết lập mục tiêu đua. Dùng /setup để bắt đầu."
-                )
-                if chat_id:
-                    send_telegram_msg(chat_id, setup_prompt)
-                    save_message(
-                        user_id_str, "model", f"[MORNING BRIEFING] {setup_prompt}"
-                    )
-                logger.info(
-                    "[MORNING_BRIEFING] Race date not configured, showing setup prompt"
-                )
-                return
-
             # Check for pending plan (not yet accepted)
             days_since_monday = now.weekday()
             week_start = (now - timedelta(days=days_since_monday)).strftime("%Y-%m-%d")

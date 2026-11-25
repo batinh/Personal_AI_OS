@@ -47,7 +47,7 @@ class TestLowReadiness:
         s = _suggest(readiness_score=35, acwr=1.0)
         assert s["workout_type"] == "Recovery"
 
-    def test_readiness_none_defaults_to_65(self):
+    def test_readiness_none_keeps_weekday_easy(self):
         s = _suggest(readiness_score=None, acwr=1.0, day_of_week=1)
         assert s["workout_type"] in ("Easy", "Tempo")
 
@@ -127,3 +127,10 @@ class TestFormatBriefing:
         s = _suggest()
         text = format_daily_suggestion_for_briefing(s)
         assert "/plan" in text
+
+
+def test_unknown_readiness_cannot_trigger_weekend_long_run():
+    result = _suggest(readiness_score=None, day_of_week=6)
+    assert result["workout_type"] == "Easy"
+    assert "Garmin" in result["description_vi"]
+    assert "65" not in result["reason"]

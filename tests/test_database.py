@@ -792,3 +792,35 @@ class TestNewsAgentState(_TempDbMixin, unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_coaching_review_uses_only_current_athlete_and_prior_reflection(
+    tmp_path, monkeypatch
+):
+    from datetime import datetime, timezone, timedelta
+    from app.core import database
+
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "review.db"))
+    database.init_db()
+    now = datetime(2026, 11, 24, 9, tzinfo=timezone(timedelta(hours=7)))
+    with database.get_db() as db:
+        for user, name, timestamp in [
+            ("a", "Morning", "2026-11-24T07:00:00Z"),
+            ("a", "Evening", "2026-11-24T19:00:00Z"),
+            ("b", "Private", "2026-11-23T08:00:00Z"),
+        ]:
+            db.execute(
+                "INSERT INTO run_activities(activity_id,user_id,start_date,name) VALUES (?,?,?,?)",
+                (name, user, timestamp, name),
+            )
+        for label, stamp in [
+            ("experiment", "2026-11-22 16:00:00"),
+            ("same_week", "2026-11-22 18:00:00"),
+        ]:
+            db.execute(
+                "INSERT INTO chat_history(user_id,role,content,timestamp) VALUES ('a','model',?,?)",
+                ("[WEEKLY REFLECTION]" + label, stamp),
+            )
+    evidence = database.get_coaching_review("a", now)
+    assert "Morning" in evidence and "experiment" in evidence
+    assert all(text not in evidence for text in ("Private", "Evening", "same_week"))

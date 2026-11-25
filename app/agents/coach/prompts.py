@@ -169,6 +169,7 @@ def get_shared_context_block(
     planned_km_this_week: float = 0.0,
     garmin_status_text: str = "",
     runalyze_text: str = "",
+    athlete_goal: str = "",
 ) -> str:
     """Dynamic data block providing sensory context to the AI.
 
@@ -202,10 +203,11 @@ def get_shared_context_block(
         else ""
     )
 
+    goal_line = f"\n- Mục tiêu VĐV đã chọn: {athlete_goal}" if athlete_goal else ""
     return f"""
 [BỐI CẢNH HIỆN TẠI]
 - Thời gian hệ thống: {now_str}
-- Mục tiêu: {countdown_text}
+- Mục tiêu: {countdown_text}{goal_line}
 - User ID: {chat_id}
 - Giai đoạn: {phase_text}
 - Thể trạng (ACWR): {acwr_text}{garmin_line}{runalyze_line}
@@ -322,6 +324,7 @@ def build_chat_prompt(
     current_plans: str,
     active_memories: str = "",
     today_plan_text: str = "",
+    review: str = "",
 ) -> str:
     """Flow 1: Handle Telegram Chat.
     Fast path passes empty shared_context/current_plans to keep the prompt minimal.
@@ -339,6 +342,14 @@ def build_chat_prompt(
             f"[KÝ ỨC & TRẠNG THÁI VĐV]\n"
             f"{active_memories}\n"
             f"Lưu ý: Nếu VĐV đang có chấn thương hoặc tình trạng đặc biệt, hãy chủ động đề cập và điều chỉnh tư vấn cho phù hợp."
+        )
+    if review:
+        parts.append(review)
+        parts.append(
+            "Khi anh kể bỏ bài hoặc ngại chạy, đọc lại điều anh đã kể. Nếu còn thiếu nguyên nhân, "
+            "hỏi một câu giúp phân biệt vướng thời gian, mệt hay khó bắt đầu. Lịch có bài nhưng "
+            "chưa thấy dữ liệu chỉ có nghĩa là chưa ghi nhận. Không tự suy ra anh đã bỏ bài. "
+            "Nếu anh đã nói nguyên nhân, dùng lời anh thay vì hỏi lại hoặc gán là lười. Không mặc định phải chạy bù. Nếu anh chỉ muốn tâm sự, cứ trò chuyện. Chỉ báo đã sửa lịch khi công cụ xác nhận."
         )
     parts.append(
         "[NHIỆM VỤ]\nTrò chuyện tự nhiên. Hãy chủ động dùng Tool nếu yêu cầu liên quan đến thay đổi lịch/mục tiêu."
@@ -464,60 +475,21 @@ def build_universal_run_analysis_prompt(
 # ==========================================
 
 DEFAULT_REFLECTION_TASK = """
-[NHIỆM VỤ TỰ PHẢN TỈNH CHUYÊN SÂU]
-Với tư cách là Coach Dyno, hôm nay là Tối Chủ Nhật. Hãy thực hiện "Dual-Horizon Reflection" (Tầm nhìn kép):
-1. Microcycle (7 ngày qua): Đánh giá chi tiết mức độ hoàn thành các bài chạy trong tuần.
-2. Mesocycle (28 ngày qua): Nhìn vào tỷ lệ ACWR và Tải trọng mãn tính (Chronic Load) để quyết định xu hướng tuần tới.
-
-[HÀNH ĐỘNG BẮT BUỘC]
-Dựa trên phân tích, bạn BẮT BUỘC phải ĐỀ XUẤT Target Volume (km) trong báo cáo gửi VĐV cho tuần mới bắt đầu từ ngày mai: {next_monday_str}.
-Trình bày rõ con số đề xuất và lý do. KHÔNG tự ý gọi `set_actual_weekly_target` — chỉ gọi khi VĐV phản hồi xác nhận đồng ý với target đề xuất.
+Nhìn lại tuần tập đến hôm nay. Chọn một điều đáng kể từ giáo án, những buổi đã ghi nhận và lời anh đã kể.
+Nếu có nhận định của tuần trước, đối chiếu xem diễn biến tuần này củng cố hay bác bỏ nhận định đó.
 """
 
 DEFAULT_REFLECTION_REQUIREMENTS = """
-[YÊU CẦU PHÂN TÍCH 5 TRỤ CỘT & NGÔI SAO PHƯƠNG BẮC (GCS)]
-1. ĐỘ TUÂN THỦ (Compliance): So sánh Thực chạy vs Target. VĐV có lười biếng hay hăng say quá mức không?
-2. CHẤT LƯỢNG (Quality): Đánh giá Pace, HR Zone (đối chiếu với Bảng HR Zones của VĐV), Cadence ở các bài Key.
-3. AN TOÀN (Safety): ACWR hiện tại đang ở đâu? Có dấu hiệu tích lũy mỏi (Cumulative Fatigue) không?
-4. CHU KỲ HUẤN LUYỆN (Periodization): ĐỌC KỸ thông tin "Giai đoạn" (Phase) và "Thời gian đếm ngược đến Race".
-   - Base / Build Phase: Ưu tiên xây dựng nền tảng, có thể tăng tải theo 15% Rule.
-   - Peak Phase: Giữ nguyên Volume, tối đa hóa cường độ.
-   - Taper Phase (BẮT BUỘC tuân thủ cấu trúc giảm tải):
-     • Tuần -3 (taper_factor = 0.75): Target = 75% khối lượng tuần Peak gần nhất.
-     • Tuần -2 (taper_factor = 0.50): Target = 50% khối lượng tuần Peak gần nhất.
-     • Tuần -1 / Race Week (taper_factor = 0.25): Target = 25%. Tập nhẹ, duy trì nhịp chân.
-     • TUYỆT ĐỐI KHÔNG TĂNG TẢI trong bất kỳ tuần Taper nào.
-   - Recovery Phase: Chỉ chạy thả lỏng Zone 1, không có bài Key.
-5. TIẾN ĐỘ MỤC TIÊU (GCS Trend): Nhìn vào điểm GCS của các bài chạy trong tuần. Xu hướng đang tăng lên, giữ nguyên, hay sụt giảm? Đánh giá theo 4 trụ cột: Sức Bền (Decoupling + Power zone), Tốc Độ (Cadence + IF), Sức Khỏe (HR/Power anomalies), Thể Trạng (ACWR). Thể lực hiện tại có đáp ứng FM Sub 4:00 không?
-6. QUYẾT ĐỊNH (Action): Kết hợp cả 5 yếu tố trên để chốt Target (km) cho tuần tới. BẮT BUỘC tính taper_factor vào nếu đang trong Taper Phase.
+Tách điều quan sát được khỏi giả thuyết. Dữ liệu chưa về không chứng minh anh bỏ chạy.
+Chỉ so sánh những buổi có thể so sánh. Xét giai đoạn của giải nếu có, tôn trọng taper và phục hồi.
+Khi chưa có mục tiêu giải, ưu tiên mục tiêu duy trì anh đã chọn; nếu chưa rõ, hỏi điều anh muốn giữ.
 """
 
 DEFAULT_REFLECTION_STRUCTURE = """
-[CẤU TRÚC BÁO CÁO BẮT BUỘC]
-Hãy xuất báo cáo gửi cho VĐV theo đúng format dưới đây (BẮT BUỘC dùng HTML <b>...</b> cho các thông số quan trọng):
-
-🏆 WEEKLY REFLECTION: TỔNG KẾT & ĐỊNH HƯỚNG
------------------------------
-📍 TỔNG QUAN KHỐI LƯỢNG (MICROCYCLE)
-► Đạt [Thực chạy]/[Target] km ([X]%).
-► Đánh giá tuân thủ: [Nhận xét ngắn]
-
-⚡ CHẤT LƯỢNG & CƠ SINH HỌC
-► Điểm sáng: [Khen ngợi 1-2 yếu tố làm tốt]
-► Cần cải thiện: [Nhắc nhở điểm yếu]
-
-🩺 THỂ TRẠNG & RỦI RO (MESOCYCLE)
-► ACWR: [Giá trị] - [Nhận định mức độ an toàn và tích lũy mỏi].
-
-🎯 TIẾN ĐỘ MỤC TIÊU (GCS)
-► Xu hướng GCS: [Chỉ ra mốc GCS cao nhất đạt được trong tuần].
-► Nhận định: [Đánh giá khoảng cách thực tế giữa năng lực hiện tại và Mục tiêu Race].
-
-🚀 ĐỊNH HƯỚNG TUẦN TỚI (TỪ {next_monday_str})
-► Chu kỳ hiện tại: [Giai đoạn + Đếm ngược đến Race].
-► Quyết định: [Tăng tải / Duy trì / Taper / Phục hồi].
-► Target chốt: [X] km.
-► Trọng tâm: [Giải thích logic chốt Target dựa trên GCS, ACWR và Phase].
+Viết hai đoạn hội thoại ngắn bằng tiếng Việt, không dựng dàn bài hoặc tiêu đề mẫu. Dẫn một bằng chứng cụ thể,
+nêu một điều chỉnh có ích cho tuần từ {next_monday_str} và dấu hiệu để cuối tuần kiểm chứng.
+Chỉ đề xuất số km khi có cơ sở. Phân biệt đề xuất với thay đổi đã được lưu.
+Nếu bằng chứng còn mỏng, nói rõ và chỉ hỏi một câu có thể làm thay đổi quyết định.
 """
 
 
@@ -532,7 +504,7 @@ def build_weekly_reflection_prompt(
     Builds the modular prompt for the Sunday Weekly Reflection Cronjob.
     [ZONE 1] English docstring. [ZONE 3] Injects data into Vietnamese prompt.
     """
-    task_injected = DEFAULT_REFLECTION_TASK.format(next_monday_str=next_monday_str)
+    task_injected = DEFAULT_REFLECTION_TASK
     structure_injected = DEFAULT_REFLECTION_STRUCTURE.format(
         next_monday_str=next_monday_str
     )
@@ -551,7 +523,7 @@ def build_weekly_reflection_prompt(
 [KÝ ỨC NGẮN HẠN & TRẠNG THÁI HIỆN TẠI]
 Các sự thật quan trọng về VĐV đang được lưu trữ:
 {active_memories}
-Lưu ý: BẮT BUỘC xem xét kỹ các chấn thương (nếu có) hoặc sự thay đổi mục tiêu trong phần ký ức này trước khi chốt Target Volume cho tuần tới!
+Dùng mục tiêu gần nhất anh đã xác nhận và lưu ý những hạn chế còn hiệu lực.
 
 {task_injected}
 

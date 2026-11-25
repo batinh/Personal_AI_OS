@@ -9,7 +9,7 @@ Run as a pre-deploy gate:
     python -m pytest tests/test_sanity_flows.py -v
 
 Coverage goals:
-- Morning briefing: Guard 1 (no race_date), Guard 2 (no plan → daily suggestion),
+- Morning briefing: maintenance mode (no race_date), Guard 2 (no plan → daily suggestion),
   Guard 3 (full AI path with plan)
 - Scheduler wrappers: task_morning_briefing, task_news_briefing don't crash
 - Telegram command routing: /brief, /standup, /news, /sync, free-text
@@ -66,10 +66,10 @@ def _db_patches_for_briefing():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1. MORNING BRIEFING — Guard 1: no race_date → prompt user to /setup
+# 1. MORNING BRIEFING — Guard 1: no race_date → maintenance coaching
 # ──────────────────────────────────────────────────────────────────────────────
 class TestMorningBriefingGuard1(unittest.TestCase):
-    """No race_date in config → must send setup prompt and return immediately."""
+    """An athlete without a scheduled race still receives a coaching briefing."""
 
     def _run_with_no_race_date(self):
         db = _db_patches_for_briefing()
@@ -81,7 +81,10 @@ class TestMorningBriefingGuard1(unittest.TestCase):
         try:
             from app.agents.coach import agent as ag
 
-            ag.generate_morning_briefing(_make_config(race_date=""))
+            with patch(f"{_BRIEF_BASE}.send_message_with_retry") as generate:
+                generate.return_value.text = "Anh muốn giữ mấy buổi chạy mỗi tuần?"
+                ag.generate_morning_briefing(_make_config(race_date=""))
+                self.assertIn("giai đoạn duy trì", generate.call_args.args[1])
             return tg_mock
         finally:
             patch.stopall()
@@ -90,13 +93,9 @@ class TestMorningBriefingGuard1(unittest.TestCase):
         tg = self._run_with_no_race_date()
         tg.assert_called_once()
 
-    def test_message_contains_setup_keyword(self):
+    def test_message_supports_running_without_race(self):
         tg = self._run_with_no_race_date()
-        msg_text = tg.call_args[0][1].lower()
-        self.assertTrue(
-            "setup" in msg_text or "cấu hình" in msg_text,
-            f"Guard 1 message should mention /setup, got: {msg_text[:80]}",
-        )
+        self.assertEqual(tg.call_args.args[1], "Anh muốn giữ mấy buổi chạy mỗi tuần?")
 
     def test_chat_id_is_env_value(self):
         tg = self._run_with_no_race_date()

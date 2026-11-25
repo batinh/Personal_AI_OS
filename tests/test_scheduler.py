@@ -141,7 +141,7 @@ class TestTaskProactiveCoachCheck(unittest.TestCase):
 
     def _run(self, chat_id, acwr, weeks_left=99):
         cfg = _make_config()
-        loads = {"acwr": acwr}
+        loads = {"acute_load_7d": acwr * 100, "chronic_load_28d": 400}
         phase_info = {"weeks_left": weeks_left, "phase": "Build"}
         with patch(
             "app.services.scheduler.get_primary_user_id", return_value=chat_id
@@ -171,7 +171,7 @@ class TestTaskProactiveCoachCheck(unittest.TestCase):
         mock_send = self._run(chat_id="123456", acwr=1.4)
         mock_send.assert_called_once()
         msg = mock_send.call_args[0][1]
-        self.assertIn("thận trọng", msg)
+        self.assertIn("tuần tăng tải", msg)
 
     def test_acwr_below_1_3_sends_no_load_alert(self):
         mock_send = self._run(chat_id="123456", acwr=1.1)
@@ -596,3 +596,20 @@ class TestSchedulerTaskExceptionRecovery(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_proactive_load_uses_real_database_contract(tmp_path, monkeypatch):
+    from app.core import database
+    from app.services import scheduler
+
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "training.db"))
+    database.init_db()
+    with database.get_db() as db:
+        db.execute("""INSERT INTO run_activities
+            (activity_id, user_id, start_date, trimp_score)
+            VALUES ('run', 'athlete', date('now', '-1 day'), 100)""")
+    monkeypatch.setattr(scheduler, "get_primary_user_id", lambda: "athlete")
+    monkeypatch.setattr(scheduler, "load_config", dict)
+    with patch.object(scheduler, "send_telegram_msg") as send:
+        scheduler.task_proactive_coach_check()
+    assert "4.00" in send.call_args.args[1]

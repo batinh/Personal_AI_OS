@@ -847,6 +847,90 @@ def get_training_loads(user_id: str) -> dict:
         return {"acute_load_7d": 0, "chronic_load_28d": 0, "avg_weekly_mileage": 0}
 
 
+def get_coaching_review(user_id: str, now: datetime) -> str:
+    """Read this week's schedule and recorded runs, plus the previous week's reflection."""
+    monday = (now - timedelta(days=now.weekday())).date()
+    week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
+        days=now.weekday()
+    )
+    # chat_history timestamps are SQLite UTC; activity start_date stores local time.
+    cutoff = week_start.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S")
+    previous_start = (
+        (week_start - timedelta(days=7))
+        .astimezone(pytz.UTC)
+        .strftime("%Y-%m-%d %H:%M:%S")
+    )
+    try:
+        with get_db() as db:
+            plans = db.execute(
+                """SELECT date, workout_title, status, target_distance_km FROM training_plans
+                   WHERE user_id=? AND date BETWEEN ? AND ? ORDER BY date""",
+                (user_id, monday.isoformat(), now.date().isoformat()),
+            ).fetchall()
+            runs = db.execute(
+                """SELECT start_date, name, distance_km, avg_hr FROM run_activities
+                   WHERE user_id=? AND substr(start_date,1,10) BETWEEN ? AND ?
+                   AND substr(replace(start_date,'T',' '),1,19) <= ? ORDER BY start_date""",
+                (
+                    user_id,
+                    monday.isoformat(),
+                    now.date().isoformat(),
+                    now.strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            ).fetchall()
+            remarks = db.execute(
+                """SELECT content FROM chat_history WHERE user_id=? AND role='user'
+                   AND timestamp BETWEEN ? AND ? AND substr(content,1,1) != '/'
+                   ORDER BY timestamp DESC, id DESC LIMIT 3""",
+                (
+                    user_id,
+                    cutoff,
+                    now.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S"),
+                ),
+            ).fetchall()
+            prior = db.execute(
+                """SELECT content FROM chat_history WHERE user_id=? AND role='model'
+                   AND content LIKE '[WEEKLY REFLECTION]%' AND timestamp >= ? AND timestamp < ?
+                   ORDER BY timestamp DESC, id DESC LIMIT 1""",
+                (user_id, previous_start, cutoff),
+            ).fetchone()
+    except sqlite3.Error as exc:
+        logger.warning("[DB_ERROR] Coaching review unavailable: %s", exc)
+        return "Chưa đọc được lịch và dữ liệu chạy để đối chiếu."
+    lines = [f"Tuần từ {monday} đến {now.date()}."]
+    for plan in plans:
+        target = (
+            f", {plan['target_distance_km']:g} km"
+            if plan["target_distance_km"] is not None
+            else ""
+        )
+        lines.append(
+            f"Giáo án {plan['date']}: {plan['workout_title']} ({plan['status']}{target})."
+        )
+    for run in runs:
+        distance = (
+            f"{run['distance_km']} km"
+            if run["distance_km"] is not None
+            else "chưa có cự ly"
+        )
+        heart_rate = (
+            f", nhịp tim trung bình {run['avg_hr']} bpm" if run["avg_hr"] else ""
+        )
+        lines.append(
+            f"Đã ghi nhận {str(run['start_date'])[:10]}: {run['name']}, {distance}{heart_rate}."
+        )
+    if not runs:
+        lines.append("Chưa có bài chạy được ghi nhận trong khoảng này.")
+    for remark in reversed(remarks):
+        lines.append("Lời VĐV trong tuần: " + remark["content"][:300])
+    if prior:
+        lines.append(
+            "Tổng kết tuần trước (để kiểm chứng): "
+            + prior["content"].removeprefix("[WEEKLY REFLECTION]").strip()[:2000]
+        )
+    return "\n".join(lines)
+
+
 def get_recent_runs_log(user_id: str, limit: int = 10) -> str:
     """Get a formatted string of recent runs for the AI prompt."""
     try:

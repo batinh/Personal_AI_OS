@@ -62,7 +62,7 @@ def compute_daily_suggestion(
     recent_runs: list,
     athlete_state: str,
     day_of_week: int = 0,
-    days_since_last_run: int = 1,
+    days_since_last_run: int | None = 1,
     today_plan: Optional[dict] = None,
 ) -> dict:
     """
@@ -106,17 +106,15 @@ def compute_daily_suggestion(
         s["reason"] = f"acwr={acwr:.2f} > {ACWR_CRITICAL}"
         return s
 
-    eff_readiness = readiness_score if readiness_score is not None else 65
-
-    if eff_readiness < READINESS_THRESHOLDS["low"]:
+    if readiness_score is not None and readiness_score < READINESS_THRESHOLDS["low"]:
         s = dict(_SUGGESTION_TYPES["recovery"])
-        s["reason"] = f"readiness={eff_readiness} < {READINESS_THRESHOLDS['low']}"
+        s["reason"] = f"readiness={readiness_score} < {READINESS_THRESHOLDS['low']}"
         return s
 
-    if days_since_last_run >= 3:
+    if days_since_last_run is not None and days_since_last_run >= 3:
         s = dict(_SUGGESTION_TYPES["easy"])
         s["description_vi"] = (
-            f"Đã {days_since_last_run} ngày không chạy — chạy nhẹ hôm nay để duy trì thói quen."
+            f"Đã {days_since_last_run} ngày kể từ buổi chạy gần nhất được ghi nhận. Nếu anh đã tập trong khoảng đó, cho mình biết buổi ấy thế nào nhé."
         )
         s["reason"] = f"days_since_last_run={days_since_last_run}"
         return s
@@ -129,15 +127,24 @@ def compute_daily_suggestion(
         s["reason"] = f"acwr={acwr:.2f} > {ACWR_SAFE_MAX}"
         return s
 
-    if READINESS_THRESHOLDS["low"] <= eff_readiness < READINESS_THRESHOLDS["good"]:
+    if readiness_score is None:
+        s = dict(_SUGGESTION_TYPES["easy"])
+        s.update(target_km=None, target_pace_zone=None, rpe_target=None)
+        s["description_vi"] = (
+            "Garmin chưa có điểm phục hồi hôm nay. Chân anh thấy nhẹ hay còn mỏi sau buổi vừa rồi?"
+        )
+        s["reason"] = "readiness unavailable"
+        return s
+
+    if READINESS_THRESHOLDS["low"] <= readiness_score < READINESS_THRESHOLDS["good"]:
         s = dict(_SUGGESTION_TYPES["easy_short"])
-        s["reason"] = f"readiness={eff_readiness} (low/moderate)"
+        s["reason"] = f"readiness={readiness_score} (low/moderate)"
         return s
 
     is_weekend = day_of_week in (5, 6)
-    if is_weekend and eff_readiness >= READINESS_THRESHOLDS["good"]:
+    if is_weekend and readiness_score >= READINESS_THRESHOLDS["good"]:
         s = dict(_SUGGESTION_TYPES["long_run"])
-        s["reason"] = f"weekend day={day_of_week}, readiness={eff_readiness}"
+        s["reason"] = f"weekend day={day_of_week}, readiness={readiness_score}"
         return s
 
     recent_quality = sum(
@@ -147,15 +154,15 @@ def compute_daily_suggestion(
         or (r.get("gcs_score") or 0) >= 7
     )
 
-    if eff_readiness >= READINESS_THRESHOLDS["excellent"] and recent_quality == 0:
+    if readiness_score >= READINESS_THRESHOLDS["excellent"] and recent_quality == 0:
         s = dict(_SUGGESTION_TYPES["tempo"])
         s["reason"] = (
-            f"readiness={eff_readiness} (excellent), no recent quality session"
+            f"readiness={readiness_score} (excellent), no recent quality session"
         )
         return s
 
     s = dict(_SUGGESTION_TYPES["easy"])
-    s["reason"] = f"readiness={eff_readiness} (good/default)"
+    s["reason"] = f"readiness={readiness_score} (good/default)"
 
     if planned_type and planned_type not in ("Rest", "Recovery"):
         s["plan_conflict"] = (

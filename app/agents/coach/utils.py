@@ -731,6 +731,7 @@ def build_agent_context(
         weekly_decision_context,
         hr_zones_text,
         runalyze_text=runalyze_text,
+        athlete_goal=config.get("current_goal", ""),
     )
 
     return AgentContext(
