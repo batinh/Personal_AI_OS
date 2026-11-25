@@ -22,7 +22,6 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 | ID | Type | Title | Priority | Reporter | Date | Module |
 |----|------|-------|----------|----------|------|--------|
 | [ISS-028](#iss-028--adaptive-personal-endurance-coach) | feature | Adaptive personal endurance coach | High | U+AI | 2026-11-24 | Coach, Telegram, scheduler |
-| [ISS-027](#iss-027--proactive-load-alert-reads-a-missing-acwr-field) | bug | Proactive load alert reads a missing ACWR field | High | AI | 2026-11-24 | Scheduler, coach |
 | [ISS-024](#iss-024--codex-mac-environment-validation) | enhancement | Codex Mac environment validation | Medium | U+AI | 2026-11-16 | Development setup |
 | [ISS-013](#iss-013--multi-tenant-expansion-blocked-by-single-user-design) | feature | Multi-tenant expansion blocked by single-user design | Low | U+AI | 2026-04-26 | `app/agents/coach/` |
 | [ISS-014](#iss-014--no-onboarding-guide-for-physiology-config-fields) | feature | No onboarding guide for physiology config fields (LTHR, rFTP) | Low | U+AI | 2026-04-26 | `docs/`, `config.example.json` |
@@ -34,6 +33,7 @@ Track bugs, features, and implementation changes. Reported by user or AI.
 
 | ID | Type | Title | Priority | Reporter | Date Found | Closed | Commit | Module |
 |----|------|-------|----------|----------|------------|--------|--------|--------|
+| [ISS-027](#iss-027--proactive-load-alert-reads-a-missing-acwr-field) | bug | Proactive load alert reads a missing ACWR field | High | AI | 2026-11-24 | 2026-11-25 | `bb7f4de` | Scheduler, coach |
 | [ISS-026](#iss-026--coach-model-unavailable-on-configured-api-version) | bug | Coach model unavailable on configured API version | High | U+AI | 2026-11-24 | 2026-11-24 | `cf885c4` | Coach, settings |
 | [ISS-025](#iss-025--gemini-credit-exhaustion-misreported-as-server-overload) | bug | Gemini credit exhaustion misreported as server overload | High | U+AI | 2026-11-17 | 2026-11-24 | `cf885c4` | `coach/agent.py`, `routers/webhooks.py` |
 | [ISS-022](#iss-022--plan-command-shows-daily-suggestion-instead-of-generating-plan) | bug | `/plan` shows daily suggestion instead of generating a plan | High | U | 2026-05-22 | 2026-05-22 | `70565ae` | `coach/agent.py`, `database.py` |
@@ -588,3 +588,12 @@ database-to-scheduler path with an isolated database and notification sink.
 Implement the [approved design](features/adaptive-endurance-coach.md) on
 `feat/adaptive-endurance-coach`. Start with the context baseline and ISS-027,
 then deliver missed-workout follow-up and weekly reflection end to end.
+
+The first implementation covers proactive load alerts, unknown readiness, maintenance
+briefings and dated evidence for chat and reflection. A Telegram webhook regression
+checks that the delivered reflection is saved for later review.
+In three synthetic live-model probes, the responses differed for scheduling conflict
+and fatigue, and reflection compared a prior experiment with this week's evidence.
+In the scheduling case the model still inferred a missed workout from a night shift
+and missing activity data. Include this counterexample in the replay gate before
+enabling autonomous schedule changes. Plan revisions and undo are still pending.
